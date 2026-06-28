@@ -189,12 +189,15 @@ export default function CadastroPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui,sans-serif', color: C.ink }}>
+      {/* Header ZCheck */}
+      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid rgba(6,60,92,0.08)', background: '#FFFFFF' }}>
+        <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 40, width: 'auto', objectFit: 'contain' }} />
+      </div>
       <div style={{ maxWidth: 420, margin: '0 auto', padding: '40px 20px 80px' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <a href="/app" style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: C.muted, textDecoration: 'none', marginBottom: 16 }}>
             ← Voltar ao login
           </a>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, letterSpacing: '-0.02em', marginBottom: 4 }}>ZCheck</h1>
           <p style={{ fontSize: 14, color: C.muted }}>Solicitar acesso ao app</p>
         </div>
 
