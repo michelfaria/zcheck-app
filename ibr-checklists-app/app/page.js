@@ -30,7 +30,7 @@ export default function LandingPage() {
           <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <a href="https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!" className="header-nav" style={{ fontSize: 14, fontWeight: 600, color: '#063C5C', textDecoration: 'none' }}>Fale conosco</a>
-            <a href="/app" className="btn-blue btn-blue-header">Acessar →</a>
+            <a href="/entrar" className="btn-blue btn-blue-header">Acessar →</a>
           </div>
         </div>
       </header>
@@ -47,7 +47,7 @@ export default function LandingPage() {
             <h1 style={{ fontSize: 'clamp(36px, 5vw, 60px)', fontWeight: 800, color: '#31C85A', lineHeight: 1.1, marginBottom: 28 }}>Todo dia.</h1>
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.82)', lineHeight: 1.7, maxWidth: 440, marginBottom: 40 }}>Checklists por loja, setor e turno. Sua equipe executa, sua gestão enxerga tudo — em tempo real.</p>
             <div className="hero-btns" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <a href="/app" className="btn-green">Acessar o app →</a>
+              <a href="/entrar" className="btn-green">Acessar o app →</a>
               <a href="https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!" className="btn-white">Fale conosco</a>
             </div>
           </div>

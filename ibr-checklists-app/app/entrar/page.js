@@ -1,0 +1,81 @@
+'use client';
+import { useState } from 'react';
+
+const EMPRESAS = {
+  'ilhabelarepublic': 'ilhabelarepublic',
+  'ibr': 'ilhabelarepublic',
+};
+
+export default function EntrarPage() {
+  const [codigo, setCodigo] = useState('');
+  const [erro, setErro] = useState('');
+
+  function handleEntrar(e) {
+    e.preventDefault();
+    const slug = codigo.trim().toLowerCase().replace(/\s+/g, '');
+    const subdominio = EMPRESAS[slug];
+    if (subdominio) {
+      window.location.href = `https://${subdominio}.zcheckapp.com/app`;
+    } else {
+      setErro('Código não encontrado. Verifique e tente novamente.');
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#F7FAFC', fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <header style={{ background: '#063C5C', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <a href="/">
+          <img src="/zcheck-icon.png" alt="ZCheck" style={{ height: 40, width: 'auto' }} />
+        </a>
+      </header>
+
+      {/* Conteúdo */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+        <div style={{ width: '100%', maxWidth: 400 }}>
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#102A3A', marginBottom: 8 }}>Acessar o ZCheck</h1>
+            <p style={{ fontSize: 15, color: '#64748B' }}>Digite o código da sua empresa para continuar</p>
+          </div>
+
+          <form onSubmit={handleEntrar} style={{ background: '#fff', borderRadius: 16, border: '1px solid #E5E7EB', padding: 28, boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748B', marginBottom: 8 }}>
+              Código da empresa
+            </label>
+            <input
+              type="text"
+              value={codigo}
+              onChange={e => { setCodigo(e.target.value); setErro(''); }}
+              placeholder="ex: ilhabelarepublic"
+              autoFocus
+              style={{ width: '100%', padding: '12px 14px', fontSize: 15, border: `1.5px solid ${erro ? '#DC2626' : '#E5E7EB'}`, borderRadius: 10, outline: 'none', color: '#102A3A', background: '#fff', marginBottom: erro ? 8 : 20, transition: 'border 0.2s' }}
+              onFocus={e => e.target.style.borderColor = '#063C5C'}
+              onBlur={e => e.target.style.borderColor = erro ? '#DC2626' : '#E5E7EB'}
+            />
+            {erro && (
+              <p style={{ fontSize: 13, color: '#DC2626', marginBottom: 16 }}>{erro}</p>
+            )}
+            <button
+              type="submit"
+              style={{ width: '100%', padding: '13px', background: '#063C5C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Continuar →
+            </button>
+          </form>
+
+          <p style={{ textAlign: 'center', marginTop: 24, fontSize: 13, color: '#64748B' }}>
+            Não sabe seu código?{' '}
+            <a href="https://wa.me/5512988017472?text=Olá%2C%20preciso%20do%20código%20da%20minha%20empresa%20no%20ZCheck" style={{ color: '#063C5C', fontWeight: 700, textDecoration: 'none' }}>
+              Fale conosco
+            </a>
+          </p>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer style={{ padding: '20px 40px', textAlign: 'center' }}>
+        <span style={{ fontSize: 12, color: '#94A3B8' }}>© 2026 ZCheck · INGO Administração de Negócios Ltda.</span>
+      </footer>
+    </div>
+  );
+}

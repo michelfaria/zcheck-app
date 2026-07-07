@@ -4907,14 +4907,13 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       <div style={{
         width: '100%', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '0 16px',
-        height: 64, background: C.bg,
-        borderBottom: '1px solid rgba(6,60,92,0.08)',
+        height: 64, background: '#063C5C',
         marginBottom: 0,
       }}>
         <img
-          src="/zcheck-logo.png"
+          src="/zcheck-icon.png"
           alt="ZCheck"
-          style={{ display: 'block', width: '100%', maxWidth: 200, height: 'auto', objectFit: 'contain', background: 'transparent' }}
+          style={{ display: 'block', height: 40, width: 'auto', objectFit: 'contain', background: 'transparent' }}
         />
       </div>
 
@@ -5093,8 +5092,10 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
       `}</style>
 
       {/* Header ZCheck */}
-      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid rgba(6,60,92,0.08)', background: '#fff', flexShrink: 0 }}>
-        <img src="/zcheck-logo.png" alt="ZCheck" style={{ width: 200, height: 'auto', objectFit: 'contain', background: 'transparent' }} />
+      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#063C5C', flexShrink: 0 }}>
+        <a href="https://zcheckapp.com" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+          <img src="/zcheck-icon.png" alt="ZCheck" style={{ height: 40, width: 'auto', objectFit: 'contain', background: 'transparent' }} />
+        </a>
       </div>
 
       <div className="flex flex-col items-center" style={{ flex: 1, justifyContent: 'center', padding: '24px 24px 80px' }}>
