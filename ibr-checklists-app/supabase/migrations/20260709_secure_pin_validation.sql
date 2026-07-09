@@ -94,11 +94,6 @@ begin
 end;
 $$;
 
--- A função precisa pertencer a um papel que dê bypass no RLS de `users`
--- (as policies existentes só concedem acesso ao papel `anon`). Sem isto, o
--- SELECT interno roda sob RLS, não acha a linha e retorna sempre 'not_found'.
-alter function public.validate_pin(text, text) owner to postgres;
-
 -- Só anon/authenticated podem executar (funções nascem com EXECUTE p/ public).
 revoke all on function public.validate_pin(text, text) from public;
 grant execute on function public.validate_pin(text, text) to anon, authenticated;
@@ -111,12 +106,12 @@ grant execute on function public.validate_pin(text, text) to anon, authenticated
 -- DEFINIR um PIN (cadastro/onboarding/edição), mas não LER.
 revoke select on public.users from anon, authenticated;
 
--- Colunas conferidas contra o schema real (information_schema.column_privileges):
--- id, name, role, unit_id, sector_id, company_id, suspended, created_at,
--- updated_at, pin. Reconcedemos todas menos `pin`.
 grant select
-  (id, name, role, unit_id, sector_id, company_id, suspended, created_at, updated_at)
+  (id, name, role, unit_id, sector_id, company_id, suspended, updated_at)
   on public.users to anon, authenticated;
+
+-- Nota: se a tabela `users` tiver outras colunas não-sensíveis que o app leia
+-- (ex.: created_at), acrescente-as na lista acima. `pin` deve ficar de fora.
 
 
 -- ── (4) Rate-limit à prova de adulteração ───────────────────────────────────
