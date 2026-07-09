@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   CheckCircle2, Circle, AlertTriangle, ChevronRight, ArrowLeft,
   Plus, Trash2, X, ClipboardCheck, LayoutGrid, Settings2, Clock, Lock, Camera,
   Users, User, LogOut, Store, BarChart3, ChevronUp, ChevronDown, Calendar,
-  WifiOff, RefreshCw, Bell, BellOff, ExternalLink,
+  WifiOff, RefreshCw, Bell, BellOff, ExternalLink, Award, Star,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -13,6 +13,7 @@ import {
   fetchUsers, saveUsers as dbSaveUsers,
   fetchCompletions, saveCompletion as syncSaveCompletion,
   fetchClosures, saveClosures as dbSaveClosures,
+  sendRecognition, fetchRecognitions,
   uploadPhoto, getPhotoUrl,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
@@ -23,6 +24,10 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
+// Event instrumentation (MVP Inteligência Operacional — ver docs/REVISAO_MVP_v1.3.md)
+import { track, setTrackSession, clearTrackSession } from '../../lib/track';
+// Execução colaborativa em tempo real (H6)
+import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
 const LOGO_DATA_URI = 'data:image/png;base64,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';
 const LOGO_LOGIN_URI = 'data:image/png;base64,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';
@@ -87,11 +92,14 @@ const ROLE_COLORS = {
 
 // Which bottom-nav tabs each role can see, in order.
 const ROLE_TABS = {
-  colaborador: ['executar', 'painel'],
-  lideranca: ['executar', 'painel', 'relatorios'],
-  gerencia: ['executar', 'painel', 'relatorios', 'gerenciar'],
-  gestao: ['executar', 'painel', 'relatorios', 'gerenciar', 'usuarios'],
+  colaborador: ['executar', 'painel', 'id'],
+  lideranca: ['executar', 'painel', 'relatorios', 'id', 'equipe'],
+  gerencia: ['executar', 'painel', 'relatorios', 'gerenciar', 'equipe'],
+  gestao: ['executar', 'painel', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
 };
+
+// Papéis de gestão que recebem o Daily Briefing (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
+const MANAGER_ROLES = ['lideranca', 'gerencia', 'gestao'];
 
 // unitId === null means "todas as lojas" (gerência / gestão).
 // SEED_USERS: PINs removed from bundle — validation happens server-side via Supabase.
@@ -655,6 +663,7 @@ function generateSeedTemplates() {
 const SEED_TEMPLATES = generateSeedTemplates();
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const yesterdayStr = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); };
 const truncName = (name, max = 22) => name && name.length > max ? name.slice(0, max).trim() + '…' : name;
 
 // A template's shift can be a single shift or an array (e.g. Intermediário runs in both).
@@ -993,29 +1002,33 @@ function PillButton({ active, accent, onClick, children }) {
 
 /* ------------------------------ item row ---------------------------------- */
 
-function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto }) {
+function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveInfo, onReopen, currentUserId }) {
   const fileInputRef = useRef(null);
   const [showDesc, setShowDesc] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState(null);
-  const lineColor = locked ? C.mutedLight : state.done ? C.success : item.critical ? C.critical : accent;
+  // Estado colaborativo: item concluído no estado compartilhado (por mim ou por colega).
+  const collabDone = !!liveInfo?.done;
+  const byOther = collabDone && liveInfo.operatorUserId && liveInfo.operatorUserId !== currentUserId;
+  const effDone = state.done || collabDone;
+  const lineColor = locked ? C.mutedLight : effDone ? C.success : item.critical ? C.critical : accent;
   const needsPhoto = item.photoRequired && !state.photo;
 
   return (
     <>
       <Ticket accent={lineColor}>
-      <div className="flex items-start gap-3" style={{ opacity: locked ? 0.5 : 1 }}>
+      <div className="flex items-start gap-3" style={{ opacity: locked ? 0.5 : byOther ? 0.6 : 1 }}>
         <button
           onClick={onToggle}
           disabled={locked}
           style={{ background: 'none', border: 'none', padding: 0, marginTop: 1, flexShrink: 0, cursor: locked ? 'not-allowed' : 'pointer' }}
         >
-          {state.done
+          {effDone
             ? <CheckCircle2 size={24} color={C.success} />
             : <Circle size={24} color={C.mutedLight} />}
         </button>
         <div className="flex-1" style={{ minWidth: 0 }}>
           <div className="flex items-start justify-between gap-2">
-            <p style={{ fontSize: 14, fontWeight: 500, color: state.done ? C.muted : C.ink, textDecoration: state.done ? 'line-through' : 'none', flex: 1 }}>
+            <p style={{ fontSize: 14, fontWeight: 500, color: effDone ? C.muted : C.ink, textDecoration: effDone ? 'line-through' : 'none', flex: 1 }}>
               {item.text}
             </p>
             {(item.description || (item.refPhotos?.length > 0) || item.refLink) && (
@@ -1086,6 +1099,21 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto }) {
             </p>
           )}
 
+          {collabDone && (
+            <div className="flex items-center gap-2 mt-1" style={{ flexWrap: 'wrap' }}>
+              <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: C.success }}>
+                <CheckCircle2 size={12} /> Concluída por {byOther ? (liveInfo.operatorName || 'colega') : 'você'}
+                {liveInfo.completedAt ? ` às ${new Date(liveInfo.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+              </span>
+              {onReopen && (
+                <button onClick={onReopen}
+                  style={{ fontSize: 11, fontWeight: 800, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: 20, padding: '1px 9px', cursor: 'pointer' }}>
+                  Reabrir
+                </button>
+              )}
+            </div>
+          )}
+
           <input
             value={state.note}
             onChange={e => onNote(e.target.value)}
@@ -1131,7 +1159,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto }) {
           )}
         </div>
 
-        {state.done && (
+        {effDone && (
           <div
             className="font-mono-ibr"
             style={{
@@ -1209,23 +1237,77 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
 
-  const doneCount = Object.values(itemStates).filter(s => s.done).length;
+  // ── Execução colaborativa (H6) ─────────────────────────────────────────────
+  const [liveByItem, setLiveByItem] = useState({});     // itemId → { done, operatorUserId, operatorName, completedAt }
+  const [collabNotice, setCollabNotice] = useState('');
+  const [reopenTarget, setReopenTarget] = useState(null);
+  const [reopenReason, setReopenReason] = useState('');
+  const collabSessionTracked = useRef(false);
+
+  // Estado efetivo de conclusão: local OU compartilhado (por um colega em tempo real).
+  const effDone = id => itemStates[id]?.done || !!liveByItem[id]?.done;
+
+  useEffect(() => {
+    const applyLive = map => {
+      setLiveByItem(map);
+      const ops = new Set(Object.values(map).filter(v => v?.done && v.operatorUserId).map(v => v.operatorUserId));
+      if (ops.size >= 2 && !collabSessionTracked.current) {
+        collabSessionTracked.current = true;
+        track('collaborative_session', { source: 'checklist', checklistId: template.id, unitId: unit.id, metadata: { operators: ops.size } });
+      }
+    };
+    fetchLiveTasks(template.id, unit.id, today).then(applyLive);
+    const unsub = subscribeLiveTasks(template.id, unit.id, today, () => fetchLiveTasks(template.id, unit.id, today).then(applyLive));
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doneCount = items.filter(i => effDone(i.id)).length;
   const total = items.length;
-  const pendingCritical = items.filter(i => i.critical && !itemStates[i.id].done);
+  const pendingCritical = items.filter(i => i.critical && !effDone(i.id));
 
   const isLocked = idx => {
     for (let j = 0; j < idx; j++) {
       const prev = items[j];
-      if (prev.required && !itemStates[prev.id].done) return true;
+      if (prev.required && !effDone(prev.id)) return true;
     }
     return false;
   };
 
   const toggle = (item, idx) => {
     if (isLocked(idx)) return;
+    const live = liveByItem[item.id];
+    // Já concluída por um colega → bloqueia nova execução (H6).
+    if (live?.done && live.operatorUserId && live.operatorUserId !== currentUser.id) {
+      track('duplicate_execution_blocked', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { by: live.operatorName || null } });
+      setCollabNotice(`"${truncName(item.text, 32)}" já foi concluída por ${live.operatorName || 'um colega'}.`);
+      setTimeout(() => setCollabNotice(''), 2600);
+      return;
+    }
+    // Já concluída por mim no estado compartilhado → reabrir exige motivo (auditoria).
+    if (live?.done && live.operatorUserId === currentUser.id) {
+      setReopenTarget(item);
+      return;
+    }
     const state = itemStates[item.id];
     if (!state.done && item.photoRequired && !state.photo) return;
-    setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: !s[item.id].done } }));
+    const nextDone = !state.done;
+    setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: nextDone } }));
+    // Compartilha no estado ao vivo (fire-and-forget; degrada sem a tabela).
+    setLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, done: nextDone, operatorUserId: currentUser.id, operatorName: currentUser.name });
+    setLiveByItem(m => ({ ...m, [item.id]: nextDone
+      ? { done: true, operatorUserId: currentUser.id, operatorName: currentUser.name, completedAt: new Date().toISOString() }
+      : { ...m[item.id], done: false } }));
+  };
+
+  const confirmReopen = () => {
+    const item = reopenTarget;
+    if (!item) return;
+    reopenLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, operatorUserId: currentUser.id, operatorName: currentUser.name });
+    track('task_reopened', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { reason: reopenReason.trim() || null } });
+    setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
+    setLiveByItem(m => ({ ...m, [item.id]: { ...m[item.id], done: false } }));
+    setReopenTarget(null); setReopenReason('');
   };
   const setNote = (id, note) => setItemStates(s => ({ ...s, [id]: { ...s[id], note } }));
   const setPhoto = async (id, file) => {
@@ -1250,7 +1332,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       operatorUserId: currentUser.id,
       items: items.map(i => ({
         id: i.id, text: i.text, critical: i.critical, required: !!i.required,
-        done: itemStates[i.id].done, note: itemStates[i.id].note,
+        done: itemStates[i.id].done || !!liveByItem[i.id]?.done, note: itemStates[i.id].note,
         hasPhoto: !!itemStates[i.id].photo,
       })),
     };
@@ -1349,6 +1431,8 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
           <ItemRow
             key={item.id} item={item} state={itemStates[item.id]} accent={unit.color}
             locked={isLocked(idx)}
+            liveInfo={liveByItem[item.id]} currentUserId={currentUser.id}
+            onReopen={liveByItem[item.id]?.done ? () => setReopenTarget(item) : undefined}
             onToggle={() => toggle(item, idx)} onNote={v => setNote(item.id, v)}
             onPhoto={file => setPhoto(item.id, file)}
           />
@@ -1379,6 +1463,38 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
           onCancel={() => setShowConfirm(false)}
           onConfirm={() => { setShowConfirm(false); submit(); }}
         />
+      )}
+
+      {/* Aviso de execução colaborativa bloqueada (H6) */}
+      {collabNotice && (
+        <div style={{ position: 'fixed', bottom: 'calc(120px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 300, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: 700, boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}>
+          🔒 {collabNotice}
+        </div>
+      )}
+
+      {/* Reabrir tarefa — exige motivo (auditoria, H6) */}
+      {reopenTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom,0px))' }}>
+            <p className="font-display" style={{ fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 6 }}>Reabrir tarefa</p>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>
+              "{truncName(reopenTarget.text, 44)}" será marcada como pendente. Registre o motivo para a auditoria.
+            </p>
+            <textarea value={reopenReason} onChange={e => setReopenReason(e.target.value)} rows={3}
+              placeholder="Motivo da reabertura (ex.: precisa refazer, ficou incompleto)"
+              style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, resize: 'none', marginBottom: 14, background: 'white', color: C.ink }} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { setReopenTarget(null); setReopenReason(''); }}
+                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={confirmReopen}
+                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: C.critical, color: 'white', border: 'none', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                Reabrir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4999,6 +5115,8 @@ function BottomNav({ tab, setTab, accent, allowedTabs }) {
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { id: 'gerenciar', label: 'Gerenciar', icon: Settings2 },
     { id: 'usuarios', label: 'Usuários', icon: Users },
+    { id: 'id', label: 'Meu ID', icon: Award },
+    { id: 'equipe', label: 'Equipe', icon: Star },
   ];
   const items = ALL_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
@@ -5416,6 +5534,801 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ------------------------------ Daily Briefing (H1) ------------------------------ */
+// Deriva o briefing operacional 100% dos dados existentes (completions + templates + closures).
+// Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
+function buildBriefing(completions, templates, closures, units, scopeUnitId) {
+  const today = todayStr();
+  const yStr = yesterdayStr();
+  const unitIds = scopeUnitId ? [scopeUnitId] : units.map(u => u.id);
+  const unitName = id => units.find(u => u.id === id)?.name || id;
+
+  // Mapa itemId → texto, para nomear itens críticos nas recomendações.
+  const itemText = new Map();
+  templates.forEach(t => (t.items || []).forEach(i => { if (!itemText.has(i.id)) itemText.set(i.id, i.text); }));
+
+  const scopeFilter = dates => (scopeUnitId ? { dates, unitId: scopeUnitId } : { dates });
+
+  // ── Ontem ──
+  const yFiltered = filterCompletions(completions, scopeFilter([yStr]));
+  const ySummary = summarizeCompletions(yFiltered);
+  let yExpected = 0;
+  unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, yStr)) yExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, yStr); });
+  const yAdherence = yExpected ? Math.round((yFiltered.length / yExpected) * 100) : null;
+
+  // ── Hoje ──
+  let tExpected = 0;
+  unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
+  const tDone = filterCompletions(completions, scopeFilter([today])).length;
+  const scopeTemplates = templates.filter(t =>
+    (!scopeUnitId || t.unitId === scopeUnitId) &&
+    !isUnitClosed(closures, t.unitId, today) &&
+    applicableItems(t, today).length > 0);
+  const overdue = scopeTemplates.filter(t => templateStatus(t, completions, today) === 'overdue');
+
+  // ── Recomendações (rule-based; IA generativa fica para depois — §16) ──
+  const recs = [];
+
+  // 1. Itens críticos que ficaram pendentes ≥2× nos últimos 7 dias.
+  const last7 = [];
+  for (let i = 1; i <= 7; i++) { const d = new Date(); d.setDate(d.getDate() - i); last7.push(d.toISOString().slice(0, 10)); }
+  const f7 = filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 });
+  const hotspot = new Map();
+  f7.forEach(c => (c.items || []).forEach(i => {
+    if (i.critical && !i.done) { const k = `${c.unitId}|${i.id}`; hotspot.set(k, (hotspot.get(k) || 0) + 1); }
+  }));
+  [...hotspot.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([k, n]) => {
+    const [uid, iid] = k.split('|');
+    recs.push({
+      id: `hotspot_${k}`, type: 'critical_hotspot', icon: '⚠️',
+      text: `${unitName(uid)}: "${truncName(itemText.get(iid) || 'item crítico', 40)}" ficou pendente ${n}× nos últimos 7 dias. Priorize hoje.`,
+      unitId: uid, tab: 'painel',
+    });
+  });
+
+  // 2. Checklists atrasados agora.
+  if (overdue.length > 0) {
+    const u0 = overdue[0];
+    recs.push({
+      id: 'overdue_today', type: 'overdue_today', icon: '⏰',
+      text: overdue.length === 1
+        ? `"${truncName(u0.name, 36)}" está atrasado em ${unitName(u0.unitId)}.`
+        : `${overdue.length} checklists estão atrasados agora. Acompanhe as equipes.`,
+      unitId: scopeUnitId ? null : u0.unitId, tab: 'painel',
+    });
+  }
+
+  // 3. Loja com pior aderência ontem (só na visão multi-loja).
+  if (!scopeUnitId && yFiltered.length > 0) {
+    const worst = groupStats(yFiltered, 'loja').filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
+    if (worst && worst.rate < 80) {
+      recs.push({
+        id: 'low_adherence', type: 'low_adherence', icon: '📉',
+        text: `${worst.key} fechou ontem com ${Math.round(worst.rate)}% de conclusão. Reforce a rotina hoje.`,
+        tab: 'relatorios',
+      });
+    }
+  }
+
+  // Fallback positivo — nunca deixar o briefing vazio.
+  if (recs.length === 0) {
+    recs.push({
+      id: 'all_good', type: 'all_good', icon: '✅',
+      text: yAdherence != null && yAdherence >= 90
+        ? `Ontem fechou com ${yAdherence}% de aderência. Mantenha o ritmo hoje.`
+        : 'Sem alertas críticos. Comece o dia acompanhando as aberturas.',
+      tab: 'painel',
+    });
+  }
+
+  // ── Insight do dia (H4) ────────────────────────────────────────────────────
+  // Análise automática que conecta pontos que um humano teria que garimpar:
+  // tendência, falha crítica recorrente ou loja destoante. Hoje é rule-based;
+  // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
+  const insight = buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
+
+  return {
+    date: today,
+    yesterday: { adherence: yAdherence, checklists: yFiltered.length, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
+    today: { expected: tExpected, done: tDone, pending: Math.max(0, tExpected - tDone), overdue: overdue.length },
+    recommendations: recs.slice(0, 3),
+    insight,
+  };
+}
+
+// Motor de insight (H4) — escolhe o padrão MAIS relevante dos dados recentes.
+// Prioridade: queda de tendência > falha crítica recorrente > loja destoante > estável.
+function buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence }) {
+  const today = todayStr();
+  const wkThis = weekStartStr(today);
+  const dPrev = new Date(); dPrev.setDate(dPrev.getDate() - 7);
+  const wkPrev = weekStartStr(dPrev.toISOString().slice(0, 10));
+
+  // Últimos 14 dias no escopo, agrupados por unidade × semana (item-level).
+  const dates14 = [];
+  for (let i = 0; i < 14; i++) { const d = new Date(); d.setDate(d.getDate() - i); dates14.push(d.toISOString().slice(0, 10)); }
+  const f14 = filterCompletions(completions, scopeUnitId ? { dates: dates14, unitId: scopeUnitId } : { dates: dates14 });
+  const perUnitWk = {};
+  f14.forEach(c => {
+    const wk = weekStartStr(c.date);
+    if (wk !== wkThis && wk !== wkPrev) return;
+    perUnitWk[c.unitId] = perUnitWk[c.unitId] || {};
+    const slot = (perUnitWk[c.unitId][wk] = perUnitWk[c.unitId][wk] || { total: 0, done: 0 });
+    (c.items || []).forEach(i => { slot.total++; if (i.done) slot.done++; });
+  });
+
+  // 1. Maior queda de tendência semana-a-semana (≥15 p.p., base mínima de 5 itens).
+  let worstDrop = null;
+  Object.entries(perUnitWk).forEach(([u, wks]) => {
+    const t = wks[wkThis], p = wks[wkPrev];
+    if (t && p && t.total >= 5 && p.total >= 5) {
+      const rt = Math.round((t.done / t.total) * 100);
+      const rp = Math.round((p.done / p.total) * 100);
+      const drop = rp - rt;
+      if (drop >= 15 && (!worstDrop || drop > worstDrop.drop)) worstDrop = { unitId: u, rt, rp, drop };
+    }
+  });
+  if (worstDrop) {
+    return {
+      id: `trend_${worstDrop.unitId}`, type: 'trend_decline', icon: '📉',
+      headline: `${unitName(worstDrop.unitId)} está caindo de rendimento`,
+      evidence: `A conclusão passou de ${worstDrop.rp}% na semana passada para ${worstDrop.rt}% esta semana (−${worstDrop.drop} p.p.). Vale entender o que mudou na operação e agir hoje, antes de virar hábito.`,
+      unitId: worstDrop.unitId,
+    };
+  }
+
+  // 2. Falha crítica recorrente (≥3× em 7 dias).
+  let topHot = null;
+  [...hotspot.entries()].sort((a, b) => b[1] - a[1]).forEach(([k, n]) => {
+    if (!topHot && n >= 3) { const [u, iid] = k.split('|'); topHot = { unitId: u, iid, n }; }
+  });
+  if (topHot) {
+    return {
+      id: `crit_${topHot.unitId}_${topHot.iid}`, type: 'recurring_critical', icon: '🔁',
+      headline: `Falha crítica que se repete em ${unitName(topHot.unitId)}`,
+      evidence: `"${truncName(itemText.get(topHot.iid) || 'item crítico', 44)}" ficou pendente ${topHot.n}× nos últimos 7 dias. É um risco recorrente — ataque a causa, não só a tarefa do dia.`,
+      unitId: topHot.unitId,
+    };
+  }
+
+  // 3. Loja destoante ontem (diferença ≥25 p.p. entre melhor e pior).
+  if (!scopeUnitId && yFiltered.length > 0) {
+    const groups = groupStats(yFiltered, 'loja').filter(g => g.checklists > 0);
+    const worst = [...groups].sort((a, b) => a.rate - b.rate)[0];
+    const best = [...groups].sort((a, b) => b.rate - a.rate)[0];
+    if (worst && best && best.rate - worst.rate >= 25) {
+      return {
+        id: `outlier_${worst.key}`, type: 'sector_outlier', icon: '⚖️',
+        headline: `${worst.key} destoa das outras lojas`,
+        evidence: `Ontem ${worst.key} fechou com ${Math.round(worst.rate)}% enquanto ${best.key} fez ${Math.round(best.rate)}%. A diferença sugere um problema local, não geral — olhe o que a ${best.key} faz diferente.`,
+      };
+    }
+  }
+
+  // 4. Baixa atividade / estável / dados insuficientes.
+  const lowActivity = yAdherence != null && yAdherence < 50;
+  return {
+    id: lowActivity ? 'low_activity' : 'stable',
+    type: lowActivity ? 'low_activity' : 'stable',
+    icon: lowActivity ? '⚠️' : '🧭',
+    headline: yAdherence != null && yAdherence >= 85
+      ? 'Operação saudável e estável'
+      : lowActivity ? 'Baixa atividade registrada ontem' : 'Sem padrões críticos hoje',
+    evidence: yAdherence == null
+      ? 'Ainda não há dados suficientes para uma análise mais profunda. Conforme a rotina roda, os insights ficam mais precisos.'
+      : lowActivity
+        ? `Só ${yAdherence}% dos checklists previstos foram concluídos ontem. Confirme se as equipes estão registrando a rotina no app — sem dado, não há como acompanhar a operação.`
+        : `A aderência de ontem (${yAdherence}%) está dentro do esperado. Bom momento para reforçar o que está funcionando.`,
+  };
+}
+
+function DailyBriefing({ briefing, currentUser, accent, openSource, onClose, onNavigate }) {
+  const startRef = useRef(Date.now());
+  const [actioned, setActioned] = useState({});
+  const [survey, setSurvey] = useState(null);
+  const [insightFeedback, setInsightFeedback] = useState(null);
+  const [insightActioned, setInsightActioned] = useState(false);
+  const insight = briefing.insight;
+
+  // Instrumentação de abertura + tempo em tela (dwell consolidado em 1 evento — §8).
+  useEffect(() => {
+    track('briefing_opened', { source: openSource, metadata: { recommendations: briefing.recommendations.length } });
+    if (insight) track('ai_insight_viewed', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
+    const start = startRef.current;
+    return () => {
+      track('briefing_dwell', { source: openSource, metadata: { seconds: Math.round((Date.now() - start) / 1000) } });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rateInsight = ans => {
+    if (insightFeedback || !insight) return;
+    setInsightFeedback(ans);
+    track('ai_insight_feedback', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type, answer: ans } });
+  };
+  const actOnInsight = () => {
+    if (!insight) return;
+    if (!insightActioned) {
+      setInsightActioned(true);
+      track('ai_insight_actioned', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
+    }
+    if (insight.unitId) onNavigate(insight.unitId, 'painel');
+  };
+
+  const clickRec = rec => {
+    track('recommendation_clicked', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
+    if (rec.tab || rec.unitId) onNavigate(rec.unitId, rec.tab);
+  };
+  const actionRec = (rec, e) => {
+    e.stopPropagation();
+    if (actioned[rec.id]) return;
+    setActioned(a => ({ ...a, [rec.id]: true }));
+    track('recommendation_actioned', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
+  };
+  const answerSurvey = ans => {
+    if (survey) return;
+    setSurvey(ans);
+    track('survey_answered', { source: 'briefing', metadata: { question: 'briefing_helped_prioritize', answer: ans } });
+  };
+
+  const y = briefing.yesterday, t = briefing.today;
+  const dateLabel = new Date(`${briefing.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  const firstName = (currentUser?.name || '').split(' ')[0];
+
+  const Stat = ({ label, value, sub, color }) => (
+    <div style={{ flex: 1, textAlign: 'center', padding: '10px 6px' }}>
+      <p style={{ fontSize: 26, fontWeight: 800, color: color || C.ink, lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 4, fontWeight: 700 }}>{label}</p>
+      {sub && <p style={{ fontSize: 10, color: C.mutedLight, marginTop: 2 }}>{sub}</p>}
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+      <div style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+        {/* Cabeçalho */}
+        <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'relative' }}>
+          <button onClick={onClose} aria-label="Fechar" style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999, width: 30, height: 30, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>☀️ Briefing do dia</p>
+          <p className="font-display" style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
+          <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
+        </div>
+
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Insight do dia (H4) — análise automática no topo do briefing */}
+          {insight && (
+            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 18 }}>{insight.icon || '🧠'}</span>
+                <p style={{ fontSize: 10.5, fontWeight: 800, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>🧠 Análise do dia</p>
+              </div>
+              <p className="font-display" style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
+              <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 12 }}>{insight.evidence}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {insight.unitId && (
+                  <button onClick={actOnInsight}
+                    style={{ padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+                    {insightActioned ? '✓ Vou agir nisso' : 'Agir sobre isso →'}
+                  </button>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                  {insightFeedback ? (
+                    <span style={{ fontSize: 11.5, color: C.success, fontWeight: 700 }}>Valeu pelo retorno!</span>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 11.5, color: C.mutedLight, fontWeight: 700 }}>Foi útil?</span>
+                      <button onClick={() => rateInsight('yes')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👍</button>
+                      <button onClick={() => rateInsight('no')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👎</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Ontem */}
+          <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Ontem</p>
+            <div style={{ display: 'flex' }}>
+              <Stat label="Aderência" value={y.adherence != null ? `${y.adherence}%` : '—'} color={y.adherence == null ? C.mutedLight : y.adherence >= 80 ? C.success : C.critical} />
+              <Stat label="Checklists" value={`${y.checklists}${y.expected ? `/${y.expected}` : ''}`} />
+              <Stat label="Críticos pend." value={y.criticalPending} color={y.criticalPending > 0 ? C.critical : C.ink} />
+            </div>
+          </div>
+
+          {/* Hoje */}
+          <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Hoje</p>
+            <div style={{ display: 'flex' }}>
+              <Stat label="Previstos" value={t.expected} />
+              <Stat label="Concluídos" value={t.done} color={C.success} />
+              <Stat label="Pendentes" value={t.pending} />
+              <Stat label="Atrasados" value={t.overdue} color={t.overdue > 0 ? C.critical : C.ink} />
+            </div>
+          </div>
+
+          {/* Recomendações */}
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades de hoje</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {briefing.recommendations.map(rec => (
+                <div key={rec.id} onClick={() => clickRec(rec)}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 12px', cursor: rec.tab || rec.unitId ? 'pointer' : 'default' }}>
+                  <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{rec.icon}</span>
+                  <p style={{ flex: 1, fontSize: 13.5, color: C.ink, lineHeight: 1.45 }}>{rec.text}</p>
+                  {rec.type !== 'all_good' && (
+                    <button onClick={e => actionRec(rec, e)}
+                      style={{ flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {actioned[rec.id] ? '✓ Tratado' : 'Tratar'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Micro-pergunta qualitativa (§10) */}
+          <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
+            {survey ? (
+              <p style={{ fontSize: 13, color: C.success, fontWeight: 700 }}>Obrigado pelo retorno! 🙌</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: 600 }}>Esse briefing te ajudou a priorizar o dia?</p>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                  <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
+                  <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button onClick={onClose} style={{ padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 2 }}>
+            Começar o dia →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ ID Operacional (H2) ------------------------------ */
+// Identidade operacional do colaborador, derivada das completions.
+// Foco em EVOLUÇÃO e qualidade/consistência (não quantidade pura — princípio de gamificação).
+const weekStartStr = dateStr => {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const dow = (d.getDay() + 6) % 7; // 0 = segunda
+  d.setDate(d.getDate() - dow);
+  return d.toISOString().slice(0, 10);
+};
+
+function currentStreak(daySet) {
+  if (daySet.size === 0) return 0;
+  let streak = 0;
+  const d = new Date();
+  if (!daySet.has(todayStr())) d.setDate(d.getDate() - 1); // permite começar de ontem
+  for (;;) {
+    const s = d.toISOString().slice(0, 10);
+    if (daySet.has(s)) { streak++; d.setDate(d.getDate() - 1); } else break;
+  }
+  return streak;
+}
+
+function longestStreak(days) {
+  if (days.length === 0) return 0;
+  const sorted = [...days].sort();
+  let best = 1, cur = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const diff = Math.round((new Date(`${sorted[i]}T00:00:00`) - new Date(`${sorted[i - 1]}T00:00:00`)) / 86400000);
+    if (diff === 1) { cur++; best = Math.max(best, cur); } else if (diff > 1) { cur = 1; }
+  }
+  return best;
+}
+
+function computeOperationalProfile(completions, userId, userName) {
+  const mine = (completions || [])
+    .filter(c => c.operatorUserId === userId || c.operatorName === userName)
+    .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
+
+  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0, evidences = 0;
+  mine.forEach(c => (c.items || []).forEach(i => {
+    totalItems++; if (i.done) doneItems++;
+    if (i.critical) { critTotal++; if (i.done) critDone++; }
+    if (i.hasPhoto) evidences++;
+  }));
+
+  const checklists = mine.length;
+  const avgRate = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
+  const criticalRate = critTotal ? Math.round((critDone / critTotal) * 100) : null;
+
+  const days = [...new Set(mine.map(c => c.date))];
+  const streak = currentStreak(new Set(days));
+  const bestStreak = longestStreak(days);
+
+  // Evolução: taxa de conclusão por semana (últimas 6 semanas com atividade).
+  const wkMap = new Map();
+  mine.forEach(c => {
+    const wk = weekStartStr(c.date);
+    if (!wkMap.has(wk)) wkMap.set(wk, { week: wk, total: 0, done: 0, checklists: 0 });
+    const s = wkMap.get(wk); s.checklists++;
+    (c.items || []).forEach(i => { s.total++; if (i.done) s.done++; });
+  });
+  const weekly = [...wkMap.values()]
+    .map(s => ({ ...s, rate: s.total ? Math.round((s.done / s.total) * 100) : 0 }))
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .slice(-6);
+
+  const perLevel = 15;
+  const level = Math.floor(checklists / perLevel) + 1;
+  const intoLevel = checklists % perLevel;
+
+  const achievements = [
+    { id: 'first', icon: '🌱', title: 'Primeiro passo', desc: 'Concluiu o primeiro checklist', earned: checklists >= 1 },
+    { id: 'ten', icon: '💪', title: 'Pegando o ritmo', desc: '10 checklists concluídos', earned: checklists >= 10 },
+    { id: 'fifty', icon: '🔥', title: 'Veterano', desc: '50 checklists concluídos', earned: checklists >= 50 },
+    { id: 'streak5', icon: '📆', title: 'Constância', desc: '5 dias seguidos em operação', earned: bestStreak >= 5 },
+    { id: 'quality', icon: '⭐', title: 'Caprichoso', desc: 'Média de conclusão ≥ 90%', earned: avgRate >= 90 && checklists >= 5 },
+    { id: 'critical', icon: '🛡️', title: 'Guardião do crítico', desc: 'Itens críticos ≥ 95% em dia', earned: criticalRate != null && criticalRate >= 95 && checklists >= 5 },
+    { id: 'evidence', icon: '📸', title: 'Provas em dia', desc: '20+ evidências enviadas', earned: evidences >= 20 },
+    { id: 'perfectweek', icon: '🏆', title: 'Semana perfeita', desc: 'Uma semana inteira a 100%', earned: weekly.some(w => w.rate === 100 && w.checklists >= 3) },
+  ];
+
+  return {
+    checklists, avgRate, criticalRate, evidences,
+    streak, bestStreak, activeDays: days.length,
+    level, intoLevel, perLevel, weekly, achievements,
+    recent: mine.slice(-8).reverse(),
+  };
+}
+
+function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize }) {
+  const isSelf = !viewer || viewer.id === targetUser.id;
+  const p = useMemo(
+    () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
+    [completions, targetUser.id, targetUser.name],
+  );
+  const [survey, setSurvey] = useState(null);
+  const [recognitions, setRecognitions] = useState([]);
+
+  useEffect(() => {
+    if (isSelf) {
+      track('operational_id_viewed', { source: 'id', metadata: { level: p.level, checklists: p.checklists, streak: p.streak } });
+    } else {
+      track('collaborator_profile_viewed', { source: 'equipe', unitId: targetUser.unitId || undefined, metadata: { target_user_id: targetUser.id, level: p.level, checklists: p.checklists } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUser.id]);
+
+  // Reconhecimentos recebidos (fecha o loop do H2/H3). Só na visão do próprio colaborador.
+  useEffect(() => {
+    if (!isSelf) return;
+    let cancel = false;
+    fetchRecognitions(targetUser.id).then(list => {
+      if (cancel) return;
+      setRecognitions(list);
+      try {
+        const key = `zc_seen_recognitions_${targetUser.id}`;
+        const seen = new Set(JSON.parse(localStorage.getItem(key) || '[]'));
+        const fresh = list.filter(r => !seen.has(r.id));
+        fresh.forEach(r => track('recognition_received', { source: 'id', metadata: { recognition_id: r.id, metric_ref: r.metricRef } }));
+        if (fresh.length) localStorage.setItem(key, JSON.stringify(list.map(r => r.id).slice(0, 200)));
+      } catch (_) {}
+    });
+    return () => { cancel = true; };
+  }, [isSelf, targetUser.id]);
+
+  const answerSurvey = ans => {
+    if (survey) return;
+    setSurvey(ans);
+    track('survey_answered', { source: 'id', metadata: { question: 'operational_id_motivates', answer: ans } });
+  };
+
+  const initial = (targetUser.name || '?').trim().charAt(0).toUpperCase();
+  const firstName = (targetUser.name || '').split(' ')[0];
+  const earnedCount = p.achievements.filter(a => a.earned).length;
+  const maxWeekRate = Math.max(1, ...p.weekly.map(w => w.rate));
+
+  const Metric = ({ value, label, color }) => (
+    <div style={{ flex: 1, textAlign: 'center', padding: '10px 4px' }}>
+      <p style={{ fontSize: 24, fontWeight: 800, color: color || C.ink, lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: 10.5, color: C.muted, marginTop: 4, fontWeight: 700 }}>{label}</p>
+    </div>
+  );
+
+  if (p.checklists === 0) {
+    return (
+      <div style={{ padding: 20 }}>
+        <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, padding: '28px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 44, marginBottom: 10 }}>🌱</div>
+          <p className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>
+            {isSelf ? 'Seu ID Operacional começa aqui' : `${firstName} ainda não tem histórico`}
+          </p>
+          <p style={{ fontSize: 13, color: C.muted, marginTop: 8, lineHeight: 1.5, maxWidth: 300, marginInline: 'auto' }}>
+            {isSelf
+              ? 'Conclua seu primeiro checklist e comece a construir seu histórico, sua sequência e suas conquistas.'
+              : 'Quando começar a concluir checklists, os indicadores e a evolução aparecem aqui.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '14px 14px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Cabeçalho — identidade + nível */}
+      <div style={{ background: accent, color: 'white', borderRadius: 16, padding: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 999, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="font-display" style={{ fontSize: 18, fontWeight: 800 }}>{targetUser.name}</p>
+            <p style={{ fontSize: 12, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ROLE_LABELS[targetUser.role] || targetUser.role}</p>
+          </div>
+          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+            <p style={{ fontSize: 10, opacity: 0.8, fontWeight: 700 }}>NÍVEL</p>
+            <p className="font-display" style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>{p.level}</p>
+          </div>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, opacity: 0.85, marginBottom: 4 }}>
+            <span>Progresso do nível</span><span>{p.intoLevel}/{p.perLevel} checklists</span>
+          </div>
+          <div style={{ height: 7, background: 'rgba(255,255,255,0.25)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(p.intoLevel / p.perLevel) * 100}%`, background: 'white', borderRadius: 999 }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Reconhecer (visão do líder — H3) */}
+      {!isSelf && (
+        <button onClick={() => onRecognize && onRecognize(p)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 14.5, cursor: 'pointer' }}>
+          🏅 Reconhecer {firstName}
+        </button>
+      )}
+
+      {/* Reconhecimentos recebidos (visão do próprio colaborador) */}
+      {isSelf && recognitions.length > 0 && (
+        <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.success}55`, padding: 14 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>🏅 Reconhecimentos recebidos</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {recognitions.slice(0, 5).map(r => (
+              <div key={r.id} style={{ borderLeft: `3px solid ${C.success}`, paddingLeft: 10 }}>
+                {r.metricLabel && <p style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>{r.metricLabel}</p>}
+                {r.message && <p style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.4 }}>"{r.message}"</p>}
+                <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>— {r.fromUserName || 'Liderança'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Indicadores */}
+      <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, display: 'flex' }}>
+        <Metric value={p.checklists} label="Checklists" />
+        <Metric value={`${p.avgRate}%`} label="Conclusão" color={p.avgRate >= 80 ? C.success : p.avgRate >= 50 ? '#C6842A' : C.critical} />
+        <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
+        <Metric value={`${p.streak}${p.streak ? '🔥' : ''}`} label="Sequência" />
+      </div>
+
+      {/* Evolução */}
+      <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
+        <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Sua evolução (conclusão por semana)</p>
+        {p.weekly.length === 0 ? (
+          <p style={{ fontSize: 12, color: C.mutedLight }}>Ainda sem histórico semanal.</p>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 96 }}>
+            {p.weekly.map(w => (
+              <div key={w.week} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: C.muted }}>{w.rate}%</span>
+                <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'flex-end' }}>
+                  <div style={{ width: '100%', height: `${Math.max(6, (w.rate / maxWeekRate) * 64)}px`, background: w.rate >= 80 ? C.success : w.rate >= 50 ? accent : C.critical, borderRadius: '6px 6px 0 0' }} />
+                </div>
+                <span style={{ fontSize: 9, color: C.mutedLight }}>{w.week.slice(8, 10)}/{w.week.slice(5, 7)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Conquistas */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, paddingInline: 2 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conquistas</p>
+          <p style={{ fontSize: 11, fontWeight: 700, color: C.muted }}>{earnedCount}/{p.achievements.length}</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {p.achievements.map(a => (
+            <div key={a.id} style={{ background: 'white', borderRadius: 12, border: `1px solid ${a.earned ? `${C.success}55` : C.border}`, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', opacity: a.earned ? 1 : 0.5 }}>
+              <span style={{ fontSize: 22, filter: a.earned ? 'none' : 'grayscale(1)' }}>{a.icon}</span>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>{a.title}</p>
+                <p style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.3 }}>{a.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Histórico recente */}
+      {p.recent.length > 0 && (
+        <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Histórico recente</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {p.recent.map(c => {
+              const done = (c.items || []).filter(i => i.done).length;
+              const total = (c.items || []).length;
+              const rate = total ? Math.round((done / total) * 100) : 0;
+              return (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 999, background: rate >= 80 ? C.success : rate >= 50 ? '#C6842A' : C.critical, flexShrink: 0 }} />
+                  <p style={{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{truncName(c.templateName, 28)}</p>
+                  <span style={{ fontSize: 11, color: C.muted }}>{c.date.slice(8, 10)}/{c.date.slice(5, 7)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: rate >= 80 ? C.success : C.muted, width: 34, textAlign: 'right' }}>{rate}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Micro-pergunta qualitativa (§10) — só na visão do próprio colaborador */}
+      {isSelf && (
+        <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
+          {survey ? (
+            <p style={{ fontSize: 13, color: C.success, fontWeight: 700 }}>Obrigado pelo retorno! 🙌</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: 600 }}>Ver sua evolução aqui te motiva?</p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
+                <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------ Equipe + Reconhecimento (H3) ------------------------------ */
+// Âncoras de métrica derivadas do perfil — o reconhecimento fica ancorado num dado objetivo.
+function buildMetricAnchors(p) {
+  const a = [];
+  if (p.avgRate >= 90) a.push({ ref: 'conclusao_alta', label: `Alta conclusão (${p.avgRate}%)` });
+  if (p.criticalRate != null && p.criticalRate >= 95) a.push({ ref: 'guardiao_critico', label: 'Itens críticos sempre em dia' });
+  if (p.bestStreak >= 5) a.push({ ref: 'constancia', label: `Constância (${p.bestStreak} dias seguidos)` });
+  if (p.evidences >= 20) a.push({ ref: 'evidencias', label: 'Provas sempre em dia' });
+  p.achievements.filter(x => x.earned).forEach(x => a.push({ ref: `ach_${x.id}`, label: x.title }));
+  const seen = new Set();
+  const out = [];
+  for (const x of a) { if (!seen.has(x.ref)) { seen.add(x.ref); out.push(x); } }
+  return out.slice(0, 6);
+}
+
+function RecognizeModal({ target, profile, currentUser, unitId, companyId, accent, onClose, onSent }) {
+  const anchors = buildMetricAnchors(profile);
+  const [metricRef, setMetricRef] = useState(anchors[0]?.ref ?? '');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const firstName = (target.name || '').split(' ')[0];
+
+  const send = async () => {
+    setSending(true);
+    const anchor = anchors.find(a => a.ref === metricRef);
+    const ok = await sendRecognition({
+      companyId, fromUserId: currentUser.id, fromUserName: currentUser.name,
+      toUserId: target.id, toUserName: target.name, unitId,
+      metricRef: metricRef || null, metricLabel: anchor?.label || null, message: message.trim() || null,
+    });
+    track('recognition_sent', { source: 'equipe', unitId: unitId || undefined, metadata: { to_user_id: target.id, has_metric: !!metricRef, metric_ref: metricRef || null } });
+    setSending(false);
+    onSent(ok);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <p className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>🏅 Reconhecer {firstName}</p>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+
+        <p style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ancorar numa métrica</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {anchors.map(a => (
+            <button key={a.ref} onClick={() => setMetricRef(a.ref)}
+              style={{ textAlign: 'left', padding: '11px 12px', borderRadius: 10, border: `1.5px solid ${metricRef === a.ref ? accent : C.border}`, background: metricRef === a.ref ? `${accent}12` : 'white', color: C.ink, fontSize: 13, fontWeight: metricRef === a.ref ? 800 : 600, cursor: 'pointer' }}>
+              {metricRef === a.ref ? '● ' : '○ '}{a.label}
+            </button>
+          ))}
+          <button onClick={() => setMetricRef('')}
+            style={{ textAlign: 'left', padding: '11px 12px', borderRadius: 10, border: `1.5px solid ${metricRef === '' ? accent : C.border}`, background: metricRef === '' ? `${accent}12` : 'white', color: C.muted, fontSize: 13, fontWeight: metricRef === '' ? 800 : 600, cursor: 'pointer' }}>
+            {metricRef === '' ? '● ' : '○ '}Reconhecimento livre (sem métrica)
+          </button>
+        </div>
+
+        <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Mensagem (opcional)"
+          rows={3} style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, resize: 'none', marginBottom: 14, background: 'white', color: C.ink }} />
+
+        <button onClick={send} disabled={sending}
+          style={{ width: '100%', padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 15, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.7 : 1 }}>
+          {sending ? 'Enviando…' : 'Enviar reconhecimento'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits }) {
+  const [selected, setSelected] = useState(null);
+  const [recognizeFor, setRecognizeFor] = useState(null);
+  const [toast, setToast] = useState('');
+
+  const team = useMemo(() => {
+    const list = (users || []).filter(u => u.role === 'colaborador' && !u.suspended);
+    const scoped = canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
+    return scoped
+      .map(u => ({ user: u, profile: computeOperationalProfile(completions, u.id, u.name) }))
+      .sort((a, b) => b.profile.checklists - a.profile.checklists);
+  }, [users, completions, currentUser, canSeeAllUnits]);
+
+  // Perfil do colaborador selecionado (visão do líder)
+  if (selected) {
+    return (
+      <div>
+        <BackBar onBack={() => setSelected(null)} label="Voltar para a equipe" accent={accent} />
+        <OperationalIdView
+          targetUser={selected} viewer={currentUser} completions={completions} accent={accent}
+          onRecognize={profile => setRecognizeFor({ user: selected, profile })}
+        />
+        {recognizeFor && (
+          <RecognizeModal
+            target={recognizeFor.user} profile={recognizeFor.profile}
+            currentUser={currentUser} unitId={selected.unitId} companyId={currentUser.companyId} accent={accent}
+            onClose={() => setRecognizeFor(null)}
+            onSent={ok => { setRecognizeFor(null); setToast(ok ? 'Reconhecimento enviado 🏅' : 'Não foi possível enviar agora.'); setTimeout(() => setToast(''), 2500); }}
+          />
+        )}
+        {toast && (
+          <div style={{ position: 'fixed', bottom: 'calc(72px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 220, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: 700 }}>{toast}</div>
+        )}
+      </div>
+    );
+  }
+
+  // Lista da equipe
+  return (
+    <div style={{ padding: '14px 14px 28px' }}>
+      <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+        Sua equipe · reconheça pelo desempenho
+      </p>
+      {team.length === 0 ? (
+        <EmptyState title="Nenhum colaborador" desc="Não há colaboradores ativos no seu escopo." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {team.map(({ user, profile }) => (
+            <button key={user.id} onClick={() => { setSelected(user); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 999, background: `${accent}18`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, flexShrink: 0 }}>
+                {(user.name || '?').trim().charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, fontWeight: 800, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                <p style={{ fontSize: 11.5, color: C.muted }}>
+                  {profile.checklists} checklists · {profile.avgRate}% conclusão{profile.streak ? ` · ${profile.streak}🔥` : ''}
+                </p>
+              </div>
+              <ChevronRight size={18} color={C.mutedLight} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppInner() {
   const { isOnline, pendingSync, syncing } = useNetworkStatus();
   const [unitId, setUnitId] = useState('ibr1');
@@ -5431,6 +6344,8 @@ function AppInner() {
   const [showRequestsPopup, setShowRequestsPopup] = useState(false);
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showBriefing, setShowBriefing] = useState(false);
+  const [briefingSource, setBriefingSource] = useState('auto');
 
   // ── Multi-tenant company data ──────────────────────────────────────────────
   const [company, setCompany] = useState(null);
@@ -5449,6 +6364,30 @@ function AppInner() {
         match: tpl => tpl.name.toLowerCase().includes(t.name.toLowerCase()),
       }))
     : CHECKLIST_TYPE_ORDER;
+
+  // ── Daily Briefing (H1) ────────────────────────────────────────────────────
+  const briefing = useMemo(() => {
+    if (!templates || !completions) return null;
+    const activeUnits = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
+    const scope = currentUser?.unitId ?? null;
+    return buildBriefing(completions, templates, closures || [], activeUnits, scope);
+  }, [templates, completions, closures, dynamicUnits, currentUser?.unitId]);
+
+  // Abre automaticamente 1×/dia para papéis de gestão (o sinal de hábito do H1).
+  useEffect(() => {
+    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
+    if (!templates || !completions) return;
+    try {
+      const key = `zc_briefing_seen_${currentUser.id}_${todayStr()}`;
+      if (!localStorage.getItem(key)) { setBriefingSource('auto'); setShowBriefing(true); }
+    } catch (_) {}
+  }, [currentUser?.id, templates, completions]);
+
+  const closeBriefing = () => {
+    try { if (currentUser) localStorage.setItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+    setShowBriefing(false);
+  };
+  const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
 
   // Check for pending requests when gestao logs in
   useEffect(() => {
@@ -5608,6 +6547,39 @@ function AppInner() {
     setCompletions(prev => [...(prev || []), record].slice(-500));
     // Then push to Supabase (queued offline if needed)
     try { await syncSaveCompletion(record); } catch (e) { console.error('saveCompletion', e); }
+
+    // Instrumentação: 1 evento de checklist + 1 por tarefa concluída.
+    try {
+      const items = Array.isArray(record.items) ? record.items : [];
+      const done = items.filter(i => i.done).length;
+      const total = items.length;
+      track('checklist_completed', {
+        source: 'checklist',
+        checklistId: record.templateId,
+        userId: record.operatorUserId,
+        unitId: record.unitId,
+        metadata: {
+          template_name: record.templateName,
+          sector: record.sector,
+          shift: record.shift,
+          date: record.date,
+          done, total,
+          rate: total ? Math.round((done / total) * 100) : 0,
+          critical_missed: items.filter(i => i.critical && !i.done).length,
+        },
+      });
+      for (const it of items) {
+        if (!it.done) continue;
+        track('task_completed', {
+          source: 'checklist',
+          checklistId: record.templateId,
+          taskId: it.id,
+          userId: record.operatorUserId,
+          unitId: record.unitId,
+          metadata: { critical: !!it.critical, has_photo: !!it.photo },
+        });
+      }
+    } catch (e) { console.warn('[track] completion instrumentation failed (ignored)', e); }
   };
 
   const saveCompletionsBulk = async nextCompletions => {
@@ -5682,6 +6654,10 @@ function AppInner() {
           setUnitId(u.unitId || 'ibr1');
           setTab(ROLE_TABS[u.role][0]);
 
+          // Instrumentação: abre a sessão de tracking e registra o login.
+          setTrackSession(u);
+          track('login', { source: 'login', metadata: { role: u.role } });
+
           // Load company data for this user
           if (u.companyId || u.company_id) {
             const cid = u.companyId || u.company_id;
@@ -5750,7 +6726,7 @@ function AppInner() {
       <Header
         unit={unit} onSelectUnit={setUnitId}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
-        onLogout={() => setCurrentUser(null)}
+        onLogout={() => { clearTrackSession(); setCurrentUser(null); }}
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
         company={company}
@@ -5759,6 +6735,22 @@ function AppInner() {
       {/* Tela de boas-vindas — primeiro acesso */}
       {showWelcome && (
         <WelcomeScreen role={currentUser.role} onClose={() => setShowWelcome(false)} />
+      )}
+
+      {/* Daily Briefing (H1) — primeira tela do dia para gestão */}
+      {showBriefing && !showWelcome && briefing && (
+        <DailyBriefing
+          briefing={briefing}
+          currentUser={currentUser}
+          accent={unit.color}
+          openSource={briefingSource}
+          onClose={closeBriefing}
+          onNavigate={(targetUnitId, targetTab) => {
+            if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);
+            if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
+            closeBriefing();
+          }}
+        />
       )}
       {showRequestsPopup && currentUser?.role === 'gestao' && !popupMinimized && (
         <div style={{
@@ -5825,10 +6817,20 @@ function AppInner() {
 
 
       <main style={{ flex: 1 }} key={unitId}>
+        {MANAGER_ROLES.includes(currentUser.role) && !showBriefing && (
+          <div style={{ padding: '10px 14px 0' }}>
+            <button onClick={openBriefing}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: 12, border: `1px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              ☀️ Ver briefing do dia
+            </button>
+          </div>
+        )}
         {activeTab === 'executar' && (
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} />
         )}
         {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} />}
+        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} />}
+        {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
           <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} />
         )}
