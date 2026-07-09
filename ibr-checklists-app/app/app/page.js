@@ -4028,9 +4028,13 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
     const load = async () => {
       try {
         const { supabase } = await import('../../lib/supabase');
+        // Nunca selecionar `pin`: a anon key está no bundle e o PIN é sensível.
+        // O anon não tem mais SELECT nessa coluna (ver migração
+        // 20260709_secure_user_requests.sql); na aprovação o PIN é copiado
+        // server-side pela RPC create_user_from_request.
         const { data, error } = await supabase
           .from('user_requests')
-          .select('*')
+          .select('id, name, cpf, phone, email, unit_id, selfie_path, status, note, role, sector_id, created_at, reviewed_at, reviewed_by')
           .eq('status', 'pendente')
           .order('created_at', { ascending: true });
         if (error) console.warn('Requests load error:', error);
@@ -4046,9 +4050,11 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
       const { supabase } = await import('../../lib/supabase');
       const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
 
-      // Merge edits into the request
+      // Merge edits into the request. `req.pin` não existe mais no cliente (o
+      // anon não pode ler a coluna); `finalPin` só tem valor se a gestão digitou
+      // um PIN novo no modal — nesse caso ele sobrescreve o PIN da solicitação.
       const finalName = editingReq.name ?? req.name;
-      const finalPin  = editingReq.pin  ?? req.pin;
+      const finalPin  = editingReq.pin || '';
       const finalNote = editingReq.note !== undefined ? `[ALTERAÇÃO DE DADOS] ${editingReq.note}` : req.note;
 
       if (!isAlteracao) {
@@ -4057,14 +4063,26 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
           ? (approvalUnits.length === 0 ? null : approvalUnits.length === 1 ? approvalUnits[0] : approvalUnits.join(','))
           : (approvalUnit || req.unit_id);
 
+        // Sem `pin` no objeto do cliente — o PIN nunca volta ao bundle.
         const newUser = {
           id: uid(),
           name: finalName,
-          pin: finalPin,
           role: approvalRole,
           unitId: ['gestao'].includes(approvalRole) ? null : finalUnitId,
           sectorId: approvalSector,
         };
+        // Cria o usuário server-side copiando o PIN da solicitação (ou o
+        // override digitado pela gestão). Roda ANTES do onSaveUsers para que o
+        // upsert-sem-pin que vem depois preserve o PIN no ON CONFLICT.
+        await supabase.rpc('create_user_from_request', {
+          p_request_id: req.id,
+          p_user_id: newUser.id,
+          p_name: newUser.name,
+          p_role: newUser.role,
+          p_unit_id: newUser.unitId ?? null,
+          p_sector_id: newUser.sectorId ?? null,
+          p_pin: finalPin || null,
+        });
         onSaveUsers([...users, newUser]);
       } else {
         // Apply changes to existing user
@@ -4098,11 +4116,12 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
         }
       }
 
-      // Update request status
+      // Update request status. Só reescreve `pin` se a gestão informou um novo;
+      // caso contrário o PIN já gravado é mantido intacto.
       await supabase.from('user_requests').update({
         status: 'aprovado',
         name: finalName,
-        pin: finalPin || req.pin,
+        ...(finalPin ? { pin: finalPin } : {}),
         note: finalNote,
         role: isAlteracao ? undefined : approvalRole,
         sector_id: isAlteracao ? undefined : approvalSector,
@@ -4205,15 +4224,18 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                 { label: 'CPF', field: 'cpf', value: req.cpf },
                 { label: 'Telefone / WhatsApp', field: 'phone', value: req.phone },
                 { label: 'E-mail', field: 'email', value: req.email },
-                { label: 'PIN escolhido', field: 'pin', value: req.pin },
+                // O PIN não é mais legível pelo anon — mostra vazio com dica.
+                // Em branco = mantém o PIN escolhido no cadastro; digitar = substitui.
+                { label: 'PIN de acesso', field: 'pin', value: '', placeholder: '•••• (mantido — digite para alterar)' },
                 { label: 'Loja', field: null, value: unitObj?.name || req.unit_id },
-              ].map(({ label, field, value }, i) => (
+              ].map(({ label, field, value, placeholder }, i) => (
                 <div key={label} style={{ padding: '10px 14px', borderBottom: i < 5 ? `1px solid ${C.border}` : 'none' }}>
                   <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
                   {field ? (
                     <input
                       value={editingReq[field] !== undefined ? editingReq[field] : (value || '')}
                       onChange={e => setEditingReq(prev => ({ ...prev, [field]: e.target.value }))}
+                      placeholder={placeholder}
                       style={{ width: '100%', fontSize: 14, fontWeight: 700, color: C.ink, background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
                     />
                   ) : (
@@ -5458,7 +5480,7 @@ function AppInner() {
         const { supabase } = await import('../../lib/supabase');
         const { count } = await supabase
           .from('user_requests')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'pendente');
         if (count > 0) {
           setPendingRequestsCount(count);
