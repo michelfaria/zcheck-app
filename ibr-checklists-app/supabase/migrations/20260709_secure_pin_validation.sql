@@ -94,6 +94,11 @@ begin
 end;
 $$;
 
+-- A função precisa pertencer a um papel que dê bypass no RLS de `users`
+-- (as policies existentes só concedem acesso ao papel `anon`). Sem isto, o
+-- SELECT interno roda sob RLS, não acha a linha e retorna sempre 'not_found'.
+alter function public.validate_pin(text, text) owner to postgres;
+
 -- Só anon/authenticated podem executar (funções nascem com EXECUTE p/ public).
 revoke all on function public.validate_pin(text, text) from public;
 grant execute on function public.validate_pin(text, text) to anon, authenticated;
