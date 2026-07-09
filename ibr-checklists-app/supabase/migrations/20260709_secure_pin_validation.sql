@@ -106,12 +106,12 @@ grant execute on function public.validate_pin(text, text) to anon, authenticated
 -- DEFINIR um PIN (cadastro/onboarding/edição), mas não LER.
 revoke select on public.users from anon, authenticated;
 
+-- Colunas conferidas contra o schema real (information_schema.column_privileges):
+-- id, name, role, unit_id, sector_id, company_id, suspended, created_at,
+-- updated_at, pin. Reconcedemos todas menos `pin`.
 grant select
-  (id, name, role, unit_id, sector_id, company_id, suspended, updated_at)
+  (id, name, role, unit_id, sector_id, company_id, suspended, created_at, updated_at)
   on public.users to anon, authenticated;
-
--- Nota: se a tabela `users` tiver outras colunas não-sensíveis que o app leia
--- (ex.: created_at), acrescente-as na lista acima. `pin` deve ficar de fora.
 
 
 -- ── (4) Rate-limit à prova de adulteração ───────────────────────────────────
