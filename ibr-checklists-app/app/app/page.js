@@ -6040,6 +6040,21 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
     return () => { cancel = true; };
   }, [isSelf, targetUser.id]);
 
+  // Medalhas conquistadas (H5) — emite badge_earned quando o colaborador vê
+  // uma conquista nova pela primeira vez. Só na visão do próprio colaborador.
+  useEffect(() => {
+    if (!isSelf) return;
+    try {
+      const key = `zc_seen_badges_${targetUser.id}`;
+      const seen = new Set(JSON.parse(localStorage.getItem(key) || '[]'));
+      const earned = p.achievements.filter(a => a.earned);
+      const fresh = earned.filter(a => !seen.has(a.id));
+      fresh.forEach(a => track('badge_earned', { source: 'id', metadata: { badge_id: a.id, checklists: p.checklists } }));
+      if (fresh.length) localStorage.setItem(key, JSON.stringify(earned.map(a => a.id)));
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSelf, targetUser.id]);
+
   const answerSurvey = ans => {
     if (survey) return;
     setSurvey(ans);
