@@ -622,6 +622,44 @@ export async function hasPushPermission() {
   return Notification.permission === 'granted';
 }
 
+// ── Recognitions (H3) ──────────────────────────────────────────────────────────
+
+export async function sendRecognition(rec) {
+  try {
+    const { error } = await supabase.from('recognitions').insert({
+      company_id: rec.companyId ?? null,
+      from_user_id: rec.fromUserId,
+      from_user_name: rec.fromUserName ?? null,
+      to_user_id: rec.toUserId,
+      to_user_name: rec.toUserName ?? null,
+      unit_id: rec.unitId ?? null,
+      metric_ref: rec.metricRef ?? null,
+      metric_label: rec.metricLabel ?? null,
+      message: rec.message ?? null,
+    });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.warn('sendRecognition failed', e); return false; }
+}
+
+export async function fetchRecognitions(toUserId) {
+  try {
+    const { data, error } = await supabase
+      .from('recognitions')
+      .select('*')
+      .eq('to_user_id', toUserId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id, createdAt: r.created_at,
+      fromUserName: r.from_user_name,
+      metricRef: r.metric_ref, metricLabel: r.metric_label,
+      message: r.message,
+    }));
+  } catch (e) { console.warn('fetchRecognitions failed', e); return []; }
+}
+
 // ── Multi-tenant: Company, Units, Sectors, Checklist Types ─────────────────
 
 export async function fetchCompany(slug, id) {
