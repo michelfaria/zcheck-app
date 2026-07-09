@@ -106,24 +106,41 @@ export async function fetchUsers(seedUsers) {
 export async function saveUsers(users) {
   await cache.set('ibr_users', users);
   try {
-    // Fetch current PINs from Supabase to preserve them (PIN is stripped from in-memory objects for security)
-    const { data: existing } = await supabase.from('users').select('id, pin');
-    const pinMap = Object.fromEntries((existing || []).map(u => [u.id, u.pin]));
-
-    const rows = users.map(u => ({
+    const baseRow = u => ({
       id: u.id,
       name: u.name,
-      pin: u.pin || pinMap[u.id] || '',
       role: u.role,
       unit_id: u.unitId ?? null,
       sector_id: u.sectorId ?? null,
       suspended: u.suspended ?? false,
       updated_at: new Date().toISOString(),
-    }));
+    });
 
-    await supabase.from('users').upsert(rows, { onConflict: 'id' });
+    // The anon role can no longer read the `pin` column, so we never fetch PINs
+    // back to preserve them. Instead: rows that carry a new PIN are upserted
+    // WITH the pin column; rows without a PIN are upserted WITHOUT it, so the
+    // ON CONFLICT UPDATE leaves the stored PIN untouched. (New users always
+    // arrive with a PIN — the forms require one — so no INSERT ever lands a
+    // null PIN.)
+    const withPin = users.filter(u => u.pin);
+    const withoutPin = users.filter(u => !u.pin);
 
-    // Only delete users that were explicitly removed (exist in DB but not in our list)
+    if (withPin.length) {
+      await supabase.from('users').upsert(
+        withPin.map(u => ({ ...baseRow(u), pin: u.pin })),
+        { onConflict: 'id' }
+      );
+    }
+    if (withoutPin.length) {
+      await supabase.from('users').upsert(
+        withoutPin.map(baseRow),
+        { onConflict: 'id' }
+      );
+    }
+
+    // Only delete users that were explicitly removed (exist in DB but not in
+    // our list). Diff against ids only — reading ids is not sensitive.
+    const { data: existing } = await supabase.from('users').select('id');
     const currentIds = new Set(users.map(u => u.id));
     const toDelete = (existing || []).filter(u => !currentIds.has(u.id)).map(u => u.id);
     if (toDelete.length > 0) {
@@ -395,7 +412,7 @@ export async function seedSupabaseIfEmpty(seedTemplates, seedUsers) {
       await saveTemplates(seedTemplates);
     }
     const { count: userCount } = await supabase
-      .from('users').select('*', { count: 'exact', head: true });
+      .from('users').select('id', { count: 'exact', head: true });
     console.log('[Supabase] User count:', userCount);
     if (userCount === 0) {
       console.log('[Supabase] Seeding users...');
@@ -497,57 +514,21 @@ export function subscribeToCompletions(unitId, onNew) {
  */
 export async function validatePin(userId, pin) {
   try {
-    // Check rate limit: count recent failed attempts in the last 10 minutes
-    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { count } = await supabase
-      .from('login_attempts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('success', false)
-      .gte('attempted_at', tenMinsAgo);
+    // Everything happens server-side in a SECURITY DEFINER RPC: rate-limit
+    // check, PIN comparison and login_attempts logging. The PIN column is not
+    // readable by the anon role, so it never reaches the client bundle.
+    // The RPC returns the same shape the caller expects:
+    //   { ok: false, reason: 'rate_limited' | 'wrong_pin' | 'not_found' }
+    //   { ok: true,  user: { id, name, role, unitId, sectorId, companyId, suspended } }
+    const { data, error } = await supabase.rpc('validate_pin', {
+      p_user_id: userId,
+      p_pin: pin,
+    });
 
-    if (count >= 5) {
-      return { ok: false, reason: 'rate_limited' };
-    }
-
-    // Validate PIN via direct query (PIN fetched server-side)
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, name, role, unit_id, sector_id, pin, company_id, suspended')
-      .eq('id', userId)
-      .single();
-
-    if (error?.code === 'PGRST116') return { ok: false, reason: 'not_found' };
     if (error) throw error;
-    if (!data) return { ok: false, reason: 'not_found' };
-
-    if (data.pin !== pin) {
-      // Log failed attempt
-      await supabase.from('login_attempts').insert({
-        user_id: userId, success: false,
-      }).then(() => {});
-      return { ok: false, reason: 'wrong_pin' };
-    }
-
-    // Log success
-    await supabase.from('login_attempts').insert({
-      user_id: userId, success: true,
-    }).then(() => {});
-
-    return {
-      ok: true,
-      user: {
-        id: data.id,
-        name: data.name,
-        role: data.role,
-        unitId: data.unit_id,
-        sectorId: data.sector_id ?? null,
-        companyId: data.company_id ?? 'ibr',
-        suspended: data.suspended ?? false,
-      },
-    };
+    if (!data) return { ok: false, reason: 'network_error' };
+    return data;
   } catch (e) {
-    if (e?.message?.includes('rate_limited')) return { ok: false, reason: 'rate_limited' };
     console.warn('validatePin error:', e);
     return { ok: false, reason: 'network_error' };
   }
