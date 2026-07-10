@@ -4,16 +4,12 @@ import { useState, useRef, useEffect } from 'react';
 // Cliente anônimo, de propósito: quem se cadastra ainda não tem conta.
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supabase';
 
+import { C } from '../../lib/tokens';
 const UNITS = [
   { id: 'ibr1', name: 'IBR1' },
   { id: 'ibr2', name: 'IBR2' },
   { id: 'ibr3', name: 'IBR3' },
 ];
-
-const C = {
-  ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
-  muted: '#6B8299', success: '#31C85A', critical: '#D1462F',
-};
 
 const inputStyle = {
   width: '100%', fontSize: 15, fontWeight: 600, color: '#063C5C',

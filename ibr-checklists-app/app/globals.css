@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Espelho de lib/tokens.js — mudou lá, mude aqui. Vários destes valores
+   reprovam em WCAG AA hoje; ver os números no comentário daquele arquivo. */
+:root {
+  --bg: #F7F9FB;
+  --border: #E2EAF0;
+  --ink: #063C5C;
+  --muted: #6B8299;
+  --muted-light: #A8BCC8;
+  --success: #31C85A;
+  --warning: #F5A623;
+  --critical: #D1462F;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;

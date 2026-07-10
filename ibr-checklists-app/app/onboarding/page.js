@@ -2,14 +2,10 @@
 
 import { useState } from 'react';
 
+import { C } from '../../lib/tokens';
 // Esta página não fala mais com o Supabase. Criar empresa é operação de
 // plataforma: acontece antes de existir qualquer usuário do tenant, então roda
 // no servidor, em /api/admin/provision, com a service_role e uma transação só.
-
-const C = {
-  ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
-  muted: '#6B8299', success: '#31C85A', critical: '#D1462F',
-};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const slug = (name) => name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');

@@ -5,11 +5,7 @@ import { authedSupabase, setSessionToken } from '../../lib/supabase';
 import { validatePin, fetchPublicUsers, fetchCompany } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
 
-const C = {
-  ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
-  muted: '#6B8299', success: '#31C85A', critical: '#D1462F',
-};
-
+import { C } from '../../lib/tokens';
 // Quem pode importar é quem pode gerenciar templates dentro do app (ROLE_TABS).
 const IMPORT_ROLES = ['gerencia', 'gestao'];
 
