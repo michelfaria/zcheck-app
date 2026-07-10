@@ -6472,27 +6472,13 @@ function AppInner() {
     return buildBriefing(completions, templates, closures || [], activeUnits, scope);
   }, [templates, completions, closures, dynamicUnits, currentUser?.unitId]);
 
-  // Abre automaticamente 1×/dia para papéis de gestão (o sinal de hábito do H1).
-  useEffect(() => {
-    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
-    if (!templates || !completions) return;
-    try {
-      const key = `zc_briefing_seen_${currentUser.id}_${todayStr()}`;
-      if (!localStorage.getItem(key)) { setBriefingSource('auto'); setShowBriefing(true); }
-    } catch (_) {}
-  }, [currentUser?.id, templates, completions]);
-
-  const closeBriefing = () => {
-    try { if (currentUser) localStorage.setItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
-    setShowBriefing(false);
-  };
-  const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
-
   // ── Action plans (H1) — a memória do briefing entre dias ──────────────────
+  // Declarado ANTES do efeito de auto-abertura, que decide com base nos planos.
   const [actionPlans, setActionPlans] = useState([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
   useEffect(() => {
-    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
-    fetchActionPlans(currentUser.id).then(setActionPlans);
+    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) { setPlansLoaded(false); return; }
+    fetchActionPlans(currentUser.id).then(p => { setActionPlans(p); setPlansLoaded(true); });
   }, [currentUser?.id]);
 
   const handleCreatePlan = async rec => {
@@ -6510,6 +6496,36 @@ function AppInner() {
     if (ok) setActionPlans(prev => prev.filter(p => p.id !== plan.id));
     return ok;
   };
+
+  // Abre automaticamente 1×/dia para papéis de gestão — MAS só quando há sinal
+  // real. Takeover em dia de "tudo certo" treina o gestor a fechar no reflexo,
+  // e esse condicionamento não se desfaz (anti-fadiga, revisão de produto).
+  // O botão manual continua sempre lá; abrir por vontade própria (source=
+  // manual) é o sinal-ouro de hábito que o H1 mede.
+  const autoOpenChecked = useRef(null);
+  useEffect(() => {
+    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
+    if (!briefing || !plansLoaded) return;
+    // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
+    // do trabalho — aparece no próprio painel e no briefing manual.
+    if (autoOpenChecked.current === currentUser.id) return;
+    autoOpenChecked.current = currentUser.id;
+    try {
+      const key = `zc_briefing_seen_${currentUser.id}_${todayStr()}`;
+      if (localStorage.getItem(key)) return;
+      const hasSignal =
+        briefing.recommendations.some(r => r.type !== 'all_good') ||
+        (briefing.insight && briefing.insight.type !== 'stable') ||
+        actionPlans.some(p => p.briefingDate !== briefing.date);
+      if (hasSignal) { setBriefingSource('auto'); setShowBriefing(true); }
+    } catch (_) {}
+  }, [currentUser?.id, briefing, plansLoaded, actionPlans]);
+
+  const closeBriefing = () => {
+    try { if (currentUser) localStorage.setItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+    setShowBriefing(false);
+  };
+  const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
 
   // Check for pending requests when gestao logs in
   useEffect(() => {
