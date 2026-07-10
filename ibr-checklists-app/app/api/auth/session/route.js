@@ -48,5 +48,13 @@ export async function POST(request) {
     return json(data ?? { ok: false, reason: 'not_found' }, 401);
   }
 
+  // `validate_pin` devolve ok:true para suspensos — a suspensão vem só como um
+  // campo no payload. Sem esta checagem, um POST direto nesta rota com o PIN de
+  // um suspenso devolve um token válido, e o RLS escopa por company_id, nunca
+  // por `suspended`. A suspensão seria puramente cosmética.
+  if (data.user?.suspended) {
+    return json({ ok: false, reason: 'suspended' }, 403);
+  }
+
   return json({ ...data, token: mintSessionToken(data.user, { secret, issuer: SUPABASE_URL }) }, 200);
 }

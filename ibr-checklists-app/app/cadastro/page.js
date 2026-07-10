@@ -335,18 +335,14 @@ function StatusChecker({ cpf: initialCpf } = {}) {
     setLoading(true);
     try {
       const raw = cpf.trim().replace(/\D/g, ''); // digits only: "12345678909"
-      const formatted = raw.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'); // "123.456.789-09"
 
-      // Try both formatted and raw CPF since storage format may vary
-      const { data } = await supabase
-        .from('user_requests')
-        .select('status, name, unit_id, created_at')
-        .or(`cpf.eq.${formatted},cpf.eq.${raw}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // `user_requests` não é mais legível pela chave anônima (o CPF e o caminho
+      // da selfie estavam expostos). Este RPC devolve só o status, exigindo o
+      // CPF completo. O RPC normaliza os dois formatos de armazenamento.
+      const { data, error } = await supabase.rpc('user_request_status', { p_cpf: raw });
+      if (error) throw error;
 
-      setStatus(data ? data.status : 'not_found');
+      setStatus(data?.[0]?.status ?? 'not_found');
       setChecked(true);
     } catch {
       setStatus('not_found');

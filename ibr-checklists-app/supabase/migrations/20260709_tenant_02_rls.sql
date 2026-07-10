@@ -122,6 +122,31 @@ $$;
 revoke all on function public.public_users(text) from public;
 grant execute on function public.public_users(text) to anon, authenticated;
 
+-- ── Status da solicitação de cadastro ────────────────────────────────────────
+-- A tela "verificar status" do /cadastro é usada por quem ainda não tem conta,
+-- então precisa funcionar sem token. Antes ela lia `user_requests` direto pela
+-- chave anônima — que é justamente a leitura que a migration 03 revoga, porque
+-- expunha nome, CPF e selfie_path de todos os cadastros pendentes.
+--
+-- Este RPC exige o CPF completo e devolve só o status. Aceita os dois formatos
+-- de armazenamento (com e sem pontuação).
+create or replace function public.user_request_status(p_cpf text)
+returns table (status text)
+language sql
+security definer
+set search_path = public
+as $$
+  select r.status
+    from public.user_requests r
+   where regexp_replace(coalesce(r.cpf, ''), '\D', '', 'g') = regexp_replace(p_cpf, '\D', '', 'g')
+     and length(regexp_replace(p_cpf, '\D', '', 'g')) = 11
+   order by r.created_at desc
+   limit 1
+$$;
+
+revoke all on function public.user_request_status(text) from public;
+grant execute on function public.user_request_status(text) to anon, authenticated;
+
 -- ============================================================================
 -- VERIFICAÇÃO — o app deve continuar funcionando EXATAMENTE como antes.
 --
@@ -133,6 +158,12 @@ grant execute on function public.public_users(text) to anon, authenticated;
 --
 --   select count(*) from public.public_users('ibr');              -- > 0
 --   select count(*) from public.public_users('__inexistente__');  -- 0
+--
+-- (b2) O RPC de status aceita CPF com e sem pontuação, e exige 11 dígitos:
+--
+--   select * from public.user_request_status('12345678909');
+--   select * from public.user_request_status('123.456.789-09');  -- mesmo resultado
+--   select count(*) from public.user_request_status('123');      -- 0 (curto demais)
 --
 -- (c) Do terminal, com a anon key, as leituras AINDA funcionam (política
 --     temporária). Se alguma destas falhar agora, algo saiu errado — corrija

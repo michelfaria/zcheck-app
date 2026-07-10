@@ -2264,8 +2264,7 @@ function NotificationHistory({ templates, last7, today, unit }) {
     if (log.length > 0) return;
     setLoading(true);
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       const days = [today, ...last7];
       const keys = days.map(d => `notified_${d}`);
       const { data } = await supabase
@@ -3380,8 +3379,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
   const handleDelete = async id => {
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       await supabase.from('templates').delete().eq('id', id);
     } catch(e) {}
     onSaveTemplates(templates.filter(t => t.id !== id));
@@ -4139,8 +4137,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
     if (currentUser?.role !== 'gestao') return;
     const load = async () => {
       try {
-        const { authedSupabase } = await import('../../lib/supabase');
-        const supabase = authedSupabase();
+        const supabase = (await import('../../lib/supabase')).authedSupabase();
         // Nunca selecionar `pin`: a anon key está no bundle e o PIN é sensível.
         // O anon não tem mais SELECT nessa coluna (ver migração
         // 20260709_secure_user_requests.sql); na aprovação o PIN é copiado
@@ -4160,8 +4157,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   const approveRequest = async (req) => {
     setProcessingId(req.id);
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
 
       // Merge edits into the request. `req.pin` não existe mais no cliente (o
@@ -4276,8 +4272,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   const rejectRequest = async (req, confirmed = false) => {
     setProcessingId(req.id);
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       await supabase.from('user_requests').update({
         status: confirmed ? 'aprovado' : 'rejeitado',
         reviewed_at: new Date().toISOString(),
@@ -4909,8 +4904,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
     if (missing) { setError(`Preencha o campo "${FIELDS.find(f=>f.id===missing)?.label}".`); return; }
     setLoading(true); setError('');
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       const changes = [...selected].map(id => {
         const f = FIELDS.find(f=>f.id===id);
         return `${f.label}: ${values[id].trim()}`;
@@ -5195,15 +5189,14 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
     try {
       const { validatePin } = await import('../../lib/sync');
       const result = await validatePin(selected.id, value);
-      if (result.ok) {
-        if (result.user?.suspended) {
-          setError('Acesso suspenso. Entre em contato com a gestão.');
-          setPin('');
-        } else {
-          const { setSessionToken } = await import('../../lib/supabase');
-          setSessionToken(result.token);
-          onLogin(result.user);
-        }
+      if (result.ok && result.token) {
+        const { setSessionToken } = await import('../../lib/supabase');
+        setSessionToken(result.token);
+        onLogin(result.user);
+      } else if (result.reason === 'suspended') {
+        // A rota recusa o token para suspensos; a checagem não é mais do cliente.
+        setError('Acesso suspenso. Entre em contato com a gestão.');
+        setPin('');
       } else if (result.reason === 'rate_limited') {
         setError('Muitas tentativas. Aguarde 10 minutos.');
         setPin('');
@@ -5212,6 +5205,9 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
         setPin('');
       } else if (result.reason === 'network_error') {
         setError('Sem conexão. Verifique sua internet.');
+        setPin('');
+      } else if (result.reason === 'server_misconfigured' || (result.ok && !result.token)) {
+        setError('Serviço indisponível. Avise a gestão.');
         setPin('');
       } else {
         setError('Usuário não encontrado.');
@@ -6433,8 +6429,7 @@ function AppInner() {
     if (currentUser?.role !== 'gestao') return;
     const check = async () => {
       try {
-        const { authedSupabase } = await import('../../lib/supabase');
-        const supabase = authedSupabase();
+        const supabase = (await import('../../lib/supabase')).authedSupabase();
         const { count } = await supabase
           .from('user_requests')
           .select('id', { count: 'exact', head: true })
@@ -6459,8 +6454,7 @@ function AppInner() {
       // re-register subscription in case the DB table was just created
       if (granted && currentUser) {
         try {
-          const { authedSupabase } = await import('../../lib/supabase');
-          const supabase = authedSupabase();
+          const supabase = (await import('../../lib/supabase')).authedSupabase();
           const { count } = await supabase
             .from('push_subscriptions')
             .select('*', { count: 'exact', head: true })
@@ -6483,8 +6477,7 @@ function AppInner() {
   const disablePush = async () => {
     if (!currentUser) return;
     try {
-      const { authedSupabase } = await import('../../lib/supabase');
-      const supabase = authedSupabase();
+      const supabase = (await import('../../lib/supabase')).authedSupabase();
       // Unsubscribe no browser
       if ('serviceWorker' in navigator) {
         try {
@@ -6724,8 +6717,11 @@ function AppInner() {
           setTrackSession(u);
           track('login', { source: 'login', metadata: { role: u.role } });
 
-          // Load company data for this user
-          if (u.companyId || u.company_id) {
+          // O mount já buscou estes metadados a partir do slug do subdomínio.
+          // Só refaz a busca se ela não deu resultado — o caso em que o slug do
+          // host difere do companies.id do usuário.
+          const needsTenantData = !company || dynamicUnits.length === 0;
+          if (needsTenantData && (u.companyId || u.company_id)) {
             const cid = u.companyId || u.company_id;
             Promise.all([
               fetchCompany(null, cid),
@@ -6796,7 +6792,14 @@ function AppInner() {
       <Header
         unit={unit} onSelectUnit={setUnitId}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
-        onLogout={() => { clearTrackSession(); setCurrentUser(null); }}
+        onLogout={async () => {
+          clearTrackSession();
+          // Revoga a credencial: sem isto o token e o socket de realtime
+          // continuam autenticados como o usuário que acabou de sair.
+          const { setSessionToken } = await import('../../lib/supabase');
+          await setSessionToken(null);
+          setCurrentUser(null);
+        }}
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
         company={company}

@@ -28,7 +28,10 @@ export function setSessionToken(token) {
   // setAuth reenvia o access_token nos canais já conectados — sem isto, o RLS
   // nega os postgres_changes de templates/completions e o app para de receber
   // mudanças de outros dispositivos, silenciosamente.
-  try { supabase.realtime.setAuth(sessionToken); } catch (e) { console.warn('realtime.setAuth falhou', e); }
+  //
+  // setAuth é assíncrona: um try/catch síncrono não pegaria a rejeição.
+  return Promise.resolve(supabase.realtime.setAuth(sessionToken))
+    .catch(e => console.warn('realtime.setAuth falhou', e));
 }
 
 export function getSessionToken() {

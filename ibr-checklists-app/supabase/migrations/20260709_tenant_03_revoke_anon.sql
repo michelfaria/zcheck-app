@@ -50,6 +50,11 @@ revoke select on public.events from anon;
 -- colaborador ainda não tem conta), mas anon nunca deveria ter podido LER.
 -- Verificado em 09/07/2026: com a anon key do bundle era possível listar nome,
 -- CPF e selfie_path de todos os cadastros pendentes. Só o `pin` estava coberto.
+--
+-- A tela "verificar status" do /cadastro dependia deste SELECT. Ela passou a
+-- usar o RPC `user_request_status(p_cpf)` criado na migration 02, que exige o
+-- CPF completo e devolve só o status. Confirme que o deploy do cliente que usa
+-- o RPC já saiu — senão a tela responde "não encontrado" para qualquer CPF.
 revoke select on public.user_requests from anon;
 
 -- ── Metadados de tenant: anon passa a só LER ─────────────────────────────────

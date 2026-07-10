@@ -9,7 +9,7 @@
  *    If offline, queue the write and drain the queue when connectivity returns.
  */
 
-import { supabase, authedSupabase } from './supabase';
+import { supabase, authedSupabase, getSessionToken } from './supabase';
 import { storageGet, storageSet, getSyncQueue, clearSyncQueue } from './storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -208,30 +208,33 @@ export async function saveCompletion(record) {
     return;
   }
   console.log('[Sync] pushing completion to Supabase:', record.id);
-  await pushCompletion(record);
-}
-
-async function pushCompletion(record) {
   try {
-    const row = {
-      id: record.id,
-      template_id: record.templateId || null,
-      template_name: record.templateName,
-      unit_id: record.unitId,
-      sector: record.sector,
-      shift: record.shift,
-      date: record.date,
-      completed_at: record.completedAt,
-      operator_name: record.operatorName,
-      operator_user_id: record.operatorUserId || null,
-      items: record.items,
-    };
-    const { error } = await db().from('completions').upsert(row, { onConflict: 'id' });
-    if (error) throw error;
+    await pushCompletion(record);
   } catch (e) {
-    console.error('[Supabase] pushCompletion FAILED:', JSON.stringify(e));
+    console.error('[Supabase] pushCompletion FAILED:', e.message);
     await queueOfflineCompletion(record);
   }
+}
+
+// Lança em falha. Quem chama decide o que fazer: `saveCompletion` enfileira,
+// `drainOfflineQueue` mantém a entrada na fila. Se esta função engolisse o erro,
+// o dreno contaria sucesso e sobrescreveria a fila — perdendo a conclusão.
+async function pushCompletion(record) {
+  const row = {
+    id: record.id,
+    template_id: record.templateId || null,
+    template_name: record.templateName,
+    unit_id: record.unitId,
+    sector: record.sector,
+    shift: record.shift,
+    date: record.date,
+    completed_at: record.completedAt,
+    operator_name: record.operatorName,
+    operator_user_id: record.operatorUserId || null,
+    items: record.items,
+  };
+  const { error } = await db().from('completions').upsert(row, { onConflict: 'id' });
+  if (error) throw error;
 }
 
 // ── Photos ────────────────────────────────────────────────────────────────────
@@ -255,42 +258,47 @@ export async function uploadRefPhoto(templateId, itemId, photoIndex, dataUrl) {
 }
 
 export async function uploadPhoto(completionId, itemId, dataUrl) {
-  if (!isOnline()) {
-    // Queue for later upload — store data URL in cache keyed by completion+item
+  const queue = async () => {
     try {
       await storageSet(`ibr_photo_${completionId}_${itemId}`, dataUrl);
       await queueOfflinePhoto({ completionId, itemId });
     } catch (e) { console.warn('uploadPhoto offline queue failed', e); }
+  };
+
+  if (!isOnline()) {
+    console.log('[Sync] offline — queuing photo:', completionId, itemId);
+    await queue();
     return null;
   }
-  return await pushPhoto(completionId, itemId, dataUrl);
+  try {
+    return await pushPhoto(completionId, itemId, dataUrl);
+  } catch (e) {
+    console.warn('pushPhoto failed, enfileirando', e.message);
+    await queue();
+    return null;
+  }
 }
 
+// Lança em falha, pelo mesmo motivo de pushCompletion: o dreno precisa saber.
 async function pushPhoto(completionId, itemId, dataUrl) {
-  try {
-    // Convert data URL to blob
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const path = `${completionId}/${itemId}.jpg`;
-    const { error } = await supabase.storage
-      .from('checklist-photos')
-      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) throw error;
+  // Convert data URL to blob
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const path = `${completionId}/${itemId}.jpg`;
+  const { error } = await supabase.storage
+    .from('checklist-photos')
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw error;
 
-    // Save metadata — try upsert first, fall back to insert
-    // Save metadata
-    const { error: upsertErr } = await db().from('photos').upsert({
-      completion_id: completionId,
-      item_id: itemId,
-      storage_path: path,
-    }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
-    if (upsertErr) console.warn('pushPhoto metadata warning (ignored):', upsertErr.code);
+  // Save metadata
+  const { error: upsertErr } = await db().from('photos').upsert({
+    completion_id: completionId,
+    item_id: itemId,
+    storage_path: path,
+  }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
+  if (upsertErr) console.warn('pushPhoto metadata warning (ignored):', upsertErr.code);
 
-    return path;
-  } catch (e) {
-    console.warn('pushPhoto failed', e);
-    return null;
-  }
+  return path;
 }
 
 export async function getPhotoUrl(completionId, itemId) {
@@ -369,6 +377,9 @@ async function queueOfflinePhoto({ completionId, itemId }) {
 export async function drainOfflineQueue() {
   console.log('[Sync] drainOfflineQueue called, online:', isOnline());
   if (!isOnline()) return { drained: 0, failed: 0 };
+  // Sem sessão, a escrita é recusada pelo RLS. O poll de rede roda já na tela de
+  // login, então drenar aqui só queimaria tentativas contra a fila do usuário.
+  if (!getSessionToken()) return { drained: 0, failed: 0 };
   try {
     const q = (await cache.get('ibr_offline_queue')) || [];
     if (q.length === 0) return { drained: 0, failed: 0 };
@@ -555,19 +566,23 @@ export async function fetchPublicUsers(companyId) {
   if (!companyId) return null;
   try {
     const { data, error } = await supabase.rpc('public_users', { p_company_id: companyId });
+    if (error) throw error;
+    if (!data) throw new Error('resposta vazia');
 
-    if (error || !data) return null;
-
-    return data.map(u => ({
+    const mapped = data.map(u => ({
       id: u.id,
       name: u.name,
       role: u.role,
       unitId: u.unit_id,
       sectorId: u.sector_id ?? null,
     }));
+    await cache.set('ibr_public_users', mapped);
+    return mapped;
   } catch (e) {
-    console.warn('fetchPublicUsers error:', e);
-    return null;
+    // App offline-first: sem o cache, uma falha de rede deixaria o seletor de
+    // nomes vazio e ninguém conseguiria entrar.
+    console.warn('fetchPublicUsers falhou, usando cache:', e.message);
+    return await cache.get('ibr_public_users');
   }
 }
 
@@ -639,7 +654,10 @@ export async function hasPushPermission() {
 export async function sendRecognition(rec) {
   try {
     const { error } = await db().from('recognitions').insert({
-      company_id: rec.companyId ?? null,
+      // Omitir a coluna quando não sabemos a empresa: o DEFAULT no banco extrai
+      // company_id do token. Mandar NULL explícito anula o DEFAULT e o `with
+      // check` do RLS recusa a linha.
+      ...(rec.companyId ? { company_id: rec.companyId } : {}),
       from_user_id: rec.fromUserId,
       from_user_name: rec.fromUserName ?? null,
       to_user_id: rec.toUserId,
