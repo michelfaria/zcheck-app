@@ -120,7 +120,8 @@ export default function CadastroPage() {
     setLoading(true);
     try {
       const ext = selfie.name.split('.').pop() || 'jpg';
-      const path = Date.now() + '-' + cpf.replace(/\D/g,'') + '.' + ext;
+      // Nome aleatório: o CPF não pode viajar no path do objeto.
+      const path = crypto.randomUUID() + '.' + ext;
       const { error: uploadErr } = await supabase.storage
         .from('colaboradores')
         .upload(path, selfie, { contentType: selfie.type, upsert: false });

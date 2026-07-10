@@ -10,7 +10,7 @@ import {
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
   fetchCompany, fetchUnits, fetchSectors, fetchChecklistTypes,
-  fetchUsers, saveUsers as dbSaveUsers,
+  fetchUsers, fetchPublicUsers, saveUsers as dbSaveUsers,
   fetchCompletions, saveCompletion as syncSaveCompletion,
   fetchClosures, saveClosures as dbSaveClosures,
   sendRecognition, fetchRecognitions,
@@ -2264,7 +2264,8 @@ function NotificationHistory({ templates, last7, today, unit }) {
     if (log.length > 0) return;
     setLoading(true);
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       const days = [today, ...last7];
       const keys = days.map(d => `notified_${d}`);
       const { data } = await supabase
@@ -3379,7 +3380,8 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
   const handleDelete = async id => {
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       await supabase.from('templates').delete().eq('id', id);
     } catch(e) {}
     onSaveTemplates(templates.filter(t => t.id !== id));
@@ -4078,18 +4080,12 @@ function SelfieViewer({ path }) {
   useEffect(() => {
     if (!path) return;
     import('../../lib/supabase').then(async ({ supabase }) => {
-      // Try signed URL first (works for private buckets)
-      const { data, error } = await supabase.storage
+      // O bucket 'colaboradores' é privado: selfie + CPF. Nunca usar getPublicUrl aqui.
+      const { data } = await supabase.storage
         .from('colaboradores')
         .createSignedUrl(path, 3600);
-      if (data?.signedUrl) {
-        setUrl(data.signedUrl);
-      } else {
-        // Fallback to public URL
-        const { data: pub } = supabase.storage.from('colaboradores').getPublicUrl(path);
-        setUrl(pub?.publicUrl || null);
-        if (!pub?.publicUrl) setError(true);
-      }
+      if (data?.signedUrl) setUrl(data.signedUrl);
+      else setError(true);
     });
   }, [path]);
   if (error) return <p style={{ fontSize: 12, color: C.muted }}>Selfie não disponível.</p>;
@@ -4143,7 +4139,8 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
     if (currentUser?.role !== 'gestao') return;
     const load = async () => {
       try {
-        const { supabase } = await import('../../lib/supabase');
+        const { authedSupabase } = await import('../../lib/supabase');
+        const supabase = authedSupabase();
         // Nunca selecionar `pin`: a anon key está no bundle e o PIN é sensível.
         // O anon não tem mais SELECT nessa coluna (ver migração
         // 20260709_secure_user_requests.sql); na aprovação o PIN é copiado
@@ -4163,7 +4160,8 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   const approveRequest = async (req) => {
     setProcessingId(req.id);
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
 
       // Merge edits into the request. `req.pin` não existe mais no cliente (o
@@ -4278,7 +4276,8 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   const rejectRequest = async (req, confirmed = false) => {
     setProcessingId(req.id);
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       await supabase.from('user_requests').update({
         status: confirmed ? 'aprovado' : 'rejeitado',
         reviewed_at: new Date().toISOString(),
@@ -4910,7 +4909,8 @@ function UserDataChangeModal({ currentUser, onClose }) {
     if (missing) { setError(`Preencha o campo "${FIELDS.find(f=>f.id===missing)?.label}".`); return; }
     setLoading(true); setError('');
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       const changes = [...selected].map(id => {
         const f = FIELDS.find(f=>f.id===id);
         return `${f.label}: ${values[id].trim()}`;
@@ -5200,6 +5200,8 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
           setError('Acesso suspenso. Entre em contato com a gestão.');
           setPin('');
         } else {
+          const { setSessionToken } = await import('../../lib/supabase');
+          setSessionToken(result.token);
           onLogin(result.user);
         }
       } else if (result.reason === 'rate_limited') {
@@ -6431,7 +6433,8 @@ function AppInner() {
     if (currentUser?.role !== 'gestao') return;
     const check = async () => {
       try {
-        const { supabase } = await import('../../lib/supabase');
+        const { authedSupabase } = await import('../../lib/supabase');
+        const supabase = authedSupabase();
         const { count } = await supabase
           .from('user_requests')
           .select('id', { count: 'exact', head: true })
@@ -6456,7 +6459,8 @@ function AppInner() {
       // re-register subscription in case the DB table was just created
       if (granted && currentUser) {
         try {
-          const { supabase } = await import('../../lib/supabase');
+          const { authedSupabase } = await import('../../lib/supabase');
+          const supabase = authedSupabase();
           const { count } = await supabase
             .from('push_subscriptions')
             .select('*', { count: 'exact', head: true })
@@ -6479,7 +6483,8 @@ function AppInner() {
   const disablePush = async () => {
     if (!currentUser) return;
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { authedSupabase } = await import('../../lib/supabase');
+      const supabase = authedSupabase();
       // Unsubscribe no browser
       if ('serviceWorker' in navigator) {
         try {
@@ -6506,8 +6511,45 @@ function AppInner() {
     setPushEnabled(false);
   };
 
+  // Antes do login não há token, e o RLS só libera metadados de tenant (empresa,
+  // lojas, setores, tipos) mais a lista de nomes da tela de login, via RPC.
+  // Dados operacionais — templates, execuções, usuários, folgas — só depois do
+  // login, no efeito seguinte.
   useEffect(() => {
+    const tenantSlug = getTenantSlug();
+    console.log('[App] tenant slug:', tenantSlug, '| hostname:', typeof window !== 'undefined' ? window.location.hostname : 'SSR');
+    if (!tenantSlug) return;
+
+    Promise.all([
+      fetchCompany(tenantSlug),
+      fetchUnits(tenantSlug),
+      fetchSectors(tenantSlug),
+      fetchChecklistTypes(tenantSlug),
+      fetchPublicUsers(tenantSlug),
+    ]).then(([co, units, sectors, types, publicUsers]) => {
+      if (co) setCompany(co);
+      if (units?.length) {
+        setDynamicUnits(units.map(u => ({
+          id: u.id, name: u.name, color: u.color,
+          sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
+        })));
+      }
+      if (sectors?.length) setDynamicSectors(sectors);
+      if (types?.length) setDynamicTypes(types);
+      // Alimenta o seletor de nomes da LoginScreen. Nunca deixar em null: o
+      // render trava na tela de carregamento se a lista não chegar.
+      setUsers(publicUsers || []);
+    }).catch(e => {
+      console.error('[App] Startup error:', e);
+      setUsers([]);
+    });
+  }, []);
+
+  // Dados operacionais: só com sessão aberta, e escopados por company_id no RLS.
+  useEffect(() => {
+    if (!currentUser) return;
     const TEMPLATES_VERSION = 'v5-stable-ids';
+    let cancelled = false;
 
     const loadTemplates = async () => {
       // Check version to reset stale local cache
@@ -6524,34 +6566,19 @@ function AppInner() {
       return tpl;
     };
 
-    const tenantSlug = getTenantSlug();
-    console.log('[App] tenant slug:', tenantSlug, '| hostname:', typeof window !== 'undefined' ? window.location.hostname : 'SSR');
-
     Promise.all([
       loadTemplates(),
       fetchCompletions(),
       fetchUsers(SEED_USERS),
       fetchClosures(),
-      tenantSlug ? fetchCompany(tenantSlug) : Promise.resolve(null),
-      tenantSlug ? fetchUnits(tenantSlug) : Promise.resolve([]),
-      tenantSlug ? fetchSectors(tenantSlug) : Promise.resolve([]),
-      tenantSlug ? fetchChecklistTypes(tenantSlug) : Promise.resolve([]),
-    ]).then(async ([tpl, comp, usr, cls, co, units, sectors, types]) => {
+    ]).then(async ([tpl, comp, usr, cls]) => {
+      if (cancelled) return;
       setTemplates(tpl);
       setCompletions(comp);
       setUsers(usr);
       setClosures(cls);
-      if (co) setCompany(co);
-      if (units?.length) {
-        setDynamicUnits(units.map(u => ({
-          id: u.id, name: u.name, color: u.color,
-          sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
-        })));
-      }
-      if (sectors?.length) setDynamicSectors(sectors);
-      if (types?.length) setDynamicTypes(types);
       await seedSupabaseIfEmpty(tpl, usr);
-    }).catch(e => console.error('[App] Startup error:', e));
+    }).catch(e => console.error('[App] Data load error:', e));
 
     // Real-time: listen for new completions from other devices
     const unsubscribe = subscribeToCompletions(null, record => {
@@ -6567,8 +6594,8 @@ function AppInner() {
       setTemplates(updated);
     });
 
-    return () => { unsubscribe(); unsubscribeTemplates(); };
-  }, []);
+    return () => { cancelled = true; unsubscribe(); unsubscribeTemplates(); };
+  }, [currentUser]);
 
   // ── Data persistence — all writes go to Supabase via sync layer ──────────────
 
@@ -6669,7 +6696,9 @@ function AppInner() {
   };
 
 
-  if (templates === null || completions === null || users === null) return <LoadingScreen />;
+  // A tela de login só precisa da lista de nomes. Templates e execuções agora
+  // chegam depois do login — esperar por eles aqui travaria a entrada.
+  if (users === null) return <LoadingScreen />;
 
   const offlineBanner = !isOnline ? (
     <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.critical, color: 'white', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999 }}>
@@ -6745,6 +6774,10 @@ function AppInner() {
       </>
     );
   }
+
+  // Sessão aberta: agora sim esperamos os dados operacionais, que o efeito
+  // pós-login busca com o token e o RLS entrega escopados por company_id.
+  if (templates === null || completions === null) return <LoadingScreen />;
 
   const allowedTabs = ROLE_TABS[currentUser.role];
   const canSwitchUnit = currentUser.unitId == null;

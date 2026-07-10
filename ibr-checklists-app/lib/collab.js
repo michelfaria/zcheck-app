@@ -10,11 +10,15 @@
  * funções falham em silêncio e a execução volta a ser individual (sem regressão).
  */
 
-import { supabase } from './supabase';
+import { supabase, authedSupabase } from './supabase';
+
+// live_tasks é escopada por company_id no RLS: precisa do token da sessão.
+// Antes do login authedSupabase() devolve o cliente anônimo, como antes.
+const db = () => authedSupabase();
 
 export async function fetchLiveTasks(templateId, unitId, date) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('live_tasks')
       .select('*')
       .eq('template_id', templateId)
@@ -37,7 +41,7 @@ export async function fetchLiveTasks(templateId, unitId, date) {
 
 export async function setLiveTask({ templateId, unitId, date, itemId, done, operatorUserId, operatorName }) {
   try {
-    const { error } = await supabase.from('live_tasks').upsert({
+    const { error } = await db().from('live_tasks').upsert({
       template_id: templateId, unit_id: unitId, date, item_id: itemId,
       done, operator_user_id: operatorUserId, operator_name: operatorName,
       completed_at: done ? new Date().toISOString() : null,
@@ -50,12 +54,12 @@ export async function setLiveTask({ templateId, unitId, date, itemId, done, oper
 
 export async function reopenLiveTask({ templateId, unitId, date, itemId, operatorUserId, operatorName }) {
   try {
-    const { data } = await supabase.from('live_tasks')
+    const { data } = await db().from('live_tasks')
       .select('reopened_count')
       .eq('template_id', templateId).eq('unit_id', unitId).eq('date', date).eq('item_id', itemId)
       .single();
     const rc = (data?.reopened_count || 0) + 1;
-    const { error } = await supabase.from('live_tasks').upsert({
+    const { error } = await db().from('live_tasks').upsert({
       template_id: templateId, unit_id: unitId, date, item_id: itemId,
       done: false, operator_user_id: operatorUserId, operator_name: operatorName,
       completed_at: null, reopened_count: rc, updated_at: new Date().toISOString(),
