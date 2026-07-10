@@ -62,11 +62,14 @@ revoke select on public.user_requests from anon;
 -- de empresa, loja, setor e turno. A lista de pessoas já saiu daqui — virou o
 -- RPC public_users(), escopado por empresa.
 --
--- ⚠️ ESCRITA ANÔNIMA FECHA AQUI. Hoje `/onboarding` cria empresa, lojas, setores
--- e usuários, e `/importar` insere templates — tudo com a anon key, sem login.
--- Qualquer um com a chave do bundle podia criar uma empresa no seu banco.
--- Depois desta migration essas duas páginas param de funcionar até ganharem
--- autenticação de gestão. É intencional.
+-- ⚠️ ESCRITA ANÔNIMA FECHA AQUI. Até aqui `/onboarding` criava empresa, lojas,
+-- setores e usuários, e `/importar` inseria templates — tudo com a anon key,
+-- sem login. Qualquer um com a chave do bundle podia criar uma empresa no banco.
+--
+-- Ambas já foram migradas e continuam funcionando depois deste corte:
+--   · /onboarding  → chama /api/admin/provision (service_role, ver tenant_04);
+--   · /importar    → exige PIN de gerência/gestão e escreve com o token.
+-- Se alguma delas parar de funcionar, o deploy do cliente não saiu.
 do $$
 declare t text;
 begin

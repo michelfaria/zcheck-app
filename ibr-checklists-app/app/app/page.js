@@ -4252,10 +4252,11 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
             const msg = isAlteracao
               ? `Seus dados foram atualizados com sucesso.`
               : `Seu cadastro foi aprovado! Faça login com seu PIN.`;
-            await fetch('https://rjuulamozdhssgqrzfji.supabase.co/functions/v1/notify-status', {
+            const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import('../../lib/supabase');
+            await fetch(`${SUPABASE_URL}/functions/v1/notify-status`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json',
-                Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqdXVsYW1vemRoc3NncXJ6ZmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNjc5MjksImV4cCI6MjA5Nzg0MzkyOX0.xxpJLp5SCpQRxMcuDMo-XD8offX2hrVUC_bU9I8me2M` },
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
               body: JSON.stringify({ subs, title: '✅ ZCheck', body: msg }),
             }).catch(() => {});
           }

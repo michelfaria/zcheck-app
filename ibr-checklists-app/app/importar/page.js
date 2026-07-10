@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rjuulamozdhssgqrzfji.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqdXVsYW1vemRoc3NncXJ6ZmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNjc5MjksImV4cCI6MjA5Nzg0MzkyOX0.xxpJLp5SCpQRxMcuDMo-XD8offX2hrVUC_bU9I8me2M';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+import { useState, useEffect, useRef } from 'react';
+import { authedSupabase, setSessionToken } from '../../lib/supabase';
+import { validatePin, fetchPublicUsers, fetchCompany } from '../../lib/sync';
+import { getTenantSlug } from '../../lib/tenant';
 
 const C = {
   ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
   muted: '#6B8299', success: '#31C85A', critical: '#D1462F',
 };
 
+// Quem pode importar é quem pode gerenciar templates dentro do app (ROLE_TABS).
+const IMPORT_ROLES = ['gerencia', 'gestao'];
+
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+const db = () => authedSupabase();
 
 const CSV_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,deadline
 checklist,Abertura,Loja 1,Salão,,, 08:00
@@ -69,25 +72,109 @@ function parseCSV(text) {
   return { checklists };
 }
 
+/**
+ * Portão de PIN. Importar template escreve na tabela `templates`, que é escopada
+ * por company_id no RLS — sem token não há escrita. A empresa destino deixou de
+ * ser escolhida num dropdown: é a do token de quem entrou.
+ */
+function PinGate({ onAuth }) {
+  const [company, setCompany] = useState(null);
+  const [users, setUsers] = useState(null);
+  const [selectedId, setSelectedId] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const slug = getTenantSlug();
+    if (!slug) { setUsers([]); return; }
+    Promise.all([fetchCompany(slug), fetchPublicUsers(slug)])
+      .then(([co, list]) => {
+        setCompany(co);
+        setUsers((list || []).filter(u => IMPORT_ROLES.includes(u.role)));
+      })
+      .catch(() => setUsers([]));
+  }, []);
+
+  const submit = async () => {
+    if (!/^\d{4}$/.test(pin) || !selectedId) return;
+    setLoading(true);
+    setError('');
+    const result = await validatePin(selectedId, pin);
+    setLoading(false);
+    setPin('');
+
+    if (result.ok && result.token) {
+      if (!IMPORT_ROLES.includes(result.user.role)) {
+        setError('Seu perfil não pode importar checklists.');
+        return;
+      }
+      setSessionToken(result.token);
+      onAuth(result.user);
+      return;
+    }
+    if (result.reason === 'suspended') setError('Acesso suspenso. Entre em contato com a gestão.');
+    else if (result.reason === 'rate_limited') setError('Muitas tentativas. Aguarde 10 minutos.');
+    else if (result.reason === 'wrong_pin') setError('PIN incorreto.');
+    else if (result.reason === 'network_error') setError('Sem conexão. Verifique sua internet.');
+    else if (result.reason === 'server_misconfigured') setError('Serviço indisponível. Avise a gestão.');
+    else setError('Não foi possível entrar.');
+  };
+
+  const box = { width: '100%', fontSize: 14, color: C.ink, background: 'white',
+    padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none' };
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 360 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Importar via CSV</h1>
+        <p style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>
+          {company ? `${company.name} · ` : ''}Entre com um perfil de gestão.
+        </p>
+
+        {users === null ? (
+          <p style={{ fontSize: 13, color: C.muted }}>Carregando…</p>
+        ) : users.length === 0 ? (
+          <p style={{ fontSize: 13, color: C.muted }}>Nenhum perfil de gestão disponível.</p>
+        ) : (
+          <>
+            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Usuário</p>
+            <select value={selectedId} onChange={e => { setSelectedId(e.target.value); setError(''); }} style={{ ...box, marginBottom: 16, fontWeight: 700 }}>
+              <option value="">Selecione…</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+
+            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN</p>
+            <input type="password" inputMode="numeric" maxLength={4} value={pin} autoComplete="off"
+              onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+              placeholder="••••"
+              style={{ ...box, textAlign: 'center', letterSpacing: '0.5em', fontSize: 22, fontWeight: 800 }} />
+
+            {error && <p style={{ fontSize: 12, color: C.critical, fontWeight: 700, marginTop: 8 }}>{error}</p>}
+
+            <button onClick={submit} disabled={loading || !selectedId || pin.length !== 4}
+              style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 14,
+                color: 'white', background: C.ink, cursor: 'pointer', opacity: loading || !selectedId || pin.length !== 4 ? 0.5 : 1 }}>
+              {loading ? 'Entrando…' : 'Entrar'}
+            </button>
+          </>
+        )}
+
+        <a href="/app" style={{ display: 'block', marginTop: 20, fontSize: 13, color: C.muted, textDecoration: 'none', fontWeight: 700 }}>← Voltar ao app</a>
+      </div>
+    </div>
+  );
+}
+
 export default function ImportarPage() {
-  const [companyId, setCompanyId] = useState('ibr');
-  const [companies, setCompanies] = useState([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [user, setUser] = useState(null);
   const [csvText, setCsvText] = useState('');
   const [preview, setPreview] = useState(null);
   const [parseError, setParseError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileRef = useRef(null);
-
-  const loadCompanies = async () => {
-    setLoadingCompanies(true);
-    const { data } = await supabase.from('companies').select('id, name').eq('active', true).order('name');
-    setCompanies(data || []);
-    setLoadingCompanies(false);
-  };
-
-  useState(() => { loadCompanies(); }, []);
 
   const handleFile = e => {
     const file = e.target.files?.[0];
@@ -115,8 +202,12 @@ export default function ImportarPage() {
     setImportResult(null);
 
     try {
+      // A empresa é a do token, não uma escolha da tela. O RLS recusaria escrita
+      // em qualquer outra, mas passar explicitamente deixa a intenção visível.
+      const companyId = user.companyId;
+
       // Fetch units for the company to match names
-      const { data: units } = await supabase.from('units').select('id, name').eq('company_id', companyId);
+      const { data: units } = await db().from('units').select('id, name').eq('company_id', companyId);
       const unitMap = Object.fromEntries((units || []).map(u => [u.name.toLowerCase(), u.id]));
 
       let created = 0, skipped = 0;
@@ -126,13 +217,13 @@ export default function ImportarPage() {
         if (!unitId) { skipped++; continue; }
 
         // Check if template already exists
-        const { data: existing } = await supabase.from('templates')
+        const { data: existing } = await db().from('templates')
           .select('id').eq('company_id', companyId).eq('unit_id', unitId)
           .eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
 
         if (existing?.length) { skipped++; continue; }
 
-        const { error } = await supabase.from('templates').insert({
+        const { error } = await db().from('templates').insert({
           id: tpl.id, company_id: companyId, unit_id: unitId,
           sector: tpl.sector, name: tpl.name,
           shift: tpl.name.toLowerCase().includes('abertura') ? 'Manhã'
@@ -161,6 +252,13 @@ export default function ImportarPage() {
     a.click();
   };
 
+  if (!user) return <PinGate onAuth={setUser} />;
+
+  const logout = async () => {
+    await setSessionToken(null);
+    setUser(null);
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 20px 80px' }}>
@@ -172,17 +270,15 @@ export default function ImportarPage() {
           <p style={{ fontSize: 13, color: C.muted }}>Importe checklists e tarefas em lote a partir de uma planilha.</p>
         </div>
 
-        {/* Empresa */}
-        <div style={{ marginBottom: 24 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Empresa destino</p>
-          <select value={companyId} onChange={e => setCompanyId(e.target.value)}
-            style={{ width: '100%', fontSize: 14, fontWeight: 700, color: C.ink, background: 'white', padding: '12px 14px',
-              border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none' }}>
-            {loadingCompanies
-              ? <option>Carregando...</option>
-              : companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)
-            }
-          </select>
+        {/* Sessão */}
+        <div style={{ marginBottom: 24, background: 'white', borderRadius: 10, padding: '12px 16px', border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <p style={{ fontSize: 13, color: C.muted }}>
+            Importando como <strong style={{ color: C.ink }}>{user.name}</strong>
+          </p>
+          <button onClick={logout}
+            style={{ background: 'none', border: 'none', color: C.muted, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
+            Sair
+          </button>
         </div>
 
         {/* Download template */}
