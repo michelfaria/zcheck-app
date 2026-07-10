@@ -40,3 +40,47 @@ export const C = {
  * como fundo de texto branco (3.30:1). Anéis de progresso, barras, ícones.
  */
 export const successBright = '#16A34A';
+
+/**
+ * Raio de borda. O app tinha 13 valores distintos (0, 2, 3, 4, 6, 8, 9, 10,
+ * 12, 14, 16, 20, 999) — sensação de "montado", não desenhado. Quatro bastam.
+ *
+ * ⚠️ NUNCA migrar por busca-e-troca global: o raio é inline por elemento e uma
+ * substituição cega já quebrou o layout dos cards uma vez (ver CLAUDE.md).
+ * Migre por COMPONENTE, escolhendo o token pelo papel do elemento.
+ */
+export const R = {
+  sm: 8,     // inputs, chips, botões
+  md: 12,    // cards, modais
+  lg: 16,    // superfícies grandes, sheets
+  pill: 999, // badges, toggles
+};
+
+/**
+ * Peso tipográfico. O app usava 800 em 197 lugares — quando tudo grita, nada
+ * tem hierarquia. Regra: 400 corpo · 500 ênfase · 600 títulos, botões e labels
+ * · 700 só display e números-herói. Nada de 800.
+ */
+export const W = {
+  body: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+};
+
+/**
+ * Escala de tamanho. Piso de legibilidade para chão de operação: nenhum
+ * CONTEÚDO abaixo de 14px; 12px só em rótulo maiúsculo curto (label), 13px o
+ * mínimo para texto secundário (caption).
+ */
+export const T = {
+  display: 26,
+  h1: 24,
+  h2: 20,
+  h3: 17,
+  bodyLg: 16,
+  body: 15,
+  bodySm: 14,
+  caption: 13,
+  label: 12,
+};

@@ -29,7 +29,7 @@ import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 // Execução colaborativa em tempo real (H6)
 import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
-import { C } from '../../lib/tokens';
+import { C, R, W, T } from '../../lib/tokens';
 const LOGO_DATA_URI = 'data:image/png;base64,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';
 const LOGO_LOGIN_URI = 'data:image/png;base64,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';
 
@@ -903,7 +903,7 @@ const STATUS_CFG = {
 
 function Eyebrow({ children }) {
   return (
-    <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted }}>
+    <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted }}>
       {children}
     </p>
   );
@@ -911,7 +911,7 @@ function Eyebrow({ children }) {
 
 function Ticket({ accent, children, style, ...rest }) {
   return (
-    <div {...rest} style={{ display: 'flex', background: 'white', border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', ...style }}>
+    <div {...rest} style={{ display: 'flex', background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden', ...style }}>
       <div
         style={{
           width: 10, flexShrink: 0, background: accent,
@@ -929,8 +929,8 @@ function StatusBadge({ status }) {
   return (
     <span
       style={{
-        fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
-        padding: '4px 8px', borderRadius: 4, background: `${cfg.color}1A`, color: cfg.color, whiteSpace: 'nowrap',
+        fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em',
+        padding: '4px 10px', borderRadius: R.pill, background: `${cfg.color}1A`, color: cfg.color, whiteSpace: 'nowrap',
       }}
     >
       {cfg.label}
@@ -947,10 +947,10 @@ function BackBar({ onBack, label, accent, motiv }) {
         style={{
           background: 'white',
           border: `1.5px solid ${C.border}`,
-          borderRadius: 8,
+          borderRadius: R.sm,
           padding: '10px 16px',
-          fontWeight: 800,
-          fontSize: 14,
+          fontWeight: W.semibold,
+          fontSize: T.bodySm,
           color: C.ink,
           cursor: 'pointer',
           flexShrink: 0,
@@ -960,7 +960,7 @@ function BackBar({ onBack, label, accent, motiv }) {
         <span>{label}</span>
       </button>
       {motiv && (
-        <p style={{ fontSize: 12, fontWeight: 700, color: accent, textAlign: 'right', lineHeight: 1.3 }}>{motiv}</p>
+        <p style={{ fontSize: T.caption, fontWeight: W.semibold, color: accent, textAlign: 'right', lineHeight: 1.3 }}>{motiv}</p>
       )}
     </div>
   );
@@ -968,9 +968,9 @@ function BackBar({ onBack, label, accent, motiv }) {
 
 function EmptyState({ title, desc }) {
   return (
-    <div style={{ textAlign: 'center', padding: '32px 16px', border: `1px dashed ${C.border}`, borderRadius: 6 }}>
-      <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{title}</p>
-      <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{desc}</p>
+    <div style={{ textAlign: 'center', padding: '32px 16px', border: `1px dashed ${C.border}`, borderRadius: R.md }}>
+      <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{title}</p>
+      <p style={{ fontSize: T.bodySm, color: C.muted, marginTop: 4 }}>{desc}</p>
     </div>
   );
 }
@@ -981,7 +981,7 @@ function PillButton({ active, accent, onClick, children }) {
       onClick={onClick}
       className="px-3 py-1.5"
       style={{
-        borderRadius: 6, fontSize: 13, fontWeight: 800, border: `1.5px solid ${active ? accent : C.border}`,
+        borderRadius: R.sm, fontSize: T.bodySm, fontWeight: W.semibold, border: `1.5px solid ${active ? accent : C.border}`,
         background: active ? accent : 'white', color: active ? C.bg : C.muted,
       }}
     >
@@ -1010,7 +1010,8 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
         <button
           onClick={onToggle}
           disabled={locked}
-          style={{ background: 'none', border: 'none', padding: 0, marginTop: 1, flexShrink: 0, cursor: locked ? 'not-allowed' : 'pointer' }}
+          // padding compensado por margin negativa: alvo de toque ≥44px sem mover o layout
+          style={{ background: 'none', border: 'none', padding: 10, margin: '-9px -10px -10px', flexShrink: 0, cursor: locked ? 'not-allowed' : 'pointer' }}
         >
           {effDone
             ? <CheckCircle2 size={24} color={C.success} />
@@ -1018,13 +1019,13 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
         </button>
         <div className="flex-1" style={{ minWidth: 0 }}>
           <div className="flex items-start justify-between gap-2">
-            <p style={{ fontSize: 14, fontWeight: 500, color: effDone ? C.muted : C.ink, textDecoration: effDone ? 'line-through' : 'none', flex: 1 }}>
+            <p style={{ fontSize: T.body, fontWeight: W.medium, color: effDone ? C.muted : C.ink, textDecoration: effDone ? 'line-through' : 'none', flex: 1 }}>
               {item.text}
             </p>
             {(item.description || (item.refPhotos?.length > 0) || item.refLink) && (
               <button
                 onClick={() => setShowDesc(v => !v)}
-                style={{ fontSize: 11, fontWeight: 800, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: 20, padding: '2px 10px', flexShrink: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: R.pill, padding: '3px 10px', flexShrink: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 {showDesc ? 'Ver menos' : 'Ver mais'}
               </button>
@@ -1034,11 +1035,11 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
           {showDesc && (item.description || (item.refPhotos?.length > 0) || item.refLink) && (
             <div style={{ marginTop: 8, padding: '10px 12px', background: C.bg, borderRadius: 8, border: `1px solid ${C.border}` }}>
               {item.description && (
-                <p style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: (item.refPhotos?.length > 0 || item.refLink) ? 10 : 0 }}>{item.description}</p>
+                <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: (item.refPhotos?.length > 0 || item.refLink) ? 10 : 0 }}>{item.description}</p>
               )}
               {item.refPhotos?.length > 0 && (
                 <div style={{ marginBottom: item.refLink ? 10 : 0 }}>
-                  <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Referências</p>
+                  <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Referências</p>
                   <div className="flex flex-wrap gap-2">
                     {item.refPhotos.map((photo, pi) => (
                       <img key={pi} src={photo} alt={`ref ${pi+1}`}
@@ -1062,42 +1063,42 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
 
           <div className="flex flex-wrap gap-2 mt-1">
             {item.critical && (
-              <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.critical }}>
+              <span className="flex items-center gap-1" style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.critical }}>
                 <AlertTriangle size={12} /> Crítico
               </span>
             )}
             {item.required && (
-              <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
+              <span className="flex items-center gap-1" style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
                 <Lock size={12} /> Obrigatório
               </span>
             )}
             {item.photoRequired && (
-              <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
+              <span className="flex items-center gap-1" style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
                 <Camera size={12} /> Foto
               </span>
             )}
             {item.recurrence && item.recurrence.length > 0 && (
-              <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted }}>
+              <span className="flex items-center gap-1" style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted }}>
                 <Clock size={12} /> {item.recurrence.map(d => WEEKDAY_LABELS[d]).join('/')}
               </span>
             )}
           </div>
 
           {locked && (
-            <p className="flex items-center gap-1 mt-1" style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>
+            <p className="flex items-center gap-1 mt-1" style={{ fontSize: T.caption, fontWeight: W.medium, color: C.muted }}>
               <Lock size={11} /> Conclua o item obrigatório anterior para liberar
             </p>
           )}
 
           {collabDone && (
             <div className="flex items-center gap-2 mt-1" style={{ flexWrap: 'wrap' }}>
-              <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: C.success }}>
+              <span className="flex items-center gap-1" style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>
                 <CheckCircle2 size={12} /> Concluída por {byOther ? (liveInfo.operatorName || 'colega') : 'você'}
                 {liveInfo.completedAt ? ` às ${new Date(liveInfo.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
               </span>
               {onReopen && (
                 <button onClick={onReopen}
-                  style={{ fontSize: 11, fontWeight: 800, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: 20, padding: '1px 9px', cursor: 'pointer' }}>
+                  style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: R.pill, padding: '2px 10px', cursor: 'pointer' }}>
                   Reabrir
                 </button>
               )}
@@ -1110,7 +1111,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             placeholder="Observação (opcional)"
             disabled={locked}
             className="mt-2 w-full px-2 py-1.5"
-            style={{ fontSize: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, outline: 'none', color: C.ink }}
+            style={{ fontSize: T.bodySm, background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.sm, outline: 'none', color: C.ink }}
           />
 
           {item.photoRequired && !locked && (
@@ -1120,7 +1121,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                   <img src={state.photo} alt="Comprovação" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: `1px solid ${C.border}` }} />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    style={{ fontSize: 11, fontWeight: 800, color: accent, background: 'none', border: 'none', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                    style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: 'none', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '10px 8px', margin: '-10px -8px' }}
                   >
                     Trocar foto
                   </button>
@@ -1129,7 +1130,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-1"
-                  style={{ fontSize: 11, fontWeight: 800, color: C.critical, background: 'none', border: `1px dashed ${C.critical}`, borderRadius: 4, padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                  style={{ fontSize: T.label, fontWeight: W.semibold, color: C.critical, background: 'none', border: `1px dashed ${C.critical}`, borderRadius: R.sm, padding: '8px 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}
                 >
                   <Camera size={12} /> Anexar foto
                 </button>
@@ -1143,7 +1144,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
           )}
 
           {needsPhoto && !state.done && !locked && (
-            <p style={{ fontSize: 11, fontWeight: 600, color: C.critical, marginTop: 4 }}>
+            <p style={{ fontSize: T.caption, fontWeight: W.medium, color: C.critical, marginTop: 4 }}>
               Anexe uma foto para concluir este item.
             </p>
           )}
@@ -1190,22 +1191,22 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
 function ConfirmModal({ items, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.5)' }}>
-      <div className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16, border: `2px solid ${C.critical}` }}>
+      <div className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: R.md, padding: 16, border: `2px solid ${C.critical}` }}>
         <div className="flex items-center gap-2 mb-2" style={{ color: C.critical }}>
           <AlertTriangle size={20} />
-          <h3 className="font-display" style={{ fontWeight: 800 }}>Itens críticos pendentes</h3>
+          <h3 className="font-display" style={{ fontWeight: W.semibold }}>Itens críticos pendentes</h3>
         </div>
-        <ul style={{ fontSize: 14, color: C.ink, paddingLeft: 18, marginBottom: 12 }}>
+        <ul style={{ fontSize: T.bodySm, color: C.ink, paddingLeft: 18, marginBottom: 12 }}>
           {items.map((t, i) => <li key={i} style={{ marginBottom: 4 }}>{t}</li>)}
         </ul>
-        <p style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+        <p style={{ fontSize: T.caption, color: C.muted, marginBottom: 12 }}>
           Você pode concluir mesmo assim, mas o painel mostrará alerta para a gestão.
         </p>
         <div className="flex gap-2">
-          <button onClick={onCancel} className="flex-1 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white' }}>
+          <button onClick={onCancel} className="flex-1 py-2" style={{ borderRadius: R.sm, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
             Voltar
           </button>
-          <button onClick={onConfirm} className="flex-1 py-2" style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: 'white', background: C.critical }}>
+          <button onClick={onConfirm} className="flex-1 py-2" style={{ borderRadius: R.sm, border: 'none', fontWeight: W.semibold, color: 'white', background: C.critical }}>
             Concluir assim
           </button>
         </div>
@@ -2349,8 +2350,8 @@ function StatCard({ label, value, sub, accent }) {
   return (
     <Ticket accent={accent}>
       <Eyebrow>{label}</Eyebrow>
-      <p className="font-display" style={{ fontSize: 26, fontWeight: 800, color: C.ink, marginTop: 4 }}>{value}</p>
-      {sub && <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sub}</p>}
+      <p className="font-display" style={{ fontSize: T.display, fontWeight: W.bold, color: C.ink, marginTop: 4 }}>{value}</p>
+      {sub && <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>{sub}</p>}
     </Ticket>
   );
 }
