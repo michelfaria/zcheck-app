@@ -14,6 +14,7 @@ import {
   fetchCompletions, saveCompletion as syncSaveCompletion,
   fetchClosures, saveClosures as dbSaveClosures,
   sendRecognition, fetchRecognitions,
+  fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
@@ -5734,13 +5735,41 @@ function buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, h
   };
 }
 
-function DailyBriefing({ briefing, currentUser, accent, openSource, onClose, onNavigate }) {
+function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate }) {
   const startRef = useRef(Date.now());
-  const [actioned, setActioned] = useState({});
+  // A memória do briefing: recomendações que já têm plano aberto nascem marcadas
+  // — fechar e reabrir o modal não "desfaz" mais o compromisso.
+  const [actioned, setActioned] = useState(() =>
+    Object.fromEntries((actionPlans || []).map(p => [p.recId, true])));
+  // Os planos chegam por fetch assíncrono e podem aterrissar depois do modal
+  // montar — mescla sem apagar o que o gestor marcou nesta sessão.
+  useEffect(() => {
+    if (!actionPlans?.length) return;
+    setActioned(a => ({ ...Object.fromEntries(actionPlans.map(p => [p.recId, true])), ...a }));
+  }, [actionPlans]);
+  // Follow-up: planos abertos de dias ANTERIORES, cobrados no topo do briefing.
+  const pendingPlans = (actionPlans || []).filter(p => p.briefingDate !== briefing.date);
+  const [planAnswers, setPlanAnswers] = useState({}); // planId → 'done' | 'kept'
   const [survey, setSurvey] = useState(null);
   const [insightFeedback, setInsightFeedback] = useState(null);
   const [insightActioned, setInsightActioned] = useState(false);
   const insight = briefing.insight;
+
+  const planAgeDays = p => Math.max(1, Math.round((new Date(`${briefing.date}T00:00:00`) - new Date(`${p.briefingDate}T00:00:00`)) / 86400000));
+
+  const resolvePlan = async plan => {
+    if (planAnswers[plan.id]) return;
+    setPlanAnswers(a => ({ ...a, [plan.id]: 'done' }));
+    const ok = await onCompletePlan(plan);
+    if (ok) {
+      track('action_plan_completed', { source: 'briefing', unitId: plan.unitId || undefined,
+        metadata: { plan_id: plan.id, rec_id: plan.recId, rec_type: plan.recType, age_days: planAgeDays(plan) } });
+    }
+  };
+  const keepPlan = plan => {
+    if (planAnswers[plan.id]) return;
+    setPlanAnswers(a => ({ ...a, [plan.id]: 'kept' }));
+  };
 
   // Instrumentação de abertura + tempo em tela (dwell consolidado em 1 evento — §8).
   useEffect(() => {
@@ -5771,11 +5800,17 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, onClose, onN
     track('recommendation_clicked', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
     if (rec.tab || rec.unitId) onNavigate(rec.unitId, rec.tab);
   };
-  const actionRec = (rec, e) => {
+  const actionRec = async (rec, e) => {
     e.stopPropagation();
     if (actioned[rec.id]) return;
     setActioned(a => ({ ...a, [rec.id]: true }));
     track('recommendation_actioned', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
+    // Persiste o compromisso: é isso que faz o briefing de amanhã cobrar.
+    const plan = await onCreatePlan(rec);
+    if (plan) {
+      track('action_plan_created', { source: 'briefing', unitId: rec.unitId || undefined,
+        metadata: { plan_id: plan.id, rec_id: rec.id, rec_type: rec.type } });
+    }
   };
   const answerSurvey = ans => {
     if (survey) return;
@@ -5809,6 +5844,43 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, onClose, onN
         </div>
 
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Follow-up (H1) — o que foi marcado "Tratar" volta até ser resolvido */}
+          {pendingPlans.length > 0 && (
+            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.warning}40`, borderLeft: `4px solid ${C.warning}`, padding: 14 }}>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
+                ⏳ Você marcou para tratar
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {pendingPlans.map(plan => (
+                  <div key={plan.id}>
+                    <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.45 }}>{plan.recText}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: T.label, color: C.muted }}>
+                        {planAgeDays(plan) === 1 ? 'ontem' : `há ${planAgeDays(plan)} dias`}
+                      </span>
+                      {planAnswers[plan.id] === 'done' ? (
+                        <span style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginLeft: 'auto' }}>Resolvido ✓</span>
+                      ) : planAnswers[plan.id] === 'kept' ? (
+                        <span style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.warning, marginLeft: 'auto' }}>Fica para hoje</span>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                          <button onClick={() => resolvePlan(plan)}
+                            style={{ padding: '6px 12px', borderRadius: R.sm, border: 'none', background: C.success, color: 'white', fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
+                            ✓ Resolvido
+                          </button>
+                          <button onClick={() => keepPlan(plan)}
+                            style={{ padding: '6px 12px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: C.muted, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
+                            Ainda não
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Insight do dia (H4) — análise automática no topo do briefing */}
           {insight && (
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
@@ -5873,7 +5945,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, onClose, onN
                   {rec.type !== 'all_good' && (
                     <button onClick={e => actionRec(rec, e)}
                       style={{ flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      {actioned[rec.id] ? '✓ Tratado' : 'Tratar'}
+                      {actioned[rec.id] ? '✓ No plano' : 'Tratar'}
                     </button>
                   )}
                 </div>
@@ -6416,6 +6488,29 @@ function AppInner() {
   };
   const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
 
+  // ── Action plans (H1) — a memória do briefing entre dias ──────────────────
+  const [actionPlans, setActionPlans] = useState([]);
+  useEffect(() => {
+    if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
+    fetchActionPlans(currentUser.id).then(setActionPlans);
+  }, [currentUser?.id]);
+
+  const handleCreatePlan = async rec => {
+    const plan = await createActionPlan({
+      briefingDate: todayStr(),
+      recId: rec.id, recType: rec.type, recText: rec.text,
+      unitId: rec.unitId || null,
+      createdBy: currentUser.id, createdByName: currentUser.name,
+    });
+    if (plan) setActionPlans(prev => [...prev, plan]);
+    return plan;
+  };
+  const handleCompletePlan = async plan => {
+    const ok = await completeActionPlan(plan.id, currentUser.id);
+    if (ok) setActionPlans(prev => prev.filter(p => p.id !== plan.id));
+    return ok;
+  };
+
   // Check for pending requests when gestao logs in
   useEffect(() => {
     if (currentUser?.role !== 'gestao') return;
@@ -6809,6 +6904,9 @@ function AppInner() {
           currentUser={currentUser}
           accent={unit.color}
           openSource={briefingSource}
+          actionPlans={actionPlans}
+          onCreatePlan={handleCreatePlan}
+          onCompletePlan={handleCompletePlan}
           onClose={closeBriefing}
           onNavigate={(targetUnitId, targetTab) => {
             if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);

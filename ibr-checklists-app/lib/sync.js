@@ -690,6 +690,78 @@ export async function fetchRecognitions(toUserId) {
   } catch (e) { console.warn('fetchRecognitions failed', e); return []; }
 }
 
+// ── Action Plans (H1 — fecha o loop do briefing) ──────────────────────────────
+// "Tratar" no briefing persiste um compromisso; o briefing do dia seguinte
+// cobra a resolução. Tabela criada em 20260710_action_plans.sql, visível só
+// para `authenticated` — estas funções sempre rodam depois do login.
+
+const mapPlan = r => ({
+  id: r.id,
+  createdAt: r.created_at,
+  briefingDate: r.briefing_date,
+  recId: r.rec_id,
+  recType: r.rec_type,
+  recText: r.rec_text,
+  unitId: r.unit_id,
+  createdBy: r.created_by,
+  createdByName: r.created_by_name,
+  status: r.status,
+});
+
+/** Planos ABERTOS do gestor logado. Degrada para [] se a migration não rodou. */
+export async function fetchActionPlans(userId) {
+  try {
+    const { data, error } = await db()
+      .from('action_plans')
+      .select('*')
+      .eq('status', 'open')
+      .eq('created_by', userId)
+      .order('created_at', { ascending: true })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map(mapPlan);
+  } catch (e) { console.warn('fetchActionPlans failed', e); return []; }
+}
+
+/**
+ * Cria um plano a partir de uma recomendação do briefing. Devolve o plano
+ * criado, ou null em falha. Plano aberto duplicado para a mesma recomendação é
+ * bloqueado por índice único no banco (23505) — tratado como "já existe".
+ */
+export async function createActionPlan(plan) {
+  try {
+    const { data, error } = await db().from('action_plans').insert({
+      briefing_date: plan.briefingDate,
+      rec_id: plan.recId,
+      rec_type: plan.recType ?? null,
+      rec_text: plan.recText ?? null,
+      unit_id: plan.unitId ?? null,
+      created_by: plan.createdBy,
+      created_by_name: plan.createdByName ?? null,
+      // company_id omitido de propósito: o DEFAULT extrai do token, e mandar
+      // NULL explícito anularia o DEFAULT (with check recusaria a linha).
+    }).select('*').single();
+    if (error) throw error;
+    return mapPlan(data);
+  } catch (e) {
+    if (e?.code === '23505') { console.warn('createActionPlan: plano aberto já existe para', plan.recId); return null; }
+    console.warn('createActionPlan failed', e);
+    return null;
+  }
+}
+
+/** Marca um plano como resolvido. */
+export async function completeActionPlan(planId, userId) {
+  try {
+    const { error } = await db().from('action_plans')
+      .update({ status: 'done', completed_at: new Date().toISOString(), completed_by: userId })
+      .eq('id', planId)
+      .eq('status', 'open');
+    if (error) throw error;
+    return true;
+  } catch (e) { console.warn('completeActionPlan failed', e); return false; }
+}
+
 // ── Multi-tenant: Company, Units, Sectors, Checklist Types ─────────────────
 
 export async function fetchCompany(slug, id) {
