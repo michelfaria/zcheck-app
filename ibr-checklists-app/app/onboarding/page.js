@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rjuulamozdhssgqrzfji.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqdXVsYW1vemRoc3NncXJ6ZmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNjc5MjksImV4cCI6MjA5Nzg0MzkyOX0.xxpJLp5SCpQRxMcuDMo-XD8offX2hrVUC_bU9I8me2M';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+// Esta página não fala mais com o Supabase. Criar empresa é operação de
+// plataforma: acontece antes de existir qualquer usuário do tenant, então roda
+// no servidor, em /api/admin/provision, com a service_role e uma transação só.
 
 const C = {
   ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
@@ -109,6 +108,8 @@ export default function OnboardingPage() {
   const [gestorName, setGestorName] = useState('');
   const [gestorPin, setGestorPin] = useState('');
   const [gestorPin2, setGestorPin2] = useState('');
+  // Segredo compartilhado, autoriza /api/admin/provision. Nunca é persistido.
+  const [provisionKey, setProvisionKey] = useState('');
 
   const applyTemplate = (seg) => {
     setSegment(seg);
@@ -143,47 +144,45 @@ export default function OnboardingPage() {
     if (!gestorName.trim()) { setError('Informe o nome do gestor.'); return; }
     if (!/^\d{4}$/.test(gestorPin)) { setError('O PIN deve ter 4 dígitos.'); return; }
     if (gestorPin !== gestorPin2) { setError('Os PINs não coincidem.'); return; }
+    if (!provisionKey.trim()) { setError('Informe a chave de provisionamento.'); return; }
 
     setSaving(true);
     setError('');
     try {
-      const companyId = slug(companyName) + '-' + uid();
       const companySlug = slug(companyName);
+      const companyId = companySlug + '-' + uid();
 
-      // 1. Create company
-      await supabase.from('companies').insert({
-        id: companyId, name: companyName.trim(), slug: companySlug,
-        primary_color: primaryColor, plan: 'trial', active: true,
-      });
-
-      // 2. Create units
       const unitRows = units.filter(u => u.name.trim()).map((u, i) => ({
-        id: u.id, company_id: companyId, name: u.name.trim(),
-        color: u.color, active: true, sort_order: i,
+        id: u.id, name: u.name.trim(), color: u.color, sort_order: i,
       }));
-      if (unitRows.length) await supabase.from('units').insert(unitRows);
 
-      // 3. Create sectors
-      const sectorRows = sectors.filter(s => s.name.trim()).map((s, i) => ({
-        id: s.id, company_id: companyId,
-        unit_id: s.unitId || unitRows[0]?.id,
-        name: s.name.trim(), sort_order: i,
-      }));
-      if (sectorRows.length) await supabase.from('sectors').insert(sectorRows);
-
-      // 4. Create checklist types
-      const typeRows = types.filter(t => t.name.trim()).map((t, i) => ({
-        id: t.id, company_id: companyId, name: t.name.trim(), sort_order: i,
-      }));
-      if (typeRows.length) await supabase.from('checklist_types').insert(typeRows);
-
-      // 5. Create gestão user
-      await supabase.from('users').insert({
-        id: uid(), company_id: companyId, name: gestorName.trim(),
-        pin: gestorPin, role: 'gestao', unit_id: null, sector_id: null,
-        suspended: false,
+      const res = await fetch('/api/admin/provision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-provision-secret': provisionKey.trim(),
+        },
+        body: JSON.stringify({
+          company: { id: companyId, name: companyName.trim(), slug: companySlug, primary_color: primaryColor },
+          units: unitRows,
+          sectors: sectors.filter(s => s.name.trim()).map((s, i) => ({
+            id: s.id, unit_id: s.unitId || unitRows[0]?.id, name: s.name.trim(), sort_order: i,
+          })),
+          checklist_types: types.filter(t => t.name.trim()).map((t, i) => ({
+            id: t.id, name: t.name.trim(), sort_order: i,
+          })),
+          admin: { id: uid(), name: gestorName.trim(), pin: gestorPin },
+        }),
       });
 
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        if (res.status === 401) setError('Chave de provisionamento inválida.');
+        else if (body?.message) setError(body.message);
+        else setError('Erro ao criar empresa. Tente novamente.');
+        setSaving(false);
+        return;
+      }
       setDone(true);
     } catch (e) {
       console.error(e);
@@ -390,6 +389,16 @@ export default function OnboardingPage() {
               {gestorPin2 && gestorPin !== gestorPin2 && (
                 <p style={{ fontSize: 11, color: C.critical, fontWeight: 700, marginTop: 4 }}>PINs não coincidem</p>
               )}
+            </div>
+
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Chave de provisionamento</p>
+              <input type="password" value={provisionKey} autoComplete="off"
+                onChange={e => setProvisionKey(e.target.value)}
+                placeholder="Segredo do servidor"
+                style={{ width: '100%', fontSize: 14, color: C.ink,
+                  background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none' }} />
+              <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Só a equipe do ZCheck tem esta chave.</p>
             </div>
 
             {/* Resumo */}
