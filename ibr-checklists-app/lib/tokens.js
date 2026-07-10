@@ -13,9 +13,9 @@
  * generosos. Ao mexer nestes valores, MEÇA contra `bg` — não confie no olho.
  * WCAG AA pede 4.5:1 para texto normal.
  *
- * ⚠️ ESTES VALORES REPROVAM. Cinco cores de texto estão abaixo de 4.5:1 hoje.
- * Este arquivo é a Fase 0: pura indireção, nenhum pixel muda. A Fase 1 troca
- * os valores num lugar só, e está anotada aqui embaixo.
+ * `mutedLight` quase encosta em `muted` porque é usado em texto de 9–12px, e
+ * nesse tamanho a régua é 4.5:1. A hierarquia de cor volta a respirar quando a
+ * escala tipográfica subir (nada de conteúdo abaixo de 14px).
  */
 
 export const C = {
@@ -24,18 +24,19 @@ export const C = {
   border: '#E2EAF0',      // hairline
 
   // Texto
-  ink: '#063C5C',         // primário    — 11.00:1 sobre bg · ok
-  muted: '#6B8299',       // secundário  —  3.77:1 sobre bg · REPROVA → #5B6B78
-  mutedLight: '#A8BCC8',  // terciário   —  1.86:1 sobre bg · REPROVA → #627382
-  pending: '#6B8299',     // neutro; historicamente igual a muted
+  ink: '#063C5C',         // primário    — 11.00:1 sobre bg
+  muted: '#5B6B78',       // secundário  —  5.21:1 sobre bg
+  mutedLight: '#627382',  // terciário   —  4.63:1 sobre bg
+  pending: '#5B6B78',     // neutro; historicamente igual a muted
 
   // Semânticos
-  success: '#31C85A',     // concluído   —  2.09:1 sobre bg · REPROVA → #15803D
-  critical: '#D1462F',    // falha       —  4.30:1 sobre bg · REPROVA → #B91C1C
+  success: '#15803D',     // concluído   —  4.75:1 sobre bg · branco em cima 5.02:1
+  warning: '#B45309',     // atenção     —  4.76:1 sobre bg
+  critical: '#B91C1C',    // falha       —  6.13:1 sobre bg · branco em cima 6.47:1
 };
 
 /**
- * Âmbar de atenção. Hoje vive como hex solto (#F5A623) em 8 lugares de
- * app/app/page.js. Como texto dá 1.92:1 sobre `bg` — reprova. Fase 1: #B45309.
+ * Verde vivo, para preenchimento grande e ícone — NUNCA para texto pequeno nem
+ * como fundo de texto branco (3.30:1). Anéis de progresso, barras, ícones.
  */
-export const warning = '#F5A623';
+export const successBright = '#16A34A';

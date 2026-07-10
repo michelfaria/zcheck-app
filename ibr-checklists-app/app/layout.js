@@ -23,8 +23,8 @@ export const metadata = {
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Sem trava de zoom: bloquear é falha WCAG 1.4.4, e o app é usado no celular,
+  // sob sol, por quem precisa aproximar.
   themeColor: '#063C5C',
 };
 

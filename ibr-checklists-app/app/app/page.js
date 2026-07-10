@@ -1774,7 +1774,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
   // ── Gamification: score & label ──────────────────────────────────────────
   const getRating = (rate) => {
     if (rate === null) return null;
-    if (rate === 100) return { label: '🏆 Perfeito!', color: '#F5A623', stars: 5 };
+    if (rate === 100) return { label: '🏆 Perfeito!', color: C.warning, stars: 5 };
     if (rate >= 90)  return { label: '⭐ Excelente', color: C.success, stars: 4 };
     if (rate >= 75)  return { label: '👍 Bom', color: C.success, stars: 3 };
     if (rate >= 50)  return { label: '📈 Regular', color: unit.color, stars: 2 };
@@ -4304,9 +4304,9 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
         <BackBar onBack={() => { setReviewingRequest(null); setEditingReq({}); setApprovalUnit(null); setApprovalUnits([]); }} label="Solicitações" accent={C.ink} />
 
         {/* Tipo badge + cabeçalho */}
-        <Ticket accent={isAlteracao ? C.ink : '#F5A623'}>
+        <Ticket accent={isAlteracao ? C.ink : C.warning}>
           <div className="flex items-center gap-2 mb-2">
-            <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : '#F5A623', background: isAlteracao ? `${C.ink}15` : '#F5A6231A', padding: '2px 8px', borderRadius: 20 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '2px 8px', borderRadius: 20 }}>
               {isAlteracao ? '✎ Alteração de dados' : '+ Novo cadastro'}
             </span>
             <span style={{ fontSize: 11, color: C.muted }}>{new Date(req.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
@@ -4527,7 +4527,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                   className="w-full text-left"
                   style={{ background: 'none', border: 'none', padding: 0 }}
                 >
-                  <Ticket accent={isAlteracao ? C.ink : '#F5A623'}>
+                  <Ticket accent={isAlteracao ? C.ink : C.warning}>
                     <div className="flex items-center justify-between gap-2">
                       <div style={{ minWidth: 0 }}>
                         <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{truncName(req.name)}</p>
@@ -4541,7 +4541,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                         )}
                       </div>
                       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : '#F5A623', background: isAlteracao ? `${C.ink}15` : '#F5A6231A', padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
                           {isAlteracao ? '✎ Alteração' : '+ Novo cadastro'}
                         </span>
                         <ChevronRight size={16} color={C.muted} />
@@ -6874,7 +6874,7 @@ function AppInner() {
             display: 'flex', alignItems: 'center', gap: 6,
           }}
         >
-          🔔 <span style={{ background: '#F5A623', borderRadius: 999, padding: '1px 6px', fontSize: 11 }}>{pendingRequestsCount}</span>
+          🔔 <span style={{ background: C.warning, borderRadius: 999, padding: '1px 6px', fontSize: 11 }}>{pendingRequestsCount}</span>
         </button>
       )}
 

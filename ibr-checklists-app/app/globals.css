@@ -2,17 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Espelho de lib/tokens.js — mudou lá, mude aqui. Vários destes valores
-   reprovam em WCAG AA hoje; ver os números no comentário daquele arquivo. */
+/* Espelho de lib/tokens.js — mudou lá, mude aqui. Toda cor de texto abaixo foi
+   medida contra --bg (#F7F9FB), que é mais severo que branco, e passa AA. */
 :root {
   --bg: #F7F9FB;
   --border: #E2EAF0;
   --ink: #063C5C;
-  --muted: #6B8299;
-  --muted-light: #A8BCC8;
-  --success: #31C85A;
-  --warning: #F5A623;
-  --critical: #D1462F;
+  --muted: #5B6B78;
+  --muted-light: #627382;
+  --success: #15803D;
+  --success-bright: #16A34A;
+  --warning: #B45309;
+  --critical: #B91C1C;
 }
 
 * {
