@@ -1,177 +1,301 @@
-'use client';
+import {
+  CheckSquare, Sun, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
+  AlertTriangle, Clock,
+} from 'lucide-react';
+import { C, R, W, T } from '../lib/tokens';
+import { LIBRARY_VERTICALS } from '../lib/library';
+
+// Landing pública. Consome os mesmos tokens do app (lib/tokens.js) — era uma
+// das superfícies com paleta divergente. O CTA é o waitlist (/lista): não há
+// self-service enquanto o isolamento multi-tenant não estiver no ar em
+// produção; cada empresa é provisionada manualmente (decisão de 09/07/2026).
+// O hero mostra um EXEMPLO ILUSTRATIVO do briefing, rotulado — nunca dados
+// falsos apresentados como reais.
+
+const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
+
+// Verde para TEXTO pequeno sobre o fundo ink: 6.66:1 (medido). O successBright
+// dá só 3.52:1 nesse fundo — reprova para eyebrow de 12px.
+const GREEN_ON_DARK = '#4ADE80';
+
+const Eyebrow = ({ color = C.muted, children }) => (
+  <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', color, marginBottom: 14 }}>
+    {children}
+  </p>
+);
+
+function BriefingExample() {
+  return (
+    <div aria-label="Exemplo ilustrativo do briefing diário">
+      <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, marginBottom: 8, textAlign: 'center' }}>
+        Exemplo ilustrativo do briefing
+      </p>
+      <div style={{ background: 'white', borderRadius: R.lg, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+        <div style={{ background: C.ink, color: 'white', padding: '16px 18px' }}>
+          <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>☀️ Briefing do dia</p>
+          <p style={{ fontSize: T.h3, fontWeight: W.semibold, marginTop: 4 }}>Bom dia, Ana</p>
+        </div>
+        <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.warning}`, borderRadius: R.sm, padding: '10px 12px' }}>
+            <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Você marcou para tratar</p>
+            <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.5 }}>Conferir validade dos insumos abertos — ontem</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <span style={{ fontSize: T.label, fontWeight: W.semibold, color: 'white', background: C.success, borderRadius: R.sm, padding: '4px 10px' }}>✓ Resolvido</span>
+              <span style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '4px 10px' }}>Ainda não</span>
+            </div>
+          </div>
+          <div>
+            <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Prioridades de hoje</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px' }}>
+                <AlertTriangle size={15} color={C.critical} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.5 }}>Loja 2: “temperatura da câmara fria” ficou pendente 2× esta semana. Priorize hoje.</p>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px' }}>
+                <Clock size={15} color={C.warning} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.5 }}>“Fechamento — Caixa” está atrasado na Loja 1.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LandingPage() {
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: '#102A3A', background: '#fff', overflowX: 'hidden' }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: C.ink, background: 'white', overflowX: 'hidden' }}>
       <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        .btn-green { background: #31C85A; color: #fff; border: none; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
-        .btn-green:hover { background: #28b04e; }
-        .btn-white { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.5); padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
-        .btn-blue { background: #063C5C; color: #fff; border: none; padding: 11px 22px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
-        @media (max-width: 768px) {
-          .hero-mockup { display: none !important; }
-          .benefits-grid { grid-template-columns: 1fr !important; }
-          .how-grid { flex-direction: column !important; }
-          .steps-grid { flex-direction: column !important; }
-          .footer-inner { flex-direction: column !important; align-items: center !important; text-align: center !important; gap: 16px !important; }
-          .hero-inner { padding: 48px 20px !important; }
-          .section-pad { padding: 60px 20px !important; }
-          .header-nav { display: none !important; }
-          .btn-blue-header { padding: 10px 16px !important; font-size: 13px !important; }
-          .hero-btns { flex-direction: column !important; align-items: stretch !important; }
-          .btn-green, .btn-white { justify-content: center !important; width: 100% !important; }
+        .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; border-radius: ${R.md}px; font-weight: ${W.semibold}; cursor: pointer; }
+        .lp-btn-primary { background: ${C.ink}; color: #fff; padding: 14px 28px; font-size: ${T.body}px; border: none; }
+        .lp-btn-primary:hover { background: #0a4a70; }
+        .lp-btn-ghost { background: transparent; color: ${C.ink}; padding: 14px 24px; font-size: ${T.body}px; border: 1.5px solid ${C.border}; }
+        .lp-container { max-width: 1120px; margin: 0 auto; padding-left: 40px; padding-right: 40px; }
+        .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+        .lp-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .lp-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        details.lp-faq summary { cursor: pointer; font-size: ${T.body}px; font-weight: ${W.semibold}; color: ${C.ink}; padding: 16px 0; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+        details.lp-faq summary::after { content: '+'; font-size: 20px; color: ${C.muted}; }
+        details.lp-faq[open] summary::after { content: '–'; }
+        details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
+        @media (max-width: 820px) {
+          .lp-container { padding-left: 20px; padding-right: 20px; }
+          .lp-grid-2, .lp-grid-3, .lp-grid-4 { grid-template-columns: 1fr; }
+          .lp-nav-links { display: none; }
+          .lp-hero-ctas { flex-direction: column; align-items: stretch; }
         }
       `}</style>
 
       {/* HEADER */}
-      <header style={{ background: '#fff', borderBottom: '1px solid rgba(6,60,92,0.08)', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 40px', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <header style={{ background: 'white', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, zIndex: 100 }}>
+        <div className="lp-container" style={{ height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <a href="https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!" className="header-nav" style={{ fontSize: 14, fontWeight: 600, color: '#063C5C', textDecoration: 'none' }}>Fale conosco</a>
-            <a href="/entrar" className="btn-blue btn-blue-header">Acessar →</a>
-          </div>
+          <nav style={{ display: 'flex', alignItems: 'center', gap: 22 }} aria-label="Navegação principal">
+            <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
+            <a className="lp-nav-links" href="#para-quem" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Para quem</a>
+            <a className="lp-nav-links" href="/entrar" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Entrar</a>
+            <a href="/lista" className="lp-btn lp-btn-primary" style={{ padding: '10px 20px', fontSize: T.bodySm }}>Entrar na lista</a>
+          </nav>
         </div>
       </header>
 
-      {/* HERO */}
-      <section style={{ background: 'linear-gradient(135deg, #063C5C 0%, #0a5a72 60%, #0d7a6e 100%)' }}>
-        <div className="hero-inner" style={{ maxWidth: 1180, margin: '0 auto', padding: '80px 40px', display: 'flex', alignItems: 'center', gap: 64 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 999, padding: '6px 16px', marginBottom: 32 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#31C85A', display: 'inline-block' }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Inteligência operacional para negócios físicos</span>
+      {/* 1 · HERO */}
+      <section style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+        <div className="lp-container lp-grid-2" style={{ paddingTop: 72, paddingBottom: 72 }}>
+          <div>
+            <Eyebrow color={C.success}>Inteligência operacional</Eyebrow>
+            <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em', marginBottom: 20 }}>
+              Saiba onde sua operação precisa de você — antes que vire problema.
+            </h1>
+            <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.7, maxWidth: 460, marginBottom: 32 }}>
+              Sua equipe executa os checklists pelo celular. Você recebe, todo dia,
+              um briefing com o que caiu, onde, e o que priorizar.
+            </p>
+            <div className="lp-hero-ctas" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <a href="/lista" className="lp-btn lp-btn-primary">Entrar na lista de acesso</a>
+              <a href="#como-funciona" className="lp-btn lp-btn-ghost">Ver como funciona</a>
             </div>
-            <h1 style={{ fontSize: 'clamp(36px, 5vw, 60px)', fontWeight: 800, color: '#fff', lineHeight: 1.1, marginBottom: 8 }}>Faça bem feito.</h1>
-            <h1 style={{ fontSize: 'clamp(36px, 5vw, 60px)', fontWeight: 800, color: '#31C85A', lineHeight: 1.1, marginBottom: 28 }}>Todo dia.</h1>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.82)', lineHeight: 1.7, maxWidth: 440, marginBottom: 40 }}>Checklists por loja, setor e turno. Sua equipe executa, sua gestão enxerga tudo — em tempo real.</p>
-            <div className="hero-btns" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <a href="/entrar" className="btn-green">Acessar o app →</a>
-              <a href="https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!" className="btn-white">Fale conosco</a>
-            </div>
+            <p style={{ fontSize: T.caption, color: C.muted }}>
+              Acesso antecipado gratuito · configuramos sua operação com você
+            </p>
           </div>
-
-          {/* MOCKUP */}
-          <div className="hero-mockup" style={{ flex: 1, maxWidth: 480 }}>
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 32px 80px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-              <div style={{ background: '#063C5C', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#FF5F57' }} />
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#FEBC2E' }} />
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28C840' }} />
-                <span style={{ marginLeft: 8, fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>Dashboard Operacional</span>
-              </div>
-              <div style={{ padding: 16, display: 'flex', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ background: '#F7FAFC', borderRadius: 10, padding: 14, marginBottom: 10 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#063C5C', marginBottom: 10 }}>Painel — Score do dia</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 56, height: 56, borderRadius: '50%', border: '4px solid #31C85A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#063C5C', flexShrink: 0 }}>86%</div>
-                      <div style={{ flex: 1 }}>
-                        {[['Abertura', 94], ['Rotina', 79], ['Fechamento', 87]].map(([l, v]) => (
-                          <div key={l} style={{ marginBottom: 5 }}>
-                            <div style={{ fontSize: 8, color: '#6B8299', marginBottom: 2 }}>{l} {v}%</div>
-                            <div style={{ height: 4, background: '#E2EAF0', borderRadius: 99 }}>
-                              <div style={{ width: `${v}%`, height: '100%', background: '#31C85A', borderRadius: 99 }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ background: '#F7FAFC', borderRadius: 10, padding: 14 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#063C5C', marginBottom: 10 }}>Relatório — Últimos 7 dias</div>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 52 }}>
-                      {[['Seg',91],['Ter',67],['Qua',71],['Qui',94],['Sex',65],['Sáb',72],['Dom',84]].map(([d,v]) => (
-                        <div key={d} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <span style={{ fontSize: 7, color: '#063C5C', fontWeight: 700 }}>{v}%</span>
-                          <div style={{ width: '100%', height: `${v*0.44}px`, background: v>=80?'#31C85A':'#A8BCC8', borderRadius: '2px 2px 0 0' }} />
-                          <span style={{ fontSize: 7, color: '#6B8299' }}>{d}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ width: 130, background: '#102A3A', borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#fff', marginBottom: 10 }}>Alertas de hoje</div>
-                  {[{c:'#FF6B6B',t:'Abertura do turno tardia na Loja 2.'},{c:'#FEBC2E',t:'Conferência pendente em tempo real.'}].map((a,i)=>(
-                    <div key={i} style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'flex-start' }}>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: a.c, flexShrink: 0, marginTop: 3 }} />
-                      <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.75)', lineHeight: 1.4 }}>{a.t}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+          <BriefingExample />
         </div>
       </section>
 
-      {/* BENEFÍCIOS */}
-      <section className="section-pad" style={{ background: '#fff', padding: '80px 40px' }}>
-        <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
-            <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 38px)', fontWeight: 800, color: '#102A3A', marginBottom: 12 }}>Tudo o que sua operação precisa</h2>
-            <p style={{ fontSize: 16, color: '#6B8299' }}>Simples para a equipe. Poderoso para a gestão.</p>
+      {/* 2 · O PROBLEMA */}
+      <section style={{ padding: '72px 0' }}>
+        <div className="lp-container">
+          <div style={{ maxWidth: 620, marginBottom: 40 }}>
+            <Eyebrow>O problema</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
+              Você só descobre o problema quando já virou prejuízo.
+            </h2>
           </div>
-          <div className="benefits-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18 }}>
+          <div className="lp-grid-3">
             {[
-              { icon: '☑️', title: 'Checklists por turno', text: 'Abertura, rotina e fechamento por loja e setor. Cada equipe vê só o que é dela.' },
-              { icon: '📊', title: 'Painel em tempo real', text: 'Pontuação por loja, ranking da equipe e pendências visuais para a liderança e gestão.' },
-              { icon: '📄', title: 'Relatórios exportáveis', text: 'Histórico completo em PDF ou CSV. Filtros por período, loja e setor.' },
-              { icon: '📱', title: 'PWA — funciona offline', text: 'Instala como app no celular. Funciona sem internet e sincroniza ao reconectar.' },
-            ].map((c) => (
-              <div key={c.title} style={{ background: '#F7FAFC', border: '1px solid #E5E7EB', borderRadius: 16, padding: 24 }}>
-                <div style={{ fontSize: 28, marginBottom: 14 }}>{c.icon}</div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: '#102A3A', marginBottom: 8 }}>{c.title}</h3>
-                <p style={{ fontSize: 13, color: '#6B8299', lineHeight: 1.6 }}>{c.text}</p>
+              { Icon: EyeOff, title: 'O desvio aparece tarde', text: 'Papel e planilha registram, mas não avisam. A câmara fria que falhou na terça vira perda na sexta.' },
+              { Icon: MessagesSquare, title: 'O WhatsApp engole a rotina', text: 'A cobrança vira mensagem perdida no grupo. Ninguém sabe o que foi feito, nem quando, nem por quem.' },
+              { Icon: RotateCcw, title: 'Retrabalho sem dono', text: 'Sem evidência, a mesma tarefa é refeita — ou ninguém a faz. E a gestão só enxerga o resultado no fim do mês.' },
+            ].map(({ Icon, title, text }) => (
+              <div key={title} style={{ border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
+                <Icon size={22} color={C.ink} aria-hidden style={{ marginBottom: 14 }} />
+                <h3 style={{ fontSize: T.bodyLg, fontWeight: W.semibold, marginBottom: 8 }}>{title}</h3>
+                <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.65 }}>{text}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
-      <section className="section-pad" style={{ background: '#F7FAFC', padding: '80px 40px' }}>
-        <div className="how-grid" style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', gap: 56, alignItems: 'flex-start' }}>
-          <div style={{ flex: '0 0 300px' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#31C85A', letterSpacing: '0.1em', marginBottom: 14 }}>COMO FUNCIONA</div>
-            <h2 style={{ fontSize: 'clamp(22px, 3vw, 34px)', fontWeight: 800, color: '#102A3A', lineHeight: 1.2, marginBottom: 18 }}>Três passos para uma operação controlada</h2>
-            <p style={{ fontSize: 15, color: '#6B8299', lineHeight: 1.7 }}>Configure uma vez. Sua equipe executa todo dia. Você acompanha tudo.</p>
+      {/* 3 · A VIRADA */}
+      <section style={{ background: C.ink, color: 'white', padding: '72px 0' }}>
+        <div className="lp-container lp-grid-2">
+          <div>
+            <Eyebrow color={GREEN_ON_DARK}>A diferença</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 18 }}>
+              Não é mais um app de checklist.
+            </h2>
+            <p style={{ fontSize: T.body, lineHeight: 1.75, opacity: 0.85, maxWidth: 460 }}>
+              O checklist é o insumo. O produto é o <strong>briefing do dia</strong>:
+              toda manhã, a gestão recebe o que caiu ontem, o que está atrasado agora
+              e o que ficou de ser tratado — com cobrança até resolver.
+            </p>
           </div>
-          <div className="steps-grid" style={{ flex: 1, display: 'flex', gap: 14 }}>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {[
-              { n: 1, title: 'Configure lojas, setores e rotinas', text: 'Cadastre lojas, unidades, crie checklists para cada turno e defina responsabilidades.' },
-              { n: 2, title: 'Equipe executa pelo celular', text: 'Cada colaborador vê seus checklists do turno e registra evidências quando necessário.' },
-              { n: 3, title: 'Gestão acompanha', text: 'Acompanhe checklists em tempo real e identifique desvios antes que virem problemas.' },
-            ].map((s) => (
-              <div key={s.n} style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: 22 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#063C5C', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, marginBottom: 14 }}>{s.n}</div>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#102A3A', marginBottom: 8, lineHeight: 1.4 }}>{s.title}</h3>
-                <p style={{ fontSize: 13, color: '#6B8299', lineHeight: 1.6 }}>{s.text}</p>
+              ['Prioridades do dia', 'Itens críticos que ficaram pendentes mais de uma vez sobem para o topo — antes de virarem padrão.'],
+              ['Plano de ação com cobrança', 'O que você marcar para tratar volta amanhã perguntando se foi resolvido. Nada evapora.'],
+              ['Sem fadiga de alerta', 'O briefing só toma a tela quando há sinal real. Dia tranquilo não interrompe ninguém.'],
+            ].map(([t, d]) => (
+              <li key={t} style={{ border: '1px solid rgba(255,255,255,0.18)', borderRadius: R.md, padding: '16px 18px' }}>
+                <p style={{ fontSize: T.body, fontWeight: W.semibold, marginBottom: 4 }}>{t}</p>
+                <p style={{ fontSize: T.bodySm, opacity: 0.75, lineHeight: 1.6 }}>{d}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* 4 · COMO FUNCIONA */}
+      <section id="como-funciona" style={{ padding: '72px 0' }}>
+        <div className="lp-container">
+          <div style={{ maxWidth: 620, marginBottom: 40 }}>
+            <Eyebrow>Como funciona</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
+              Do zero ao briefing em três passos.
+            </h2>
+          </div>
+          <div className="lp-grid-3">
+            {[
+              ['Adote um modelo do seu setor', 'A biblioteca traz checklists prontos por segmento — restaurante, café, hotel, varejo, padaria. Adote e ajuste ao seu jeito.'],
+              ['A equipe executa pelo celular', 'Cada colaborador vê só o que é do seu turno e setor. Foto onde importa, e funciona sem internet.'],
+              ['Você recebe o briefing e age', 'O que caiu, o que atrasou, o que priorizar. E o que você marcar para tratar volta até ser resolvido.'],
+            ].map(([t, d], i) => (
+              <div key={t} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
+                <p style={{ width: 34, height: 34, borderRadius: R.pill, background: C.ink, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: W.bold, fontSize: T.body, marginBottom: 14 }}>{i + 1}</p>
+                <h3 style={{ fontSize: T.body, fontWeight: W.semibold, marginBottom: 8, lineHeight: 1.4 }}>{t}</h3>
+                <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.65 }}>{d}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ background: 'linear-gradient(135deg, #102A3A 0%, #063C5C 100%)', padding: '80px 40px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 42px)', fontWeight: 800, color: '#fff', marginBottom: 14 }}>Pronto para organizar sua operação?</h2>
-        <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.7)', marginBottom: 40 }}>Fale conosco e coloque o ZCheck funcionando em sua empresa.</p>
-        <a href="https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!" className="btn-green" style={{ fontSize: 16, padding: '15px 32px' }}>Entrar em contato</a>
+      {/* 5 · RECURSOS */}
+      <section style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '72px 0' }}>
+        <div className="lp-container">
+          <div className="lp-grid-4">
+            {[
+              { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, rotina e fechamento. Cada equipe vê só o que é dela.' },
+              { Icon: Sun, title: 'Briefing diário para a gestão', text: 'Prioridades e cobranças do dia, direto de quem executou.' },
+              { Icon: Camera, title: 'Evidência com foto', text: 'Itens críticos podem exigir foto. Histórico completo por período, loja e setor.' },
+              { Icon: WifiOff, title: 'Funciona offline', text: 'Instala como app no celular. Sem sinal, registra local e sincroniza depois.' },
+            ].map(({ Icon, title, text }) => (
+              <div key={title} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
+                <Icon size={20} color={C.success} aria-hidden style={{ marginBottom: 12 }} />
+                <h3 style={{ fontSize: T.bodySm, fontWeight: W.semibold, marginBottom: 6, lineHeight: 1.4 }}>{title}</h3>
+                <p style={{ fontSize: T.caption, color: C.muted, lineHeight: 1.6 }}>{text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 6 · PARA QUEM */}
+      <section id="para-quem" style={{ padding: '72px 0' }}>
+        <div className="lp-container" style={{ textAlign: 'center' }}>
+          <Eyebrow>Para quem é</Eyebrow>
+          <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, marginBottom: 28 }}>
+            Operação física, várias frentes, pouco tempo.
+          </h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 640, margin: '0 auto 16px' }}>
+            {LIBRARY_VERTICALS.map(v => (
+              <span key={v.id} style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: R.pill, padding: '10px 20px' }}>
+                {v.label}
+              </span>
+            ))}
+          </div>
+          <p style={{ fontSize: T.caption, color: C.muted }}>
+            Outro setor? Conte na lista — a biblioteca de modelos cresce com a demanda.
+          </p>
+        </div>
+      </section>
+
+      {/* 7 · PROVA HONESTA + 8 · CTA */}
+      <section style={{ background: C.ink, color: 'white', padding: '72px 0', textAlign: 'center' }}>
+        <div className="lp-container" style={{ maxWidth: 660 }}>
+          <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
+            Em operação diária nas lojas da Ilhabela Republic — nosso piloto fundador.
+          </p>
+          <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: W.bold, marginBottom: 14 }}>
+            Entre na lista de acesso
+          </h2>
+          <p style={{ fontSize: T.body, opacity: 0.8, lineHeight: 1.7, marginBottom: 32 }}>
+            Acesso antecipado gratuito durante o piloto. Cada empresa é configurada
+            manualmente pela nossa equipe — você recebe retorno em até 2 dias úteis.
+          </p>
+          {/* C.success, não successBright: texto branco sobre o verde vivo dá
+              3.30:1 — a própria doc do token proíbe. Sobre #15803D: 5.02:1. */}
+          <a href="/lista" className="lp-btn" style={{ background: C.success, color: 'white', padding: '15px 34px', fontSize: T.bodyLg, fontWeight: W.semibold }}>
+            Entrar na lista
+          </a>
+          <p style={{ fontSize: T.caption, opacity: 0.6, marginTop: 14 }}>Sem cartão, sem compromisso.</p>
+        </div>
+      </section>
+
+      {/* 9 · FAQ */}
+      <section style={{ padding: '72px 0' }}>
+        <div className="lp-container" style={{ maxWidth: 680 }}>
+          <Eyebrow>Perguntas frequentes</Eyebrow>
+          <div style={{ borderTop: `1px solid ${C.border}` }}>
+            {[
+              ['Quanto custa?', 'Durante o acesso antecipado, nada. O preço será definido junto com os primeiros clientes — quem entra agora participa dessa conversa.'],
+              ['Precisa instalar alguma coisa?', 'Não. O ZCheck roda no navegador e pode ser adicionado à tela inicial do celular como um app (PWA). Sem loja de aplicativos, sem atualização manual.'],
+              ['Funciona sem internet?', 'Sim. A execução registra tudo localmente e sincroniza quando a conexão volta — feito para estoque, câmara fria e subsolo.'],
+              ['Como ficam os meus dados?', 'Isolados por empresa e tratados conforme a LGPD. Os detalhes estão nos Termos de Uso e na Política de Privacidade, no rodapé.'],
+              ['Quanto tempo até começar a usar?', 'Depois do retorno (até 2 dias úteis), configuramos sua operação com você — lojas, setores e checklists — normalmente em uma única sessão.'],
+            ].map(([q, a]) => (
+              <details key={q} className="lp-faq" style={{ borderBottom: `1px solid ${C.border}` }}>
+                <summary>{q}</summary>
+                <p>{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* FOOTER */}
-      <footer style={{ background: '#0a1f2e', padding: '28px 40px' }}>
-        <div className="footer-inner" style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
-          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.8 }} />
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>© 2026 INGO Administração de Negócios Ltda. CNPJ 34.164.735/0001-72</span>
-          <div style={{ display: 'flex', gap: 20 }}>
-            {[['Termos', '/termos'],['Privacidade', '/privacidade'],['Contato', 'https://wa.me/5512988017472?text=Olá%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!']].map(([l,h])=>(
-              <a key={l} href={h} style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textDecoration: 'none', fontWeight: 600 }}>{l}</a>
+      <footer style={{ background: C.ink, padding: '28px 0' }}>
+        <div className="lp-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
+          <span style={{ fontSize: T.label, color: 'rgba(255,255,255,0.7)' }}>© 2026 INGO Administração de Negócios Ltda. CNPJ 34.164.735/0001-72</span>
+          <nav style={{ display: 'flex', gap: 18 }} aria-label="Links legais">
+            {[['Termos', '/termos'], ['Privacidade', '/privacidade'], ['Entrar', '/entrar'], ['Contato', WA]].map(([l, h]) => (
+              <a key={l} href={h} style={{ fontSize: T.label, color: 'rgba(255,255,255,0.65)', textDecoration: 'none', fontWeight: W.medium }}>{l}</a>
             ))}
-          </div>
+          </nav>
         </div>
       </footer>
     </div>
