@@ -6736,6 +6736,25 @@ function AppInner() {
     return ok;
   };
 
+  // Sinal real = recomendação além do fallback, insight não-estável, ou plano
+  // aberto cobrando resolução. Recalcula ao vivo (completions chegam por
+  // realtime), então sinal que surge no meio do dia acende o badge do botão.
+  const briefingHasSignal = useMemo(() => {
+    if (!briefing) return false;
+    return briefing.recommendations.some(r => r.type !== 'all_good') ||
+      (!!briefing.insight && briefing.insight.type !== 'stable') ||
+      actionPlans.some(p => p.briefingDate !== briefing.date);
+  }, [briefing, actionPlans]);
+
+  // "Já viu o briefing hoje?" — espelha o marcador de localStorage em estado,
+  // para o badge do botão apagar assim que o gestor fechar o modal.
+  const [briefingSeenToday, setBriefingSeenToday] = useState(false);
+  useEffect(() => {
+    if (!currentUser) { setBriefingSeenToday(false); return; }
+    try { setBriefingSeenToday(!!localStorage.getItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`)); }
+    catch (_) { setBriefingSeenToday(false); }
+  }, [currentUser?.id]);
+
   // Abre automaticamente 1×/dia para papéis de gestão — MAS só quando há sinal
   // real. Takeover em dia de "tudo certo" treina o gestor a fechar no reflexo,
   // e esse condicionamento não se desfaz (anti-fadiga, revisão de produto).
@@ -6746,22 +6765,31 @@ function AppInner() {
     if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
     if (!briefing || !plansLoaded) return;
     // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
-    // do trabalho — aparece no próprio painel e no briefing manual.
+    // do trabalho — acende o badge do botão manual em vez de interromper.
     if (autoOpenChecked.current === currentUser.id) return;
     autoOpenChecked.current = currentUser.id;
     try {
       const key = `zc_briefing_seen_${currentUser.id}_${todayStr()}`;
       if (localStorage.getItem(key)) return;
-      const hasSignal =
-        briefing.recommendations.some(r => r.type !== 'all_good') ||
-        (briefing.insight && briefing.insight.type !== 'stable') ||
-        actionPlans.some(p => p.briefingDate !== briefing.date);
-      if (hasSignal) { setBriefingSource('auto'); setShowBriefing(true); }
+      if (briefingHasSignal) {
+        setBriefingSource('auto');
+        setShowBriefing(true);
+      } else {
+        // Takeover evitado. Sem este evento, a análise do H1 não distingue
+        // "dia quieto" de "gestor abandonou" — e não mede a taxa de takeover.
+        // 1× por dia por gestor, com o mesmo padrão de marcador do "seen".
+        const skipKey = `zc_briefing_skip_${currentUser.id}_${todayStr()}`;
+        if (!localStorage.getItem(skipKey)) {
+          localStorage.setItem(skipKey, '1');
+          track('briefing_skipped', { source: 'auto', metadata: { reason: 'no_signal' } });
+        }
+      }
     } catch (_) {}
-  }, [currentUser?.id, briefing, plansLoaded, actionPlans]);
+  }, [currentUser?.id, briefing, plansLoaded, briefingHasSignal]);
 
   const closeBriefing = () => {
     try { if (currentUser) localStorage.setItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+    setBriefingSeenToday(true);
     setShowBriefing(false);
   };
   const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
@@ -7237,9 +7265,14 @@ function AppInner() {
       <main style={{ flex: 1 }} key={unitId}>
         {MANAGER_ROLES.includes(currentUser.role) && !showBriefing && (
           <div style={{ padding: '10px 14px 0' }}>
+            {/* Badge = há sinal que você ainda não viu. É como sinal de meio de
+                dia chega ao gestor sem takeover (anti-fadiga). */}
             <button onClick={openBriefing}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: 12, border: `1px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: R.md, border: `1.5px solid ${briefingHasSignal && !briefingSeenToday ? C.warning : C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer' }}>
               ☀️ Ver briefing do dia
+              {briefingHasSignal && !briefingSeenToday && (
+                <span aria-label="Há novidades no briefing" style={{ width: 8, height: 8, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
+              )}
             </button>
           </div>
         )}

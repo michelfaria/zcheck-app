@@ -18,11 +18,17 @@ Arquivo: `h1_briefing_habit.sql`
 
 | O que olhar | Query | Coluna | ✅ Validação | ❌ Invalidação |
 |---|---|---|---|---|
-| Hábito 4/5 dias úteis | **A** | `pct_habito` | ≥ **60%** por 4 semanas | `pct_uso_semanal` < **30%** após 4 semanas |
+| Hábito 4/5 dias úteis (dias quietos não contam contra) | **A** | `pct_habito` | ≥ **60%** por 4 semanas | `pct_uso_semanal` < **30%** após 4 semanas |
+| Sinal-ouro: aberturas manuais | **A2** | `aberturas_manuais` | tendência crescente | só abre quando o modal força |
+| Loop fechado: plano → resolvido | **C** | `pct_loop_fechado` | ≥ **50%** dos planos resolvidos | planos criados e abandonados |
+| Leu ou fechou no reflexo? | D | `pct_dwell_20s` | alto e estável | cai semana a semana = fadiga |
 | Rotina de início do dia | B | `pct_antes_9h` | quanto maior, melhor (apoio) | — |
-| Recomendação → ação | C | `acoes_por_briefing_pct` | apoio | — |
 
 > É a primeira a validar. Se o briefing não vira rotina, o resto perde âncora.
+> **Regime desde 10/07/2026 (anti-fadiga):** o briefing só abre sozinho com sinal
+> real; dia quieto emite `briefing_skipped` e é neutro no hábito. `source=auto`
+> não prova hábito — quem prova é a abertura manual e o loop fechado. Não
+> compare `pct_habito` com dados anteriores a essa data sem esta ressalva.
 
 ## H2 — ID Operacional engaja o colaborador
 Arquivo: `h2_operational_id.sql`
