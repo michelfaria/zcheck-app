@@ -1,22 +1,15 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+// Cliente anônimo, de propósito: quem se cadastra ainda não tem conta.
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supabase';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://rjuulamozdhssgqrzfji.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqdXVsYW1vemRoc3NncXJ6ZmppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNjc5MjksImV4cCI6MjA5Nzg0MzkyOX0.xxpJLp5SCpQRxMcuDMo-XD8offX2hrVUC_bU9I8me2M';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-
+import { C } from '../../lib/tokens';
 const UNITS = [
   { id: 'ibr1', name: 'IBR1' },
   { id: 'ibr2', name: 'IBR2' },
   { id: 'ibr3', name: 'IBR3' },
 ];
-
-const C = {
-  ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0',
-  muted: '#6B8299', success: '#31C85A', critical: '#D1462F',
-};
 
 const inputStyle = {
   width: '100%', fontSize: 15, fontWeight: 600, color: '#063C5C',
@@ -39,7 +32,7 @@ function formatPhone(v) {
 
 async function notifyGestao(name, unitId) {
   try {
-    await fetch('https://rjuulamozdhssgqrzfji.supabase.co/functions/v1/notify-request', {
+    await fetch(`${SUPABASE_URL}/functions/v1/notify-request`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -120,7 +113,8 @@ export default function CadastroPage() {
     setLoading(true);
     try {
       const ext = selfie.name.split('.').pop() || 'jpg';
-      const path = Date.now() + '-' + cpf.replace(/\D/g,'') + '.' + ext;
+      // Nome aleatório: o CPF não pode viajar no path do objeto.
+      const path = crypto.randomUUID() + '.' + ext;
       const { error: uploadErr } = await supabase.storage
         .from('colaboradores')
         .upload(path, selfie, { contentType: selfie.type, upsert: false });
@@ -334,18 +328,14 @@ function StatusChecker({ cpf: initialCpf } = {}) {
     setLoading(true);
     try {
       const raw = cpf.trim().replace(/\D/g, ''); // digits only: "12345678909"
-      const formatted = raw.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'); // "123.456.789-09"
 
-      // Try both formatted and raw CPF since storage format may vary
-      const { data } = await supabase
-        .from('user_requests')
-        .select('status, name, unit_id, created_at')
-        .or(`cpf.eq.${formatted},cpf.eq.${raw}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // `user_requests` não é mais legível pela chave anônima (o CPF e o caminho
+      // da selfie estavam expostos). Este RPC devolve só o status, exigindo o
+      // CPF completo. O RPC normaliza os dois formatos de armazenamento.
+      const { data, error } = await supabase.rpc('user_request_status', { p_cpf: raw });
+      if (error) throw error;
 
-      setStatus(data ? data.status : 'not_found');
+      setStatus(data?.[0]?.status ?? 'not_found');
       setChecked(true);
     } catch {
       setStatus('not_found');

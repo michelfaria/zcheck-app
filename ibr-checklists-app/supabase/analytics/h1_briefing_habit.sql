@@ -9,13 +9,24 @@
 -- "por dia" e "antes das 9h".
 --
 -- Critério de VALIDAÇÃO:   ≥60% dos gestores ativos abrem o briefing em
---                          4 de 5 dias úteis, por 4 semanas.
+--                          4 de 5 dias úteis (descontando dias quietos),
+--                          por 4 semanas.
 -- Critério de INVALIDAÇÃO: <30% abrem semanalmente após 4 semanas.
+--
+-- ⚠️ Mudança de regime em 10/07/2026 (anti-fadiga): o briefing só abre sozinho
+-- quando há SINAL real. Dia quieto emite `briefing_skipped` (1×/gestor/dia) em
+-- vez de takeover. Consequências para a leitura:
+--   · briefing_opened com action_source='auto' passou a implicar "havia sinal";
+--   · dia com briefing_skipped é NEUTRO — não conta contra o hábito do gestor;
+--   · action_source='manual' é o sinal-ouro: o gestor abriu porque quis.
+-- Não compare pct_habito de antes e depois dessa data sem esta ressalva.
 -- ============================================================================
 
 
 -- ── A) MÉTRICA-ÂNCORA: % de gestores com hábito (4 de 5 dias úteis) por semana ──
 -- pct_habito >= 60  → sinal de validação   |   pct_habito < 30 → sinal de invalidação
+-- Dias quietos (briefing_skipped sem abertura no dia) saem do denominador do
+-- gestor: ninguém perde hábito por não abrir um briefing que não tinha nada.
 with mgr_events as (
   select user_id, event_type,
          (occurred_at at time zone 'America/Sao_Paulo') as ts_local
@@ -36,19 +47,56 @@ opens as (   -- dias úteis distintos com briefing aberto, por gestor/semana
   from mgr_events
   where event_type = 'briefing_opened'
   group by 1,2
+),
+quiet as (   -- dias úteis quietos (skip e nenhuma abertura no mesmo dia)
+  select date_trunc('week', s.ts_local)::date as semana, s.user_id,
+         count(distinct s.ts_local::date)
+           filter (where extract(isodow from s.ts_local) between 1 and 5) as dias_quietos
+  from mgr_events s
+  where s.event_type = 'briefing_skipped'
+    and not exists (
+      select 1 from mgr_events o
+      where o.event_type = 'briefing_opened'
+        and o.user_id = s.user_id
+        and o.ts_local::date = s.ts_local::date
+    )
+  group by 1,2
 )
 select a.semana,
        count(distinct a.user_id)                                              as gestores_ativos,
-       count(distinct o.user_id) filter (where o.dias_uteis >= 4)             as habito_4de5,
-       round(100.0 * count(distinct o.user_id) filter (where o.dias_uteis >= 4)
-             / nullif(count(distinct a.user_id),0), 1)                        as pct_habito,
+       -- hábito = abriu em >= (5 - dias quietos - 1) dias úteis, mínimo 1
+       count(distinct a.user_id) filter (
+         where coalesce(o.dias_uteis,0) >= greatest(1, 5 - coalesce(q.dias_quietos,0) - 1)
+       )                                                                       as habito_4de5,
+       round(100.0 * count(distinct a.user_id) filter (
+         where coalesce(o.dias_uteis,0) >= greatest(1, 5 - coalesce(q.dias_quietos,0) - 1)
+       ) / nullif(count(distinct a.user_id),0), 1)                            as pct_habito,
        count(distinct o.user_id) filter (where o.dias_uteis >= 1)             as abriram_1x_ou_mais,
        round(100.0 * count(distinct o.user_id) filter (where o.dias_uteis >= 1)
              / nullif(count(distinct a.user_id),0), 1)                        as pct_uso_semanal
 from active a
 left join opens o on o.semana = a.semana and o.user_id = a.user_id
+left join quiet q on q.semana = a.semana and q.user_id = a.user_id
 group by a.semana
 order by a.semana;
+
+
+-- ── A2) SINAL-OURO: aberturas MANUAIS por semana (hábito sem contaminação) ─────
+-- O takeover automático não prova hábito (o modal se abre sozinho). Abrir por
+-- vontade própria prova. Acompanhe a tendência: crescer = o briefing pegou.
+select date_trunc('week', occurred_at at time zone 'America/Sao_Paulo')::date as semana,
+       count(*) filter (where action_source = 'manual')                        as aberturas_manuais,
+       count(distinct user_id) filter (where action_source = 'manual')         as gestores_manuais,
+       count(*) filter (where action_source = 'auto')                          as aberturas_auto,
+       (select count(*) from events e2
+         where e2.event_type = 'briefing_skipped'
+           and date_trunc('week', e2.occurred_at at time zone 'America/Sao_Paulo')::date
+             = date_trunc('week', events.occurred_at at time zone 'America/Sao_Paulo')::date) as dias_quietos_registrados
+from events
+where event_type = 'briefing_opened'
+  and occurred_at >= now() - interval '28 days'
+group by 1
+order by 1;
 
 
 -- ── B) % de aberturas antes das 9h (rotina de início do dia) ──────────────────
@@ -61,20 +109,32 @@ where event_type = 'briefing_opened'
   and occurred_at >= now() - interval '28 days';
 
 
--- ── C) Funil recomendação → ação (briefing gera ação, não só leitura?) ────────
-select count(*) filter (where event_type='briefing_opened')          as briefings_abertos,
-       count(*) filter (where event_type='recommendation_clicked')   as rec_clicadas,
-       count(*) filter (where event_type='recommendation_actioned')  as rec_tratadas,
-       round(100.0 * count(*) filter (where event_type='recommendation_actioned')
-             / nullif(count(*) filter (where event_type='briefing_opened'),0), 1) as acoes_por_briefing_pct
+-- ── C) O LOOP FECHADO: recomendação → plano → resolução ──────────────────────
+-- "Tratar" agora persiste um plano e o briefing seguinte cobra. O que decide a
+-- tese não é clicar — é o pct_loop_fechado: dos compromissos assumidos, quantos
+-- o gestor voltou e marcou como resolvidos.
+select count(*) filter (where event_type='briefing_opened')           as briefings_abertos,
+       count(*) filter (where event_type='recommendation_clicked')    as rec_clicadas,
+       count(*) filter (where event_type='recommendation_actioned')   as rec_tratadas,
+       count(*) filter (where event_type='action_plan_created')       as planos_criados,
+       count(*) filter (where event_type='action_plan_completed')     as planos_resolvidos,
+       round(100.0 * count(*) filter (where event_type='action_plan_completed')
+             / nullif(count(*) filter (where event_type='action_plan_created'),0), 1) as pct_loop_fechado,
+       round(avg((metadata->>'age_days')::numeric)
+             filter (where event_type='action_plan_completed'), 1)    as dias_ate_resolver
 from events
 where occurred_at >= now() - interval '28 days'
-  and event_type in ('briefing_opened','recommendation_clicked','recommendation_actioned');
+  and event_type in ('briefing_opened','recommendation_clicked','recommendation_actioned',
+                     'action_plan_created','action_plan_completed');
 
 
 -- ── D) Tempo em tela (dwell) — engajamento real com o briefing ────────────────
+-- dwell >= 20s distingue "leu" de "fechou no reflexo" (o dano que a anti-fadiga
+-- evita). pct_dwell_20s baixo com aberturas altas = fadiga instalada.
 select round(avg((metadata->>'seconds')::numeric), 1)                                     as dwell_medio_s,
        percentile_cont(0.5) within group (order by (metadata->>'seconds')::numeric)       as dwell_mediano_s,
+       round(100.0 * count(*) filter (where (metadata->>'seconds')::numeric >= 20)
+             / nullif(count(*),0), 1)                                                     as pct_dwell_20s,
        count(*)                                                                            as amostras
 from events
 where event_type = 'briefing_dwell'

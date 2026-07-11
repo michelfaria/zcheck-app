@@ -4,3 +4,10 @@
 
 # Cópia paralela — o projeto ativo é ibr-checklists-app/
 ibr-checklists-app-codex-update/
+
+# Claude Code — versionamos agentes e launch.json; o resto é local.
+.claude/worktrees/
+.claude/settings.local.json
+.claude/agent-memory/
+**/.claude/settings.local.json
+**/.claude/agent-memory/

@@ -9,10 +9,18 @@
  *    If offline, queue the write and drain the queue when connectivity returns.
  */
 
-import { supabase } from './supabase';
+import { supabase, authedSupabase, getSessionToken } from './supabase';
 import { storageGet, storageSet, getSyncQueue, clearSyncQueue } from './storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Toda leitura/escrita de tabela passa por aqui. Antes do login não há token e
+// authedSupabase() devolve o cliente anônimo; depois, o token viaja no header e
+// o RLS escopa as linhas por company_id.
+//
+// `supabase` (anônimo) segue em uso de propósito para storage e para os canais
+// de realtime — ver setSessionToken(), que reautoriza o socket no login.
+const db = () => authedSupabase();
 
 const cache = {
   async get(key) {
@@ -33,7 +41,7 @@ function isOnline() {
 export async function fetchTemplates(seedTemplates) {
   // Always try Supabase first — isOnline() is unreliable at mount time
   try {
-    const { data, error } = await supabase.from('templates').select('*').order('unit_id').order('sector');
+    const { data, error } = await db().from('templates').select('*').order('unit_id').order('sector');
     if (error) throw error;
     if (data && data.length > 0) {
       const mapped = data.map(row => ({
@@ -66,7 +74,7 @@ export async function saveTemplates(templates, changedIds = null) {
 
     // Upsert one by one to guarantee postgres_changes fires for each row
     for (const t of toSave) {
-      const { error } = await supabase.from('templates').upsert({
+      const { error } = await db().from('templates').upsert({
         id: t.id, unit_id: t.unitId, sector: t.sector,
         shift: t.shift, name: t.name, deadline: t.deadline, items: t.items,
         updated_at: new Date().toISOString(),
@@ -82,7 +90,7 @@ export async function saveTemplates(templates, changedIds = null) {
 export async function fetchUsers(seedUsers) {
   // Always try Supabase first — returns users WITHOUT pin (security)
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('users')
       .select('id, name, role, unit_id, sector_id, suspended')
       .order('name');
@@ -126,13 +134,13 @@ export async function saveUsers(users) {
     const withoutPin = users.filter(u => !u.pin);
 
     if (withPin.length) {
-      await supabase.from('users').upsert(
+      await db().from('users').upsert(
         withPin.map(u => ({ ...baseRow(u), pin: u.pin })),
         { onConflict: 'id' }
       );
     }
     if (withoutPin.length) {
-      await supabase.from('users').upsert(
+      await db().from('users').upsert(
         withoutPin.map(baseRow),
         { onConflict: 'id' }
       );
@@ -140,11 +148,11 @@ export async function saveUsers(users) {
 
     // Only delete users that were explicitly removed (exist in DB but not in
     // our list). Diff against ids only — reading ids is not sensitive.
-    const { data: existing } = await supabase.from('users').select('id');
+    const { data: existing } = await db().from('users').select('id');
     const currentIds = new Set(users.map(u => u.id));
     const toDelete = (existing || []).filter(u => !currentIds.has(u.id)).map(u => u.id);
     if (toDelete.length > 0) {
-      await supabase.from('users').delete().in('id', toDelete);
+      await db().from('users').delete().in('id', toDelete);
     }
   } catch (e) { console.warn('saveUsers: Supabase error', e); }
 }
@@ -156,7 +164,7 @@ export async function fetchCompletions() {
   try {
     const since = new Date();
     since.setDate(since.getDate() - 90);
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('completions')
       .select('*')
       .gte('date', since.toISOString().slice(0, 10))
@@ -200,30 +208,33 @@ export async function saveCompletion(record) {
     return;
   }
   console.log('[Sync] pushing completion to Supabase:', record.id);
-  await pushCompletion(record);
-}
-
-async function pushCompletion(record) {
   try {
-    const row = {
-      id: record.id,
-      template_id: record.templateId || null,
-      template_name: record.templateName,
-      unit_id: record.unitId,
-      sector: record.sector,
-      shift: record.shift,
-      date: record.date,
-      completed_at: record.completedAt,
-      operator_name: record.operatorName,
-      operator_user_id: record.operatorUserId || null,
-      items: record.items,
-    };
-    const { error } = await supabase.from('completions').upsert(row, { onConflict: 'id' });
-    if (error) throw error;
+    await pushCompletion(record);
   } catch (e) {
-    console.error('[Supabase] pushCompletion FAILED:', JSON.stringify(e));
+    console.error('[Supabase] pushCompletion FAILED:', e.message);
     await queueOfflineCompletion(record);
   }
+}
+
+// Lança em falha. Quem chama decide o que fazer: `saveCompletion` enfileira,
+// `drainOfflineQueue` mantém a entrada na fila. Se esta função engolisse o erro,
+// o dreno contaria sucesso e sobrescreveria a fila — perdendo a conclusão.
+async function pushCompletion(record) {
+  const row = {
+    id: record.id,
+    template_id: record.templateId || null,
+    template_name: record.templateName,
+    unit_id: record.unitId,
+    sector: record.sector,
+    shift: record.shift,
+    date: record.date,
+    completed_at: record.completedAt,
+    operator_name: record.operatorName,
+    operator_user_id: record.operatorUserId || null,
+    items: record.items,
+  };
+  const { error } = await db().from('completions').upsert(row, { onConflict: 'id' });
+  if (error) throw error;
 }
 
 // ── Photos ────────────────────────────────────────────────────────────────────
@@ -247,49 +258,54 @@ export async function uploadRefPhoto(templateId, itemId, photoIndex, dataUrl) {
 }
 
 export async function uploadPhoto(completionId, itemId, dataUrl) {
-  if (!isOnline()) {
-    // Queue for later upload — store data URL in cache keyed by completion+item
+  const queue = async () => {
     try {
       await storageSet(`ibr_photo_${completionId}_${itemId}`, dataUrl);
       await queueOfflinePhoto({ completionId, itemId });
     } catch (e) { console.warn('uploadPhoto offline queue failed', e); }
+  };
+
+  if (!isOnline()) {
+    console.log('[Sync] offline — queuing photo:', completionId, itemId);
+    await queue();
     return null;
   }
-  return await pushPhoto(completionId, itemId, dataUrl);
+  try {
+    return await pushPhoto(completionId, itemId, dataUrl);
+  } catch (e) {
+    console.warn('pushPhoto failed, enfileirando', e.message);
+    await queue();
+    return null;
+  }
 }
 
+// Lança em falha, pelo mesmo motivo de pushCompletion: o dreno precisa saber.
 async function pushPhoto(completionId, itemId, dataUrl) {
-  try {
-    // Convert data URL to blob
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const path = `${completionId}/${itemId}.jpg`;
-    const { error } = await supabase.storage
-      .from('checklist-photos')
-      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) throw error;
+  // Convert data URL to blob
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const path = `${completionId}/${itemId}.jpg`;
+  const { error } = await supabase.storage
+    .from('checklist-photos')
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw error;
 
-    // Save metadata — try upsert first, fall back to insert
-    // Save metadata
-    const { error: upsertErr } = await supabase.from('photos').upsert({
-      completion_id: completionId,
-      item_id: itemId,
-      storage_path: path,
-    }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
-    if (upsertErr) console.warn('pushPhoto metadata warning (ignored):', upsertErr.code);
+  // Save metadata
+  const { error: upsertErr } = await db().from('photos').upsert({
+    completion_id: completionId,
+    item_id: itemId,
+    storage_path: path,
+  }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
+  if (upsertErr) console.warn('pushPhoto metadata warning (ignored):', upsertErr.code);
 
-    return path;
-  } catch (e) {
-    console.warn('pushPhoto failed', e);
-    return null;
-  }
+  return path;
 }
 
 export async function getPhotoUrl(completionId, itemId) {
   // Try Supabase first
   if (isOnline()) {
     try {
-      const { data } = await supabase.from('photos')
+      const { data } = await db().from('photos')
         .select('storage_path')
         .eq('completion_id', completionId)
         .eq('item_id', itemId)
@@ -314,7 +330,7 @@ export async function getPhotoUrl(completionId, itemId) {
 export async function fetchClosures() {
   // Always try Supabase first
   try {
-    const { data, error } = await supabase.from('closures').select('*');
+    const { data, error } = await db().from('closures').select('*');
     if (error) throw error;
     if (data) {
       const mapped = data.map(row => ({ unitId: row.unit_id, date: row.date }));
@@ -332,10 +348,10 @@ export async function saveClosures(closures) {
   // Try Supabase even if isOnline() is uncertain
   try {
     // Full replace: delete all and re-insert
-    await supabase.from('closures').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await db().from('closures').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (closures.length > 0) {
       const rows = closures.map(c => ({ unit_id: c.unitId, date: c.date }));
-      await supabase.from('closures').insert(rows);
+      await db().from('closures').insert(rows);
     }
   } catch (e) { console.warn('saveClosures: Supabase error', e); }
 }
@@ -361,6 +377,9 @@ async function queueOfflinePhoto({ completionId, itemId }) {
 export async function drainOfflineQueue() {
   console.log('[Sync] drainOfflineQueue called, online:', isOnline());
   if (!isOnline()) return { drained: 0, failed: 0 };
+  // Sem sessão, a escrita é recusada pelo RLS. O poll de rede roda já na tela de
+  // login, então drenar aqui só queimaria tentativas contra a fila do usuário.
+  if (!getSessionToken()) return { drained: 0, failed: 0 };
   try {
     const q = (await cache.get('ibr_offline_queue')) || [];
     if (q.length === 0) return { drained: 0, failed: 0 };
@@ -404,14 +423,14 @@ export async function getOfflineQueueLength() {
 export async function seedSupabaseIfEmpty(seedTemplates, seedUsers) {
   if (!isOnline()) return;
   try {
-    const { count: templateCount } = await supabase
+    const { count: templateCount } = await db()
       .from('templates').select('*', { count: 'exact', head: true });
     console.log('[Supabase] Template count:', templateCount);
     if (templateCount === 0) {
       console.log('[Supabase] Seeding templates...');
       await saveTemplates(seedTemplates);
     }
-    const { count: userCount } = await supabase
+    const { count: userCount } = await db()
       .from('users').select('id', { count: 'exact', head: true });
     console.log('[Supabase] User count:', userCount);
     if (userCount === 0) {
@@ -439,7 +458,7 @@ export function subscribeToTemplates(onUpdate) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'templates' }, async () => {
       // Re-fetch all templates when any change is detected
       try {
-        const { data } = await supabase.from('templates').select('*').order('name');
+        const { data } = await db().from('templates').select('*').order('name');
         if (data) {
           const mapped = data.map(row => ({
             id: row.id, unitId: row.unit_id, sector: row.sector,
@@ -508,24 +527,24 @@ export function subscribeToCompletions(unitId, onNew) {
 // ── Authentication ────────────────────────────────────────────────────────────
 
 /**
- * Validates a PIN against Supabase.
- * Returns the user object (without PIN) if valid, null otherwise.
- * The PIN never lives in the JS bundle — it's only checked server-side.
+ * Validates a PIN and opens a session.
+ * Returns:
+ *   { ok: false, reason: 'rate_limited' | 'wrong_pin' | 'not_found' | 'network_error' }
+ *   { ok: true,  user: { id, name, role, unitId, sectorId, companyId, suspended }, token }
+ *
+ * A rota /api/auth/session chama o RPC `validate_pin` (SECURITY DEFINER, com
+ * rate-limit e log de tentativas) e assina um token com o JWT secret do
+ * Supabase. O PIN nunca esteve no bundle; o segredo do token também não.
  */
 export async function validatePin(userId, pin) {
   try {
-    // Everything happens server-side in a SECURITY DEFINER RPC: rate-limit
-    // check, PIN comparison and login_attempts logging. The PIN column is not
-    // readable by the anon role, so it never reaches the client bundle.
-    // The RPC returns the same shape the caller expects:
-    //   { ok: false, reason: 'rate_limited' | 'wrong_pin' | 'not_found' }
-    //   { ok: true,  user: { id, name, role, unitId, sectorId, companyId, suspended } }
-    const { data, error } = await supabase.rpc('validate_pin', {
-      p_user_id: userId,
-      p_pin: pin,
+    const res = await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, pin }),
     });
-
-    if (error) throw error;
+    // A rota devolve 401 quando o PIN não confere: o corpo carrega o motivo.
+    const data = await res.json().catch(() => null);
     if (!data) return { ok: false, reason: 'network_error' };
     return data;
   } catch (e) {
@@ -535,27 +554,35 @@ export async function validatePin(userId, pin) {
 }
 
 /**
- * Fetches public user list (name + id only, no PIN) for the login dropdown.
+ * Lista de usuários da tela de login, de UMA empresa.
+ *
+ * Chamada antes do login, quando ainda não existe token — por isso vai pelo
+ * cliente anônimo e por um RPC `security definer`, e não pela tabela `users`:
+ * o RLS não teria como saber o tenant, e deixar `users` legível por anon
+ * vazaria nome e cargo de todas as empresas. O RPC projeta só o necessário e
+ * nunca o PIN.
  */
-export async function fetchPublicUsers() {
+export async function fetchPublicUsers(companyId) {
+  if (!companyId) return null;
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, name, role, unit_id, sector_id')
-      .order('name');
+    const { data, error } = await supabase.rpc('public_users', { p_company_id: companyId });
+    if (error) throw error;
+    if (!data) throw new Error('resposta vazia');
 
-    if (error || !data) return null;
-
-    return data.map(u => ({
+    const mapped = data.map(u => ({
       id: u.id,
       name: u.name,
       role: u.role,
       unitId: u.unit_id,
       sectorId: u.sector_id ?? null,
     }));
+    await cache.set('ibr_public_users', mapped);
+    return mapped;
   } catch (e) {
-    console.warn('fetchPublicUsers error:', e);
-    return null;
+    // App offline-first: sem o cache, uma falha de rede deixaria o seletor de
+    // nomes vazio e ninguém conseguiria entrar.
+    console.warn('fetchPublicUsers falhou, usando cache:', e.message);
+    return await cache.get('ibr_public_users');
   }
 }
 
@@ -597,7 +624,7 @@ export async function requestPushPermission(user) {
     const sub = subscription.toJSON();
 
     // Save to Supabase
-    const { error } = await supabase.from('push_subscriptions').upsert({
+    const { error } = await db().from('push_subscriptions').upsert({
       user_id: user.id,
       unit_id: user.unitId,
       role: user.role,
@@ -626,8 +653,11 @@ export async function hasPushPermission() {
 
 export async function sendRecognition(rec) {
   try {
-    const { error } = await supabase.from('recognitions').insert({
-      company_id: rec.companyId ?? null,
+    const { error } = await db().from('recognitions').insert({
+      // Omitir a coluna quando não sabemos a empresa: o DEFAULT no banco extrai
+      // company_id do token. Mandar NULL explícito anula o DEFAULT e o `with
+      // check` do RLS recusa a linha.
+      ...(rec.companyId ? { company_id: rec.companyId } : {}),
       from_user_id: rec.fromUserId,
       from_user_name: rec.fromUserName ?? null,
       to_user_id: rec.toUserId,
@@ -644,7 +674,7 @@ export async function sendRecognition(rec) {
 
 export async function fetchRecognitions(toUserId) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('recognitions')
       .select('*')
       .eq('to_user_id', toUserId)
@@ -660,11 +690,83 @@ export async function fetchRecognitions(toUserId) {
   } catch (e) { console.warn('fetchRecognitions failed', e); return []; }
 }
 
+// ── Action Plans (H1 — fecha o loop do briefing) ──────────────────────────────
+// "Tratar" no briefing persiste um compromisso; o briefing do dia seguinte
+// cobra a resolução. Tabela criada em 20260710_action_plans.sql, visível só
+// para `authenticated` — estas funções sempre rodam depois do login.
+
+const mapPlan = r => ({
+  id: r.id,
+  createdAt: r.created_at,
+  briefingDate: r.briefing_date,
+  recId: r.rec_id,
+  recType: r.rec_type,
+  recText: r.rec_text,
+  unitId: r.unit_id,
+  createdBy: r.created_by,
+  createdByName: r.created_by_name,
+  status: r.status,
+});
+
+/** Planos ABERTOS do gestor logado. Degrada para [] se a migration não rodou. */
+export async function fetchActionPlans(userId) {
+  try {
+    const { data, error } = await db()
+      .from('action_plans')
+      .select('*')
+      .eq('status', 'open')
+      .eq('created_by', userId)
+      .order('created_at', { ascending: true })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map(mapPlan);
+  } catch (e) { console.warn('fetchActionPlans failed', e); return []; }
+}
+
+/**
+ * Cria um plano a partir de uma recomendação do briefing. Devolve o plano
+ * criado, ou null em falha. Plano aberto duplicado para a mesma recomendação é
+ * bloqueado por índice único no banco (23505) — tratado como "já existe".
+ */
+export async function createActionPlan(plan) {
+  try {
+    const { data, error } = await db().from('action_plans').insert({
+      briefing_date: plan.briefingDate,
+      rec_id: plan.recId,
+      rec_type: plan.recType ?? null,
+      rec_text: plan.recText ?? null,
+      unit_id: plan.unitId ?? null,
+      created_by: plan.createdBy,
+      created_by_name: plan.createdByName ?? null,
+      // company_id omitido de propósito: o DEFAULT extrai do token, e mandar
+      // NULL explícito anularia o DEFAULT (with check recusaria a linha).
+    }).select('*').single();
+    if (error) throw error;
+    return mapPlan(data);
+  } catch (e) {
+    if (e?.code === '23505') { console.warn('createActionPlan: plano aberto já existe para', plan.recId); return null; }
+    console.warn('createActionPlan failed', e);
+    return null;
+  }
+}
+
+/** Marca um plano como resolvido. */
+export async function completeActionPlan(planId, userId) {
+  try {
+    const { error } = await db().from('action_plans')
+      .update({ status: 'done', completed_at: new Date().toISOString(), completed_by: userId })
+      .eq('id', planId)
+      .eq('status', 'open');
+    if (error) throw error;
+    return true;
+  } catch (e) { console.warn('completeActionPlan failed', e); return false; }
+}
+
 // ── Multi-tenant: Company, Units, Sectors, Checklist Types ─────────────────
 
 export async function fetchCompany(slug, id) {
   try {
-    let query = supabase.from('companies').select('*').eq('active', true);
+    let query = db().from('companies').select('*').eq('active', true);
     if (id) query = query.eq('id', id);
     else if (slug) query = query.eq('slug', slug);
     else return null;
@@ -679,7 +781,7 @@ export async function fetchCompany(slug, id) {
 
 export async function fetchUnits(companyId) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('units')
       .select('*')
       .eq('company_id', companyId)
@@ -695,7 +797,7 @@ export async function fetchUnits(companyId) {
 
 export async function fetchSectors(companyId) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('sectors')
       .select('*')
       .eq('company_id', companyId)
@@ -710,7 +812,7 @@ export async function fetchSectors(companyId) {
 
 export async function fetchChecklistTypes(companyId) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('checklist_types')
       .select('*')
       .eq('company_id', companyId)
@@ -724,7 +826,7 @@ export async function fetchChecklistTypes(companyId) {
 }
 
 export async function saveUnit(unit) {
-  const { error } = await supabase.from('units').upsert({
+  const { error } = await db().from('units').upsert({
     id: unit.id, company_id: unit.companyId, name: unit.name,
     color: unit.color, active: unit.active ?? true, sort_order: unit.sortOrder ?? 0,
   }, { onConflict: 'id' });
@@ -732,7 +834,7 @@ export async function saveUnit(unit) {
 }
 
 export async function saveSector(sector) {
-  const { error } = await supabase.from('sectors').upsert({
+  const { error } = await db().from('sectors').upsert({
     id: sector.id, company_id: sector.companyId, unit_id: sector.unitId,
     name: sector.name, sort_order: sector.sortOrder ?? 0,
   }, { onConflict: 'id' });
@@ -740,7 +842,7 @@ export async function saveSector(sector) {
 }
 
 export async function saveChecklistType(type) {
-  const { error } = await supabase.from('checklist_types').upsert({
+  const { error } = await db().from('checklist_types').upsert({
     id: type.id, company_id: type.companyId, name: type.name,
     shift: type.shift, sort_order: type.sortOrder ?? 0,
   }, { onConflict: 'id' });
@@ -748,7 +850,7 @@ export async function saveChecklistType(type) {
 }
 
 export async function saveCompany(company) {
-  const { error } = await supabase.from('companies').upsert({
+  const { error } = await db().from('companies').upsert({
     id: company.id, name: company.name, slug: company.slug,
     primary_color: company.primaryColor, plan: company.plan ?? 'trial',
     active: company.active ?? true,

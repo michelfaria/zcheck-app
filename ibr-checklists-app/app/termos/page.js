@@ -1,8 +1,8 @@
+import { C } from '../../lib/tokens';
+
 export const metadata = {
   title: 'Termos de Uso — ZCheck',
 };
-
-const C = { ink: '#063C5C', bg: '#F7F9FB', border: '#E2EAF0', muted: '#6B8299' };
 
 const Section = ({ title, children }) => (
   <div style={{ marginBottom: 32 }}>
