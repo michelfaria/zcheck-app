@@ -31,6 +31,7 @@ import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
 import { C, R, W, T } from '../../lib/tokens';
+import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
 const LOGO_DATA_URI = 'data:image/png;base64,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';
 const LOGO_LOGIN_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADVCAMAAAAlzk/pAAAAP1BMVEUEKmUAXmAHO1sHO1sAPj4HO1wAAP8IQGIAVaoHQGAJQWMA/wAAAAAHO1wIQGIIPmAAAAAAAAAAAAAAAAAAAAC2HQLVAAAAEHRSTlMVA6FeBNAB1gNHjQEA/P7+y1GA0AAAF4hJREFUeNrVXYma6yiullg8M/fa8P5vO0ZiERhs7Dipnsw33X1OVRJkbb9WYH39ZRC0Vsoq/iOs+v+0hvXLr3e/AHcClN22zXvvNv5ssyq3Ob3/+3+IENic81t68Wfjqnz4b/xnE4JYfZgtZAQuoCCk+01g8J9ACPJBy5+DFAXBIr5YQYhTY9Eyf0wIhAOAVhbEkZgQq3btBsmmnTu9b0L1mhV4+jnEB1B2V2qdmUIP36vmM43d+spuVu3cTjX8MUe03cLz36UG84cBnRnMboKFBdiFTXeUHTGoVLBuy58RsvNiy/YJpNlq1YGI61qtpFEW/5AjYFmr/VaLDdhwMGN2nuTjRkLg8M30g83/JSFBusMhlCalELJlfcWhQIj2W/N3wr8EQv5Q2Rd6mjsrmsfN0hIASgYlTLOFIx162/6ckP1tiRXKC9mK9jf4kfSXREjvsBidpzAWf0BIlK393XzM6KCTyAnNYdoOHIm/abdTX/kVQhAqwYiyBSDtVlSI+KBNkbajQjND1PYWnpwmBJvfBRZvOqdToMhRRBPlwtFV8g77iQ+iZYhip7T7MSH7IXftNQebA2ZhnWXQHk2qKgAlPPqOHiDDSwjypX+qI6C9lZQgyfh+wOgNku/e8Uh8/CBY1+oBRoaQ2MHwEIhvE4LsACUlACqcX9uiExgZZRfApXJ7rfhA5GdE+OOz4auEBMlnYyQw7BLVoY6jTHzGTAeaYhVMz1QEsbPjr62l+QWOIKh4XkFJwuxBPyzLlolWdWcDojFFq31LCL2V6PEjN0I/ndefOUKSIkhKkmv2mwJIskV/uR+bSQXFjqbBjJgAsYGxGwEASz53UvpnlT3FsF7wJCDEPQ6E8F8s8hCB/H6KHafsADkTgib8z8SYUkVvCmM3Ehm+W/Y58ZojpIhR4InEI8Fu7a6STBj9hKkjmMKHVS1Cyfy1Wg8iFfGNzsLUISetVvQPZLsSJRmgF/e4JHskDAAdyCp6UQScz+jdIFJJqrXx/6c85rRDpC/XFSUkUaTHWVhA8o7xMRG2R8QBSDoXBWprk0a9B7eTkITg+pzjX8DlgPF2gSVlqIAt6TgmI8u/6DmPEhIp/5YZov1lmEfWMj+8hd6hIFkWotipDzgCLbYiz4dJrY2IYjErPkaZsCxFQbWB9cX5HEXxm0L+ZRtYX0SWT51CUacecwSCN8IDS/RaU8LRyH6oJCY7dwCgNqOUClbWkuqu8T0Ee/rWF7Ki7+dnAOEuHQoMvWprLjAKQkIrmKM/Ff27L6Z0t7QG4eAZdpIorWp3ahEG1lcGNYETdiqKhLGV8pUeRuHXEIWM+cUwhbGKVSRka0sA7l4eCv7b2fcvgfkPRivFNJpyRZZAxTVD+oRkS69xwToCUdGjB95gyZH6bSZnGNxizu5lQqCTDiCBzYbcT0TDMMpbuQhpM+dzdKu2bG7o6e3mR2mC8HO4CI2IBI4xMCn6/sUANbB+QAi9i/nrJUJglmSoqIARCfMCb0dH4Snsyg9dBQEOeNjfFK4B3NWRAgmzN0ouIn08W/eHVCR9aYQ/CnXALWxc6iIR3uMIhQGQ804q62PCwG5HiiHFrpgA82K1iOSJZEmxuVe7vmNmFwyBF3TBSHhOJrpVgm1GsD3gdoYnwZjgJwH30qiVId30wTozetv1SfozvRWqLgiJoqlJJ1OGN/s/ZNBKsrQ/Ow3v1tMSUIPoEytkjGTGhlkw6NLBYQBGl5EBKMa6JgcV8HalNnuQCH48WQJMGhrRygALw1FIszztj93YOgoR6bhlfbm+idmDGDwwxBS30q+rHp+qiT6OFEVvVTxVlZqXd+lInlCRKLCnSqdbwklcAf4wpewFspVQPeJEYnkXeb9jsShpicVkmZIeFEFOV01gGEQF1rKY+fIgvls0XxTh3cwQIVaOZIQBR1dN4DReZgpUka7wHVZ/r4mBbK2pGRLVPGht0uBOjRhOAtvMSZ0pSa78Sy+U6RkoaSfPf4aMZmEaooiQQDj5ZHm/SgmmnB7y+WKFrkr3H2EkDAs5kRBLGYXk5PWKX+4pifJAFQv2gm4TZpdCaWdnOSIpCXWOKKZfs1fNmViMsaiHZ+XHqMAK1mlCiBK/lVTo/olOWHAEY75EFe5hOgl09uZKGqs9Xu5ZTTjBxVDgesBWusDg+Db4lvnSXi8Yn6UvWT58lqDLoNFlCkRfhlIfRSJ4AVYi2I0pU8pCueS/8G6mETMllFApaREqmDjHseEjUnDCeCGxgUJU+sLz3Bacf54pAbrsOIl+KUTr8Ax0aXsKD5bkAbLFh0O2sf5auHpGOockSwu32fkrfcwAzaizvWJljCEywfWXtKEQlF/qguNohveoFnoZNEoFESnX4LYBDgIxAYZXk9FL4XuMCeuDUzK2whgQP5nqNaaThQ1u3ddZZKwISbEvzqrFfkLP7U3QtjRiJ6HClrjhaLA2oYyEFSHRW+ruafaYQP+r0bPwSKscO+nKaYpDyVRIBB2xCxU4l6qpDweO4NU3EJGQy05GnbeDIo1uO3JFUTLocMT/X7XaKq44eyJfOaEhawbUJBVz29Qo7P3WAFLMYFdSt5Yvh0q0gkWIrq+WkSADIRnUBwShobGiZVjtw6ogWjQsVBsazqpKFRLY9RqLhsMeJXkOkqqWt2iblPeFKyjR26ZwIPGhmuC9YMqQEpsaV4RkdV8NJakC5+khYCEjwJa6nw1yLJnapwQp2PnsOoULUsT8qCwOVawN25iOFpWSmng6QdLwnNbO0LIyv0SrE+IOJQ173iuS5DJ+fi8LAAKH4zIkxHWcd+hE1VLDY4XUQqwpY8chQspUECkGuJv1PBXO1TUnRKOX8/OFEOhKFhWz+/4o1IEha7j3Vse4q+5ehUrsEynsGbQfVV1bUrQU8vYwWbuB0KD2LR+o6KjH+b6iGgzvINawKpZA/ZVZCl1MWVwwBOhhQe4R6hX4cy4DmrwOFdpD3TTSgCNYW8gAYQSxat6jnxisSYm5Rv725cJbQ+NSAiVLN5XB2ioNdm6hD73bw4fFn89kQCr4BYcve9XT40tPI0BKob7nxTtkC+wOJrSRkmgQwWgrf5dd++7W8SLyzdyIZQx+MoqVIIuWSvKJDNrCxya3Ms7ip2jY+Z4zqP1JSiDXZESOXCZfDeEhBRL+QsobRmmjY1OIFOtnLPKY3copQ1rsOKQEsp852CpPan4ZchMZy0FYncA0EI2Iy3VZQ+mjFXdS3BlDsNLbhpIKO5x4QDa8SptTCYZes24wxAJQlbQRV2cZ1htSFX3KEGgISf0nbe4fzwnhb77oZQI8otBA/WqWwhGprft/WVYYinLgMoZzPiM/SwNvCQ/Kwt9IAquQRp9KV8fKNOELRPvppW2PZfNLVxjeSl1YOvWfZPNa/E/d+MS+I41hSUruZskaCwEkfKittD/O2anhpya8I+OofZUnbjLiFL/t38kjl5uc9oNbffrQyf1yvEmTRiIHTz2X1+VLajTZ/7l7NOqjEc8/vR2sePK6QlFMDg03PJ9ZiOcXKcPQQiW8m7vxkOBobOPRKl0PbGJQgznjyuQ8K1aEJqT2BJkWsu43J1Rg5aA76ErphRGtUIWOAEZymzY+TiBDwVWhfaI2CEnG4iDY/BhBSEl6jrql/nLmCkUvYIa4At4ROcbcYoNkpqVutmPwgIkxzs2XCsG6gVus3WYF2PEDNkQSNjb9FvrF0Chk82ILWz8Kt8GQNXGU5+ESogbXB3YqdENGCyHc78Aw3ZsFBjNIJwRkACNcst2eCC1s8M1zgZOkLdwqfqiB89bDn8SAej59r1s21KHlO1WnXYDoS46M0Se45I7vqIBOFM8qPH6tfJZ8deqKb7FURO2VVbvx5QlDJzZkGpI1f4uQnPonQd4aUvyO3hAipY5f3t8brgIeMFfShGO03q9yJH4uf4dqZUgqLPUzK3WTDjE9myJ8FJH+q5XZMMdDufUmmLImmHTET/YicM5RIyQ2VB5F3yNkGQHqQ9s16MYxhnlqDIIXZpYIZt6sPZK2h9RJYUP2KN7dIiRyszkyZtQGXOmgakft6WscZBAecUT7LKOtR+kUg07pKGrGh1kw9pCndSgFODcunqKvACmXI9aaxnPhgw6OnU3xDY7sIbqNhq/KkAjIc5phiF4mDmSsD0r0EFuu8ndxEiaaMZh+INTRQQ8iHgZQgv7ZV/wEblC9xxfrS0qJky/ZFM9HTovc3cIuz9pDknH6Rds39K2eKZPgJz26HIolUzzPEfX00ENiPG8SMfNmy3vpEyvDMx/Lwo3HPUtzyD7hJFd24bbSrTdieUfZt5E6VBLmw86HGyozKIuPYRB07fcd80ujVD1awoPKuRKCgnjBiPpPGuaaQADMzbGLcTEEdS/oEPksmjg+lKWKR6H0RC8ymdR6oMxTrBzIBP0tKAXr4RAEQMJwQfax5qBPtBIhJ1J6hV2vZhIEbbCHWV3wXqM+drMM1DqtS1oOzKHeaUVYBGg6lsNdj3+Gj7VWZZAAPEj3gCMm9Q8fayEgM3D51MUHl5CXwkLoGHN/NSfN/Qve5X4J7v6wMvc8S0dH1X0eLoh1fJFaVFqX5mEr8nZQiu1uonMiu/Z+3On8rWjTVPKgs5UCmRWlhsF4ZK9X+QOQs3h57k81nRNnlKDtd7BEds7D6LqasQkepF56mjouww4IIMaoZZ4+2zUbQhe/HYblR6jRAgeYpbjkuBUKHtBBTQGpZKeL0w/VHUgKEnTH1GwQFOYcvdNVntKPKYG4IYJffPhM1DQhMvMZPqxALxDNDCCRTJgIEsZh/8li83swM86STXe96mOHkDBoF4LNqlcg2EgNd5FWHExEm590slKBOQhllgllrcoLztHKoXoxTLHXw7olxnVqkKfWQMB7mF2VkK2nTX24WRRK76ERA9yUv/ZVMi79BYljbghMyzuuehQwxroLecZoFCkssts0IaJ6AzxrpbOUxG8IBa7810FbmmquhbJZo2xQoWH/VXR9j9t4YvaBsxYYUXaR3ClCFsEAsQ0zekOe8oG1NcNYe8842RQgtBgh3+JeG1MUZaAmUNCBVQeghLMLXlyo4pSOhuoQnJTAtW+GGy0OtUpomob47Xk8ok+I+MBYUcqJgJ20f88SEtpBbZzNLYnYIs4GCuAKpSqTFcRWbR2Y6C66H+PthZtEvbMwGaNWGxielvC2qrmO65vSjQspSz48djSa9mQoE067/uLQ4PgtIi0vSpyU9ptPPiCsVSOt9m2zgnR4UDxIJsm2oQN3Nzorm+4vzpASx5Z66IwR6ebHuV/4Tx1BSE0HENoCtS40XtbVnalwkrnDmqZipxYykU/paB9gLhaS66twiuzNPETPtw5A4SF0LdRzjmAno5lGngX4yk2mPRh1J0W4svYgyt6TFwjpqWKO2YWCrALBdKYhzI3SsTtbLwFv0QFi/hIklEVjL+DgdDK+tMcdaXmNkIKGd1+fVhcZOfj70YbMYhN97MJC/IpoQRWRB2tEfYRQgO2Hqz5hqzqXDrS8Q4gEkdQ2DsoqqCdUPyIkmz631S2YiK8SAgVEyklBrEKmTwhJm8jE0EpDy0uLtaFtm0NeSGLd9gohsTjdNC46sbII3pSsHS0uw/TRJ4SkhWt5x3tu9su0wJs2q7KwbTvtJwuK5cAfN4FJWgiEv6QjtgR7nbRLixofUCJBTm6QiwPi9q3OhxyeKLnH5Ji2f7zzoswWZZzItADVdzlp+46K+K3eci/SR/460zODf3yOaCpa8nT6O4SoZixQJh5s6QZ6/AWhI8d2rAWaVx1iBIzii4xMviv3sWwxTO5f/IH4nvmF7SBZKtd9Sl37qQGm3QiPluk9RL54APVVQv7h5QM8HxuWR8GXCUn7w5SM6VXYXGp1U9Z+IFtxW7PVFzE9vKbrtVECnobGqhfxiU+M60B5ah7gm4QkLejezNFko/DuVSNLxmtMivkeIUt3nw/tAG3iiIeuBNLkGo+MmW8REn2fV6dxxEcwJfex+W3YJgFv6Xrfth7ynPfVPWx1LvvOhh0fb3BEnSy5g/MRxRlPiCuKAfA83P2+srdrP9riTKyrPLFbCJbHsY2cV+Xh7rcJaZPqw+QKFQ3uaTsvyaAUMy1JyFrvj2s/4AVd9+M6U6rd0rYxSzWeO5X9JLQpZZK1fvf1prbk8Lmu884PewZeQkEpJHrtHckqvjTVyTCM57n+rMMLosWet9d5W2dLcV3vdYyI22XKHqe8BsHXixU+V/YTLc4gGNJGnAdQtJ72l1PqVf3342sECyHmjJCHn7vDkrysIk+aRltcL5iGj1UkbXHt3kpHiyIfYUVIAI6xlligvCS3Au8SosaEANUC7kwgNXab+yVSETLPilPPmVKV2XpIyLJwNz+mSykPbfbLQr+jeMMB4s1WvXgFG5fxlWsXfDwrK5zOwGl/2q9QhxY3fZNNt06lW+FATrLerlg1b0A5X1F6NdMaxeqneQwDYg/iLUCd9yqVTeNwcofCTPAfugXya9DCG7q9O79QcltW3VAWXe0SMtmn68fxCC3k8+V12lZ9/mPn1ax0pS3Waa9SWcA86oKaGFm373X3u+kBMdncFVs/9HjP0gQheKO5f+Z1q4cypQIgLpjbTu4i+T0h86YLaM4t9yaYdBdJd/XBE0L8rZdzor/1Tjxiwp7xcFkEquoGmv5FSzArq8n05Je69bIP0ihA656pHwR4g/zJ+pwbHAm3WzzfJ6ufxOyQn6TODZODj7ggZEEZ3dTvnHshT1DGCxDvJh+olzatODzJ1owJKSOkJVj9BGAaUO5Z0rQgLf6XueFHYufPEjq9cqP7ZxdC5Kvb7iN6EEMcfriUdnAjDI1fUp/ax3WzlpAHH6P9tfnuc4TmJP3HWduXCBGF1bEbgmOGUt7H8I8gJLcenIwAdDgCarDjBP6MkDhLdPowjwtelKtWq71MyEPGUqP26UOAYfacFl3Yzb8jWqny+/R5hPQezod/aTkyF1X4Vj1/jxCMfTW8SoBac3lN9CvPYzqOzT2vlpurZa/iZ1d3HpojHjBl+osLsOI7MtZypd8kIbRQRmDKNDKoyx0m+AOOlPmPLMopAzvLEeVcjd/TDYMfNz/cIQTL4BMeU6ITJ4DLoXdY4Rc6UrJtpiFk5ia/mWjya/d+NFbr0GucCbFTHwbbOUss/pQQAQXK1MScru+oP0e3x+zQ806njzkCYgppzkSW5UAqZ+v8O03Mn+iIHKd6cnMyJ1CT9f0VIalGkFa8yxBx2pWV5UByebP+smMf+JFqOazys2eAbk/VAoDjYZivEAJiJtpAzaVLR1KHwiHpwGtBA39uyuebWCtf35oHcq77YXLiZBh2f/H6qP4dqnHSnfZ1ZkB88TRLqUSm72gxaErPebX+yI/k23dSGw7BpykgX621EFDLubK45otG6xhYlQypp7UQebf96ePEmTXL3zRao8tP8xKgZtHmSaLDvZqL/5iQdbxl5ux5zi2+/qKKdFuT9KBGZc+uJ7iCixfZnC8Qwm08vc1N5yIOYgudtd3q6Tfv7hulTHm33OabbfBw4RPjC2SuXszt4m8Jib7QxFuZypM+NZ/DJPcS71OzX70T8rKsUBDfs9xBGXOH9S8IKZJi5DpoexsslUugv0rH3LGg3aF+CeNJUUK5SuLFvyekpsTcyqKVitd3b02dFJRSorg6EYgN8iIx922G3FhvqEvcfXImTcmHnHbwbvsNQ9Y7LRX5UGYkXjhI0HmL377IFm78ptwf1N+7MOy/+bZg3WoFLKNs1Clplg7eGoKsr9+PfIfjWJ64V537W+Nklf9lGPKMELERL97f2jYWaloVVQ+NfDMufEZI0x0d7xTobBbVz5rNfkdIM0rsylg8ldli0a0KZ/z2GzruIidTF+G9q+/NMxBifL/d2L34R4SIC0ZlCduWriyp635T8Bt+POjElpM19fLu1l715m7+QYTEC0a3q5Xe4Qaz35HxrDc+mKnjRRBNX7O6Gq79BxBSriL1g9terILfkvF87ALjihJ5sS7X2uJO+OWnZHwyP5LWeuR8jxWXg5gfk7Gu/wX7uiQ4M4OKvQAAAABJRU5ErkJggg==';
 
@@ -3237,6 +3238,67 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
   const [novoSaving, setNovoSaving] = useState(false);
   const [novoSuccess, setNovoSuccess] = useState(false);
 
+  // ── "+ Novo": três caminhos, uma entrada ────────────────────────────────────
+  // null = tela de escolha · 'biblioteca' | 'duplicar' | 'zero'
+  // Hierarquia deliberada (arquitetura de informação): modelo pronto é o
+  // primário — resolve a página em branco; do zero é o terciário.
+  const [novoMode, setNovoMode] = useState(null);
+  const [libVertical, setLibVertical] = useState(null);
+  const [libPreview, setLibPreview] = useState(null);   // modelo aberto no preview
+  const [libUnit, setLibUnit] = useState(unit.id);
+  const [libSector, setLibSector] = useState('');
+  const [dupSource, setDupSource] = useState(null);     // template existente a copiar
+  const [dupUnit, setDupUnit] = useState(unit.id);
+  const [dupSector, setDupSector] = useState('');
+
+  const unitsForPick = allUnits?.length > 0 ? allUnits : UNITS;
+  const sectorsOf = uId => (unitsForPick.find(u => u.id === uId) || unit)?.sectors || unit.sectors;
+
+  const flashSuccess = () => {
+    setNovoSuccess(true);
+    setTimeout(() => setNovoSuccess(false), 4000);
+  };
+
+  // Adotar = cópia profunda com ids novos. Nunca vínculo com o modelo-mãe:
+  // toda operação diverge do padrão no dia 2, e vínculo criaria medo de editar.
+  const handleAdopt = () => {
+    if (!libPreview || !libSector) return;
+    const m = libPreview.momento;
+    const newTpl = {
+      id: uid(), unitId: libUnit, sector: libSector,
+      name: `${libPreview.area} — ${m}`,
+      deadline: libPreview.deadline || null,
+      shift: m.toLowerCase().includes('abertura') ? 'Manhã'
+        : m.toLowerCase().includes('fechamento') ? 'Tarde'
+        : ['Manhã', 'Tarde'],
+      items: libPreview.items.map(i => ({
+        id: uid(), text: i.text, critical: !!i.critical,
+        ...(i.photoRequired ? { photoRequired: true } : {}),
+      })),
+    };
+    onSaveTemplates([...templates, newTpl]);
+    // Mede quais verticais adotam — é o dado que orienta a próxima curadoria.
+    track('template_adopted', { source: 'library', unitId: libUnit,
+      metadata: { library_id: libPreview.id, vertical: libPreview.vertical, momento: m } });
+    setLibPreview(null); setLibSector('');
+    setNovoMode(null);
+    flashSuccess();
+  };
+
+  const handleDuplicate = () => {
+    if (!dupSource || !dupSector) return;
+    const newTpl = {
+      ...dupSource,
+      id: uid(), unitId: dupUnit, sector: dupSector,
+      name: `${dupSource.name} (cópia)`,
+      items: (dupSource.items || []).map(i => ({ ...i, id: uid() })),
+    };
+    onSaveTemplates([...templates, newTpl]);
+    setDupSource(null); setDupSector('');
+    setNovoMode(null);
+    flashSuccess();
+  };
+
   const activeSector = sector || unit.sectors[0];
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -3588,14 +3650,191 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
       )}
 
       {/* ── ABA: NOVO ── */}
-      {gerenciarTab === 'novo' && (
+      {gerenciarTab === 'novo' && novoSuccess && (
+        <div className="flex items-center gap-2 px-3 py-2 mx-4 mt-4" style={{ background: '#E8F4F0', borderRadius: R.sm, border: `1px solid ${C.success}` }}>
+          <CheckCircle2 size={16} color={C.success} />
+          <p style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>Checklist criado! Ajuste em "Checklists".</p>
+        </div>
+      )}
+
+      {/* Tela de escolha — três caminhos, hierarquia deliberada */}
+      {gerenciarTab === 'novo' && novoMode === null && (
+        <div className="p-4 space-y-3">
+          <p style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink }}>Como você quer começar?</p>
+
+          <button onClick={() => setNovoMode('biblioteca')} className="w-full text-left"
+            style={{ background: C.ink, color: 'white', borderRadius: R.md, padding: 18, border: 'none', cursor: 'pointer' }}>
+            <p style={{ fontSize: T.bodyLg, fontWeight: W.semibold }}>Escolher um modelo pronto</p>
+            <p style={{ fontSize: T.caption, opacity: 0.85, marginTop: 4, lineHeight: 1.5 }}>
+              Comece de um checklist testado do seu setor e ajuste. O mais rápido.
+            </p>
+          </button>
+
+          <button onClick={() => { setDupSource(null); setNovoMode('duplicar'); }} className="w-full text-left"
+            style={{ background: 'white', borderRadius: R.md, padding: 16, border: `1.5px solid ${C.border}`, cursor: 'pointer' }}>
+            <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>Duplicar um checklist existente</p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>Copie um que já funciona e adapte para outra loja ou setor.</p>
+          </button>
+
+          <button onClick={() => setNovoMode('zero')} className="w-full text-left"
+            style={{ background: 'white', borderRadius: R.md, padding: 16, border: `1.5px solid ${C.border}`, cursor: 'pointer' }}>
+            <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>Criar do zero</p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>Monte item por item, do jeito da sua operação.</p>
+          </button>
+        </div>
+      )}
+
+      {/* Biblioteca setorial */}
+      {gerenciarTab === 'novo' && novoMode === 'biblioteca' && !libPreview && (
         <div className="p-4 space-y-4">
-          {novoSuccess && (
-            <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#E8F4F0', borderRadius: 8, border: `1px solid ${C.success}` }}>
-              <CheckCircle2 size={16} color={C.success} />
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.success }}>Checklist criado com sucesso!</p>
+          <button onClick={() => setNovoMode(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
+            ← Outras formas de criar
+          </button>
+          <div>
+            <Eyebrow>Setor do seu negócio</Eyebrow>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {LIBRARY_VERTICALS.map(v => (
+                <PillButton key={v.id} active={libVertical === v.id} accent={unit.color}
+                  onClick={() => setLibVertical(libVertical === v.id ? null : v.id)}>
+                  {v.label}
+                </PillButton>
+              ))}
             </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {LIBRARY_TEMPLATES.filter(t => !libVertical || t.vertical === libVertical).map(t => {
+              const crit = t.items.filter(i => i.critical).length;
+              return (
+                <button key={t.id} onClick={() => { setLibPreview(t); setLibSector(''); }} className="w-full text-left"
+                  style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 14, cursor: 'pointer' }}>
+                  <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{t.area} — {t.momento}</p>
+                  <p style={{ fontSize: T.label, color: C.muted, marginTop: 2 }}>
+                    {LIBRARY_VERTICALS.find(v => v.id === t.vertical)?.label} · {t.items.length} itens{crit ? ` · ${crit} críticos` : ''}
+                  </p>
+                  <p style={{ fontSize: T.caption, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.descricao}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Preview do modelo — read-only, adoção exige loja + setor */}
+      {gerenciarTab === 'novo' && novoMode === 'biblioteca' && libPreview && (
+        <div className="p-4 space-y-4">
+          <button onClick={() => setLibPreview(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
+            ← Modelos
+          </button>
+          <div>
+            <p style={{ fontSize: T.h3, fontWeight: W.semibold, color: C.ink }}>{libPreview.area} — {libPreview.momento}</p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+              Ao adotar, isto vira uma cópia sua — você pode editar tudo depois.
+            </p>
+          </div>
+          <div style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 14 }}>
+            {libPreview.items.map((i, idx) => (
+              <div key={idx} className="flex items-start gap-2" style={{ padding: '6px 0', borderBottom: idx < libPreview.items.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                <span style={{ fontSize: T.caption, color: C.mutedLight, flexShrink: 0, width: 20 }}>{idx + 1}.</span>
+                <p style={{ flex: 1, fontSize: T.bodySm, color: C.ink, lineHeight: 1.45 }}>{i.text}</p>
+                <span style={{ flexShrink: 0, fontSize: T.label }}>
+                  {i.critical ? '⚠️' : ''}{i.photoRequired ? '📷' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <Eyebrow>Adotar para a loja</Eyebrow>
+            <div className="flex gap-2 mt-1">
+              {unitsForPick.map(u => (
+                <button key={u.id} onClick={() => { setLibUnit(u.id); setLibSector(''); }} className="flex-1 py-2"
+                  style={{ borderRadius: R.sm, fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer',
+                    background: libUnit === u.id ? u.color : 'white', color: libUnit === u.id ? 'white' : C.ink,
+                    border: `1.5px solid ${libUnit === u.id ? u.color : C.border}` }}>
+                  {u.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Eyebrow>Setor</Eyebrow>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {sectorsOf(libUnit).map(s => (
+                <PillButton key={s} active={libSector === s} accent={unit.color} onClick={() => setLibSector(s)}>{s}</PillButton>
+              ))}
+            </div>
+          </div>
+          <button onClick={handleAdopt} disabled={!libSector} className="w-full"
+            style={{ padding: 14, borderRadius: R.md, border: 'none', fontWeight: W.semibold, fontSize: T.body,
+              color: 'white', background: libSector ? C.success : C.mutedLight, cursor: libSector ? 'pointer' : 'not-allowed' }}>
+            Adotar este modelo
+          </button>
+        </div>
+      )}
+
+      {/* Duplicar de existente */}
+      {gerenciarTab === 'novo' && novoMode === 'duplicar' && (
+        <div className="p-4 space-y-4">
+          <button onClick={() => { setDupSource(null); setNovoMode(null); }} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
+            ← Outras formas de criar
+          </button>
+          {!dupSource ? (
+            templates.length === 0 ? (
+              <EmptyState title="Nada para duplicar" desc="Sua operação ainda não tem checklists. Comece por um modelo pronto." />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Eyebrow>Qual checklist copiar?</Eyebrow>
+                {templates.map(t => (
+                  <button key={t.id} onClick={() => { setDupSource(t); setDupUnit(t.unitId); setDupSector(''); }} className="w-full text-left"
+                    style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 12, cursor: 'pointer' }}>
+                    <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{t.name}</p>
+                    <p style={{ fontSize: T.label, color: C.muted, marginTop: 2 }}>
+                      {unitsForPick.find(u => u.id === t.unitId)?.name || t.unitId} · {t.sector} · {(t.items || []).length} itens
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <>
+              <p style={{ fontSize: T.bodySm, color: C.ink }}>
+                Copiando <strong>{dupSource.name}</strong> ({(dupSource.items || []).length} itens)
+              </p>
+              <div>
+                <Eyebrow>Para a loja</Eyebrow>
+                <div className="flex gap-2 mt-1">
+                  {unitsForPick.map(u => (
+                    <button key={u.id} onClick={() => { setDupUnit(u.id); setDupSector(''); }} className="flex-1 py-2"
+                      style={{ borderRadius: R.sm, fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer',
+                        background: dupUnit === u.id ? u.color : 'white', color: dupUnit === u.id ? 'white' : C.ink,
+                        border: `1.5px solid ${dupUnit === u.id ? u.color : C.border}` }}>
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Eyebrow>Setor</Eyebrow>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {sectorsOf(dupUnit).map(s => (
+                    <PillButton key={s} active={dupSector === s} accent={unit.color} onClick={() => setDupSector(s)}>{s}</PillButton>
+                  ))}
+                </div>
+              </div>
+              <button onClick={handleDuplicate} disabled={!dupSector} className="w-full"
+                style={{ padding: 14, borderRadius: R.md, border: 'none', fontWeight: W.semibold, fontSize: T.body,
+                  color: 'white', background: dupSector ? C.success : C.mutedLight, cursor: dupSector ? 'pointer' : 'not-allowed' }}>
+                Criar cópia
+              </button>
+            </>
           )}
+        </div>
+      )}
+
+      {gerenciarTab === 'novo' && novoMode === 'zero' && (
+        <div className="p-4 space-y-4">
+          <button onClick={() => setNovoMode(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
+            ← Outras formas de criar
+          </button>
 
           {/* Loja */}
           <div>
