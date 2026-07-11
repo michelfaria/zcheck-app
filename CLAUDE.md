@@ -13,44 +13,40 @@ App de checklists multi-tenant (SaaS). Landing page + app por subdomínio de emp
 ## URLs ativas
 
 - `zcheckapp.com` → landing page
+- `zcheckapp.com/lista` → waitlist (grava na tabela `waitlist`; leads lidos só no SQL Editor)
 - `zcheckapp.com/entrar` → página de código da empresa
 - `ilhabelarepublic.zcheckapp.com/app` → app IBR
 
 ## Arquivos principais (dentro de `ibr-checklists-app/`)
 
 ```
-app/page.js              → landing page
-app/entrar/page.js       → página de código da empresa
-app/app/page.js          → app principal (5800+ linhas)
-app/cadastro/page.js     → solicitação de acesso
-app/layout.js            → layout global
-app/globals.css          → estilos globais (com @tailwind)
-lib/tenant.js            → detecção de tenant por hostname
-middleware.js            → redireciona subdomínios para /app
-public/zcheck-logo.png   → logo horizontal 400x100px transparente
-public/ibr-logo.png      → logo IBR 200x200px
-public/manifest.json     → PWA, start_url: /app
+app/page.js                      → landing page (tokens; CTA = waitlist /lista)
+app/lista/page.js                → formulário do waitlist
+app/entrar/page.js               → página de código da empresa
+app/app/page.js                  → app principal (6900+ linhas)
+app/cadastro/page.js             → pedido de PIN de colaborador (não cria empresa)
+app/onboarding/page.js           → cria empresa via /api/admin/provision (exige chave)
+app/importar/page.js             → importa CSV (exige PIN de gerência/gestão)
+app/api/auth/session/route.js    → PIN → JWT assinado com o segredo do Supabase
+app/api/admin/provision/route.js → provisiona empresa (service_role, server-only)
+app/layout.js                    → layout global
+app/globals.css                  → estilos globais (@tailwind + CSS vars dos tokens)
+lib/tokens.js                    → FONTE ÚNICA de cor/raio/peso/tamanho (C/R/W/T)
+lib/library.js                   → biblioteca de checklists prontos por setor
+lib/serverAuth.js                → assina o token de sessão (NUNCA importar no cliente)
+lib/tenant.js                    → detecção de tenant por hostname
+middleware.js                    → redireciona subdomínios para /app
+public/zcheck-logo.png           → logo horizontal 400x100px transparente
+public/manifest.json             → PWA, start_url: /app
 ```
 
-## Design tokens (app/app/page.js)
+## Design tokens
 
-```js
-const C = {
-  bg: '#F7F9FB',
-  ink: '#063C5C',
-  border: '#E2EAF0',
-  muted: '#6B8299',
-  mutedLight: '#A8BCC8',
-  critical: '#D1462F',
-  success: '#31C85A',
-  pending: '#6B8299',
-};
-```
-
-## Cores da landing page
-
-- Azul principal: `#063C5C` · Verde: `#31C85A` · Texto: `#102A3A`
-- Fundo: `#F7FAFC` · Bordas: `#E5E7EB` · Texto secundário: `#64748B`
+Fonte única em `lib/tokens.js` (objeto `C` de cores + `R` raio + `W` peso +
+`T` tamanho), espelhados como CSS vars em `globals.css`. A landing consome os
+MESMOS tokens desde 10/07/2026 — não existe mais paleta própria da landing.
+Toda cor de texto foi medida contra o fundo e passa WCAG AA; ao mudar um valor,
+meça de novo (instruções e números no cabeçalho do próprio tokens.js).
 
 ## Mapeamento de empresas (app/entrar/page.js)
 

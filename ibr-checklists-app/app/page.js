@@ -2,7 +2,7 @@ import {
   CheckSquare, Sun, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
   AlertTriangle, Clock,
 } from 'lucide-react';
-import { C, R, W, T } from '../lib/tokens';
+import { C, R, W, T, greenOnDark } from '../lib/tokens';
 import { LIBRARY_VERTICALS } from '../lib/library';
 
 // Landing pública. Consome os mesmos tokens do app (lib/tokens.js) — era uma
@@ -13,10 +13,6 @@ import { LIBRARY_VERTICALS } from '../lib/library';
 // falsos apresentados como reais.
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
-
-// Verde para TEXTO pequeno sobre o fundo ink: 6.66:1 (medido). O successBright
-// dá só 3.52:1 nesse fundo — reprova para eyebrow de 12px.
-const GREEN_ON_DARK = '#4ADE80';
 
 const Eyebrow = ({ color = C.muted, children }) => (
   <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', color, marginBottom: 14 }}>
@@ -79,6 +75,10 @@ export default function LandingPage() {
         details.lp-faq summary::after { content: '+'; font-size: 20px; color: ${C.muted}; }
         details.lp-faq[open] summary::after { content: '–'; }
         details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
+        details.lp-faq summary::-webkit-details-marker { display: none; }
+        /* O header é sticky (68px): sem isto, navegar por âncora esconde o
+           título da seção atrás dele. */
+        section[id] { scroll-margin-top: 84px; }
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
           .lp-grid-2, .lp-grid-3, .lp-grid-4 { grid-template-columns: 1fr; }
@@ -90,7 +90,8 @@ export default function LandingPage() {
       {/* HEADER */}
       <header style={{ background: 'white', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, zIndex: 100 }}>
         <div className="lp-container" style={{ height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto' }} />
+          {/* 400×100 original: dimensões explícitas evitam layout shift */}
+          <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32} style={{ height: 32, width: 'auto' }} />
           <nav style={{ display: 'flex', alignItems: 'center', gap: 22 }} aria-label="Navegação principal">
             <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
             <a className="lp-nav-links" href="#para-quem" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Para quem</a>
@@ -153,7 +154,7 @@ export default function LandingPage() {
       <section style={{ background: C.ink, color: 'white', padding: '72px 0' }}>
         <div className="lp-container lp-grid-2">
           <div>
-            <Eyebrow color={GREEN_ON_DARK}>A diferença</Eyebrow>
+            <Eyebrow color={greenOnDark}>A diferença</Eyebrow>
             <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 18 }}>
               Não é mais um app de checklist.
             </h2>
@@ -289,7 +290,7 @@ export default function LandingPage() {
       {/* FOOTER */}
       <footer style={{ background: C.ink, padding: '28px 0' }}>
         <div className="lp-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
-          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
+          <img src="/zcheck-logo.png" alt="ZCheck" width={104} height={26} style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
           <span style={{ fontSize: T.label, color: 'rgba(255,255,255,0.7)' }}>© 2026 INGO Administração de Negócios Ltda. CNPJ 34.164.735/0001-72</span>
           <nav style={{ display: 'flex', gap: 18 }} aria-label="Links legais">
             {[['Termos', '/termos'], ['Privacidade', '/privacidade'], ['Entrar', '/entrar'], ['Contato', WA]].map(([l, h]) => (

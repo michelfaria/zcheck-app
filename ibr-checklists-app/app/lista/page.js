@@ -42,21 +42,25 @@ export default function ListaPage() {
     if (!sector) { setError('Escolha o setor — é o que nos diz quais modelos preparar para você.'); return; }
 
     setSending(true);
-    const { error: dbErr } = await supabase.from('waitlist').insert({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      company: company.trim(),
-      sector,
-      stores: stores || null,
-      whatsapp: whatsapp.trim() || null,
-      source: 'landing',
-    });
-    setSending(false);
+    try {
+      const { error: dbErr } = await supabase.from('waitlist').insert({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        company: company.trim(),
+        sector,
+        stores: stores || null,
+        whatsapp: whatsapp.trim() || null,
+        source: 'landing',
+      });
 
-    if (!dbErr) { setState('done'); return; }
-    if (dbErr.code === '23505') { setState('already'); return; }
-    console.warn('waitlist insert failed', dbErr);
-    setError('Não foi possível enviar agora. Tente de novo — ou fale conosco no WhatsApp do rodapé da página inicial.');
+      if (!dbErr) { setState('done'); return; }
+      if (dbErr.code === '23505') { setState('already'); return; }
+      console.warn('waitlist insert failed', dbErr);
+      setError('Não foi possível enviar agora. Tente de novo — ou fale conosco no WhatsApp do rodapé da página inicial.');
+    } finally {
+      // Nunca deixar o botão preso em "Enviando…", mesmo num throw inesperado.
+      setSending(false);
+    }
   };
 
   if (state) {
@@ -71,9 +75,17 @@ export default function ListaPage() {
             ? 'Retornamos em até 2 dias úteis para configurar sua operação com você. Sem cartão, sem compromisso.'
             : 'Este e-mail já tinha entrado antes — está tudo certo. Retornamos em até 2 dias úteis.'}
         </p>
-        <a href="/" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, textDecoration: 'none', border: `1.5px solid ${C.border}`, borderRadius: R.sm, padding: '11px 24px', background: 'white' }}>
-          ← Voltar ao início
-        </a>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <a href="/" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, textDecoration: 'none', border: `1.5px solid ${C.border}`, borderRadius: R.sm, padding: '11px 24px', background: 'white' }}>
+            ← Voltar ao início
+          </a>
+          {/* Caminho ativo enquanto a resposta não chega — e cobre o buraco
+              operacional de a lista ser lida manualmente no SQL Editor. */}
+          <a href="https://wa.me/5512988017472?text=Ol%C3%A1%2C%20acabei%20de%20entrar%20na%20lista%20do%20ZCheck!"
+            style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: 'white', textDecoration: 'none', borderRadius: R.sm, padding: '11px 24px', background: C.success }}>
+            Acelerar pelo WhatsApp
+          </a>
+        </div>
       </div>
     );
   }

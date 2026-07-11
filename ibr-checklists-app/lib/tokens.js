@@ -42,6 +42,13 @@ export const C = {
 export const successBright = '#16A34A';
 
 /**
+ * Verde para TEXTO sobre fundos escuros (ink): 6.66:1 medido sobre #063C5C.
+ * O successBright dá só 3.52:1 nesse fundo — reprova até para texto grande
+ * apertado. Usar em eyebrows/labels de seções escuras.
+ */
+export const greenOnDark = '#4ADE80';
+
+/**
  * Raio de borda. O app tinha 13 valores distintos (0, 2, 3, 4, 6, 8, 9, 10,
  * 12, 14, 16, 20, 999) — sensação de "montado", não desenhado. Quatro bastam.
  *
