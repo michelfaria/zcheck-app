@@ -1120,7 +1120,8 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             <div className="flex items-center gap-2 mt-2">
               {state.photo ? (
                 <>
-                  <img src={state.photo} alt="Comprovação" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: `1px solid ${C.border}` }} />
+                  <img src={state.photo} alt="Comprovação" onClick={() => setExpandedPhoto(state.photo)}
+                    style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: `1px solid ${C.border}`, cursor: 'pointer' }} />
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: 'none', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '10px 8px', margin: '-10px -8px' }}

@@ -238,24 +238,12 @@ async function pushCompletion(record) {
 }
 
 // ── Photos ────────────────────────────────────────────────────────────────────
-
-// Upload reference photo for checklist item orientation — returns public URL
-export async function uploadRefPhoto(templateId, itemId, photoIndex, dataUrl) {
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const path = `ref/${templateId}/${itemId}_${photoIndex}.jpg`;
-    const { error } = await supabase.storage
-      .from('checklist-photos')
-      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) throw error;
-    const { data } = supabase.storage.from('checklist-photos').getPublicUrl(path);
-    return data.publicUrl;
-  } catch (e) {
-    console.error('uploadRefPhoto failed:', e);
-    return null; // fall back to base64 if upload fails
-  }
-}
+//
+// Fotos de REFERÊNCIA (orientação do item) vivem como base64 direto no template
+// — ver o editor em GerenciarView. Não há upload para storage: base64 persiste
+// e nunca expira. (Havia um `uploadRefPhoto` que gravava no bucket privado
+// `checklist-photos` e devolvia getPublicUrl — URL que nunca resolvia. Removido:
+// era código morto que só produziria imagem quebrada se alguém o religasse.)
 
 export async function uploadPhoto(completionId, itemId, dataUrl) {
   const queue = async () => {
@@ -305,11 +293,13 @@ export async function getPhotoUrl(completionId, itemId) {
   // Try Supabase first
   if (isOnline()) {
     try {
+      // maybeSingle: sem foto no banco, retorna null em vez de lançar — assim
+      // um item sem linha em `photos` cai no cache local em silêncio.
       const { data } = await db().from('photos')
         .select('storage_path')
         .eq('completion_id', completionId)
         .eq('item_id', itemId)
-        .single();
+        .maybeSingle();
       if (data?.storage_path) {
         const { data: signed } = await supabase.storage
           .from('checklist-photos')
@@ -321,7 +311,7 @@ export async function getPhotoUrl(completionId, itemId) {
   // Offline fallback — return locally cached data URL
   try {
     const r = await storageGet(`ibr_photo_${completionId}_${itemId}`);
-    return r.value;
+    return r?.value ?? null;
   } catch { return null; }
 }
 
