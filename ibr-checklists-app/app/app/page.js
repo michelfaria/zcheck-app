@@ -1786,7 +1786,6 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
   };
 
   const rating = getRating(rateToday);
-  const unitCompletions = completions.filter(c => c.unitId === unit.id && sectors.includes(c.sector));
 
   return (
     <div className="p-4 space-y-4" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
@@ -2215,44 +2214,9 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
             </Ticket>
           )}
 
-          {/* Histórico recente — último. Decrescente: o array chega do banco
-              mais-novo-primeiro, mas o realtime anexa novos no FIM — .reverse()
-              invertia tudo. Ordena explicitamente por completedAt. */}
-          <Eyebrow>Histórico recente</Eyebrow>
-          <div className="space-y-1.5">
-            {unitCompletions.length === 0
-              ? <p style={{ fontSize: 13, color: C.muted }}>Nenhum checklist concluído ainda.</p>
-              : [...unitCompletions]
-                  .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-                  .slice(0, 8).map(c => {
-                    const fotos = (c.items || []).filter(i => i.hasPhoto);
-                    return (
-                      <div key={c.id} className="px-3 py-2" style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm }}>
-                        <div className="flex items-center justify-between gap-2" style={{ fontSize: 12 }}>
-                          <div style={{ minWidth: 0 }}>
-                            <span style={{ fontWeight: W.semibold, color: C.ink }}>{c.sector}</span>
-                            <span style={{ color: C.muted }}> · {c.templateName}</span>
-                          </div>
-                          <span className="font-mono-ibr" style={{ color: C.muted, flexShrink: 0 }}>
-                            {new Date(c.completedAt).toLocaleDateString('pt-BR')} {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.operatorName}</p>
-                        {fotos.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {fotos.map(i => (
-                              <button key={i.id} onClick={() => setViewingPhoto({ recordId: c.id, item: i })}
-                                className="flex items-center gap-1"
-                                style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
-                                <Camera size={11} /> Foto
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-          </div>
+          {/* Histórico recente saiu do Painel a pedido do piloto (12/07): a
+              lista detalhada de execuções vive só em Relatórios → "Execuções
+              do período", que também entra no CSV e no PDF gerados. */}
         </>
       )}
 
@@ -2521,6 +2485,23 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       </tr>`
     ).join('');
 
+    // Execuções do período — o relatório gerado carrega o mesmo detalhamento
+    // da tela (pedido do piloto), do mais recente ao mais antigo.
+    const execRows = [...filtered]
+      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+      .map(c => {
+        const done = c.items.filter(i => i.done).length;
+        const fotos = c.items.filter(i => i.hasPhoto).length;
+        return `<tr>
+          <td style="white-space:nowrap">${new Date(c.completedAt).toLocaleDateString('pt-BR')} ${new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
+          <td>${UNITS.find(u => u.id === c.unitId)?.name || c.unitId}</td>
+          <td>${c.sector} · ${c.templateName}</td>
+          <td>${c.operatorName}</td>
+          <td style="text-align:center">${done}/${c.items.length}</td>
+          <td style="text-align:center">${fotos > 0 ? `📷 ${fotos}` : '—'}</td>
+        </tr>`;
+      }).join('');
+
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -2626,6 +2607,21 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       <th style="text-align:center">Críticos pend.</th>
     </tr></thead>
     <tbody>${colabRows}</tbody>
+  </table>` : ''}
+
+  <!-- Execuções do período -->
+  ${filtered.length > 0 ? `
+  <p class="section-title">Execuções do período (${filtered.length})</p>
+  <table>
+    <thead><tr>
+      <th>Quando</th>
+      <th>Loja</th>
+      <th>Checklist</th>
+      <th>Responsável</th>
+      <th style="text-align:center">Tarefas</th>
+      <th style="text-align:center">Fotos</th>
+    </tr></thead>
+    <tbody>${execRows}</tbody>
   </table>` : ''}
 
   <!-- Footer -->

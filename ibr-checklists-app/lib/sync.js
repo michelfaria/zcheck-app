@@ -246,23 +246,22 @@ async function pushCompletion(record) {
 // era código morto que só produziria imagem quebrada se alguém o religasse.)
 
 export async function uploadPhoto(completionId, itemId, dataUrl) {
-  const queue = async () => {
-    try {
-      await storageSet(`ibr_photo_${completionId}_${itemId}`, dataUrl);
-      await queueOfflinePhoto({ completionId, itemId });
-    } catch (e) { console.warn('uploadPhoto offline queue failed', e); }
-  };
-
-  if (!isOnline()) {
-    console.log('[Sync] offline — queuing photo:', completionId, itemId);
-    await queue();
-    return null;
-  }
+  // Persiste ANTES de tentar subir. "Salvei e fechei o app" matou um upload no
+  // meio e a evidência ficou irrecuperável (piloto, 12/07): o caminho online
+  // não guardava o dataURL local. Agora a foto sempre entra no cache + fila;
+  // o sucesso remove da fila, e a próxima abertura logada retoma o que faltou.
   try {
-    return await pushPhoto(completionId, itemId, dataUrl);
+    await storageSet(`ibr_photo_${completionId}_${itemId}`, dataUrl);
+    await queueOfflinePhoto({ completionId, itemId });
+  } catch (e) { console.warn('uploadPhoto persist failed', e); }
+
+  if (!isOnline()) return null;
+  try {
+    const path = await pushPhoto(completionId, itemId, dataUrl);
+    await removeQueuedPhoto(completionId, itemId);
+    return path;
   } catch (e) {
-    console.warn('pushPhoto failed, enfileirando', e.message);
-    await queue();
+    console.warn('pushPhoto adiado para a fila:', e.message);
     return null;
   }
 }
@@ -363,9 +362,20 @@ async function queueOfflineCompletion(record) {
 async function queueOfflinePhoto({ completionId, itemId }) {
   try {
     const q = (await cache.get('ibr_offline_queue')) || [];
-    q.push({ type: 'photo', completionId, itemId, ts: Date.now() });
-    await cache.set('ibr_offline_queue', q);
+    // Dedupe: reenfileirar a mesma foto não pode multiplicar o trabalho do dreno.
+    if (!q.some(e => e.type === 'photo' && e.completionId === completionId && e.itemId === itemId)) {
+      q.push({ type: 'photo', completionId, itemId, ts: Date.now() });
+      await cache.set('ibr_offline_queue', q);
+    }
   } catch (e) { console.warn('queueOfflinePhoto failed', e); }
+}
+
+async function removeQueuedPhoto(completionId, itemId) {
+  try {
+    const q = (await cache.get('ibr_offline_queue')) || [];
+    await cache.set('ibr_offline_queue',
+      q.filter(e => !(e.type === 'photo' && e.completionId === completionId && e.itemId === itemId)));
+  } catch (e) { console.warn('removeQueuedPhoto failed', e); }
 }
 
 export async function drainOfflineQueue() {
