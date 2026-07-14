@@ -2215,25 +2215,43 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
             </Ticket>
           )}
 
-          {/* Histórico recente — último */}
+          {/* Histórico recente — último. Decrescente: o array chega do banco
+              mais-novo-primeiro, mas o realtime anexa novos no FIM — .reverse()
+              invertia tudo. Ordena explicitamente por completedAt. */}
           <Eyebrow>Histórico recente</Eyebrow>
           <div className="space-y-1.5">
             {unitCompletions.length === 0
               ? <p style={{ fontSize: 13, color: C.muted }}>Nenhum checklist concluído ainda.</p>
-              : [...unitCompletions].reverse().slice(0, 8).map(c => (
-                <div key={c.id} className="px-3 py-2" style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 6 }}>
-                  <div className="flex items-center justify-between gap-2" style={{ fontSize: 12 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, color: C.ink }}>{c.sector}</span>
-                      <span style={{ color: C.muted }}> · {c.templateName}</span>
-                    </div>
-                    <span className="font-mono-ibr" style={{ color: C.muted, flexShrink: 0 }}>
-                      {new Date(c.completedAt).toLocaleDateString('pt-BR')} {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.operatorName}</p>
-                </div>
-              ))}
+              : [...unitCompletions]
+                  .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+                  .slice(0, 8).map(c => {
+                    const fotos = (c.items || []).filter(i => i.hasPhoto);
+                    return (
+                      <div key={c.id} className="px-3 py-2" style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm }}>
+                        <div className="flex items-center justify-between gap-2" style={{ fontSize: 12 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <span style={{ fontWeight: W.semibold, color: C.ink }}>{c.sector}</span>
+                            <span style={{ color: C.muted }}> · {c.templateName}</span>
+                          </div>
+                          <span className="font-mono-ibr" style={{ color: C.muted, flexShrink: 0 }}>
+                            {new Date(c.completedAt).toLocaleDateString('pt-BR')} {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.operatorName}</p>
+                        {fotos.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {fotos.map(i => (
+                              <button key={i.id} onClick={() => setViewingPhoto({ recordId: c.id, item: i })}
+                                className="flex items-center gap-1"
+                                style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
+                                <Camera size={11} /> Foto
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
           </div>
         </>
       )}
@@ -2373,6 +2391,7 @@ const formatDateTime = iso => {
 };
 
 function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits }) {
+  const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [period, setPeriod] = useState('7d');
   const [customFrom, setCustomFrom] = useState(todayStr());
   const [customTo, setCustomTo] = useState(todayStr());
@@ -2813,6 +2832,57 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
         );
       })()}
 
+      {/* Execuções do período — evidências com foto (pedido do piloto: a foto
+          precisa ser visível também no Relatórios, não só no Painel do dia). */}
+      <Eyebrow>Execuções do período</Eyebrow>
+      <div className="space-y-1.5" style={{ marginBottom: 16 }}>
+        {(() => {
+          const recentes = [...filtered]
+            .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+            .slice(0, 20);
+          if (recentes.length === 0) {
+            return <p style={{ fontSize: T.caption, color: C.muted }}>Nenhuma execução no período com os filtros atuais.</p>;
+          }
+          return (
+            <>
+              {recentes.map(c => {
+                const fotos = (c.items || []).filter(i => i.hasPhoto);
+                return (
+                  <div key={c.id} className="px-3 py-2" style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm }}>
+                    <div className="flex items-center justify-between gap-2" style={{ fontSize: 12 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontWeight: W.semibold, color: C.ink }}>{c.sector}</span>
+                        <span style={{ color: C.muted }}> · {c.templateName}</span>
+                      </div>
+                      <span className="font-mono-ibr" style={{ color: C.muted, flexShrink: 0 }}>
+                        {new Date(c.completedAt).toLocaleDateString('pt-BR')} {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.operatorName}</p>
+                    {fotos.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {fotos.map(i => (
+                          <button key={i.id} onClick={() => setViewingPhoto({ recordId: c.id, item: i })}
+                            className="flex items-center gap-1"
+                            style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
+                            <Camera size={11} /> Foto
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {filtered.length > 20 && (
+                <p style={{ fontSize: T.label, color: C.muted }}>
+                  Mostrando as 20 mais recentes de {filtered.length} — refine os filtros ou exporte o CSV para o total.
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </div>
+
       <Eyebrow>Exportar</Eyebrow>
       <div className="flex gap-2">
         <button
@@ -2830,6 +2900,10 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
           🖨 Exportar PDF
         </button>
       </div>
+
+      {viewingPhoto && (
+        <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
+      )}
     </div>
   );
 }
