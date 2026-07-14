@@ -278,13 +278,17 @@ async function pushPhoto(completionId, itemId, dataUrl) {
     .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
   if (error) throw error;
 
-  // Save metadata
+  // Metadado: é ele que o PhotoModal consulta. Falhou, LANÇA — o chamador
+  // enfileira e a fila retenta (o upload acima é upsert, retentar é barato).
+  // Engolir este erro foi o que deixou `photos` vazia por semanas: o upsert
+  // referenciava uma constraint única que não existia no banco (criada em
+  // 20260712_photos_metadata_repair.sql) e cada gravação falhava em silêncio.
   const { error: upsertErr } = await db().from('photos').upsert({
     completion_id: completionId,
     item_id: itemId,
     storage_path: path,
   }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
-  if (upsertErr) console.warn('pushPhoto metadata warning (ignored):', upsertErr.code);
+  if (upsertErr) throw upsertErr;
 
   return path;
 }
