@@ -21,7 +21,8 @@
 export const C = {
   // Superfícies
   bg: '#F7F9FB',          // fundo da página
-  border: '#E2EAF0',      // hairline
+  border: '#E2EAF0',      // hairline (decorativo; 1.22:1 sobre branco)
+  borderStrong: '#7E93A3',// contorno de CONTROLE — 3.19:1 sobre branco (WCAG 1.4.11)
 
   // Texto
   ink: '#063C5C',         // primário    — 11.00:1 sobre bg

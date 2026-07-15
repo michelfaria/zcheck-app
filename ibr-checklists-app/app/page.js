@@ -1,6 +1,6 @@
 import {
   CheckSquare, Sun, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
-  AlertTriangle, Clock,
+  AlertTriangle, Clock, Check,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 import { LIBRARY_VERTICALS } from '../lib/library';
@@ -13,6 +13,10 @@ import { LIBRARY_VERTICALS } from '../lib/library';
 // falsos apresentados como reais.
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
+
+// h2 para leitor de tela onde o layout não pede um título visível — conserta a
+// hierarquia de headings sem alterar o visual.
+const srOnly = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 };
 
 const Eyebrow = ({ color = C.muted, children }) => (
   <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', color, marginBottom: 14 }}>
@@ -36,7 +40,7 @@ function BriefingExample() {
             <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Você marcou para tratar</p>
             <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.5 }}>Conferir validade dos insumos abertos — ontem</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <span style={{ fontSize: T.label, fontWeight: W.semibold, color: 'white', background: C.success, borderRadius: R.sm, padding: '4px 10px' }}>✓ Resolvido</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: T.label, fontWeight: W.semibold, color: 'white', background: C.success, borderRadius: R.sm, padding: '4px 10px' }}><Check size={12} aria-hidden /> Resolvido</span>
               <span style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '4px 10px' }}>Ainda não</span>
             </div>
           </div>
@@ -66,7 +70,7 @@ export default function LandingPage() {
         .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; border-radius: ${R.md}px; font-weight: ${W.semibold}; cursor: pointer; }
         .lp-btn-primary { background: ${C.ink}; color: #fff; padding: 14px 28px; font-size: ${T.body}px; border: none; }
         .lp-btn-primary:hover { background: #0a4a70; }
-        .lp-btn-ghost { background: transparent; color: ${C.ink}; padding: 14px 24px; font-size: ${T.body}px; border: 1.5px solid ${C.border}; }
+        .lp-btn-ghost { background: transparent; color: ${C.ink}; padding: 14px 24px; font-size: ${T.body}px; border: 1.5px solid ${C.borderStrong}; }
         .lp-container { max-width: 1120px; margin: 0 auto; padding-left: 40px; padding-right: 40px; }
         .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
         .lp-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -207,6 +211,7 @@ export default function LandingPage() {
       {/* 5 · RECURSOS */}
       <section style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '72px 0' }}>
         <div className="lp-container">
+          <h2 style={srOnly}>Recursos</h2>
           <div className="lp-grid-4">
             {[
               { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, rotina e fechamento. Cada equipe vê só o que é dela.' },
@@ -217,7 +222,7 @@ export default function LandingPage() {
               <div key={title} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
                 <Icon size={20} color={C.success} aria-hidden style={{ marginBottom: 12 }} />
                 <h3 style={{ fontSize: T.bodySm, fontWeight: W.semibold, marginBottom: 6, lineHeight: 1.4 }}>{title}</h3>
-                <p style={{ fontSize: T.caption, color: C.muted, lineHeight: 1.6 }}>{text}</p>
+                <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.6 }}>{text}</p>
               </div>
             ))}
           </div>
@@ -269,6 +274,7 @@ export default function LandingPage() {
       {/* 9 · FAQ */}
       <section style={{ padding: '72px 0' }}>
         <div className="lp-container" style={{ maxWidth: 680 }}>
+          <h2 style={srOnly}>Perguntas frequentes</h2>
           <Eyebrow>Perguntas frequentes</Eyebrow>
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
