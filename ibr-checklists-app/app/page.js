@@ -107,11 +107,11 @@ export default function LandingPage() {
           <div>
             <Eyebrow color={C.success}>Inteligência operacional</Eyebrow>
             <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em', marginBottom: 20 }}>
-              Saiba onde sua operação precisa de você — antes que vire problema.
+              Saiba onde sua operação precisa de atenção — antes que vire problema.
             </h1>
             <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.7, maxWidth: 460, marginBottom: 32 }}>
-              Sua equipe executa os checklists pelo celular. Você recebe, todo dia,
-              um briefing com o que caiu, onde, e o que priorizar.
+              Sua equipe executa os checklists pelo celular. Você acompanha de onde
+              estiver — todo dia, um briefing com o que caiu, onde, e o que priorizar.
             </p>
             <div className="lp-hero-ctas" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
               <a href="/lista" className="lp-btn lp-btn-primary">Entrar na lista de acesso</a>
