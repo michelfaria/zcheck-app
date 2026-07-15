@@ -5944,6 +5944,36 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
     });
   }
 
+  // ── Prioridades por loja (só na visão multi-loja) ──────────────────────────
+  // Onde o gestor deve olhar primeiro. Cada loja recebe um score de atenção;
+  // ordenado do mais crítico ao menos. Um líder de uma loja só (scopeUnitId
+  // definido) não vê ranking entre lojas — não é escopo dele.
+  let stores = [];
+  if (!scopeUnitId && unitIds.length > 1) {
+    // aderência de ONTEM por loja (item-level), para contexto de tendência
+    const yByStore = {};
+    groupStats(yFiltered, 'loja').forEach(g => { yByStore[g.key] = Math.round(g.rate); });
+
+    stores = unitIds.map(uid => {
+      const closedToday = isUnitClosed(closures, uid, today);
+      const overdueCount = overdue.filter(t => t.unitId === uid).length;
+      // itens críticos recorrentes (≥2× em 7d) desta loja
+      const criticalHotspots = [...hotspot.entries()]
+        .filter(([k, n]) => n >= 2 && k.split('|')[0] === uid).length;
+      const expectedToday = closedToday ? 0 : countApplicableTemplatesOnDate(templates, { unitId: uid }, today);
+      const doneToday = filterCompletions(completions, { dates: [today], unitId: uid }).length;
+      const pendingToday = Math.max(0, expectedToday - doneToday);
+      // score de atenção: atraso pesa mais, depois crítico recorrente, depois pendência
+      const score = overdueCount * 10 + criticalHotspots * 5 + pendingToday;
+      return {
+        unitId: uid, name: unitName(uid), closedToday,
+        overdue: overdueCount, criticalHotspots, pendingToday,
+        expectedToday, doneToday, yAdherence: yByStore[unitName(uid)] ?? null,
+        score,
+      };
+    }).sort((a, b) => b.score - a.score);
+  }
+
   // ── Insight do dia (H4) ────────────────────────────────────────────────────
   // Análise automática que conecta pontos que um humano teria que garimpar:
   // tendência, falha crítica recorrente ou loja destoante. Hoje é rule-based;
@@ -5955,6 +5985,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
     yesterday: { adherence: yAdherence, checklists: yFiltered.length, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
     today: { expected: tExpected, done: tDone, pending: Math.max(0, tExpected - tDone), overdue: overdue.length },
     recommendations: recs.slice(0, 3),
+    stores,
     insight,
   };
 }
@@ -6148,7 +6179,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
         {/* Cabeçalho */}
         <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'relative' }}>
           <button onClick={onClose} aria-label="Fechar" style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999, width: 30, height: 30, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>×</button>
-          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>☀️ Briefing do dia</p>
+          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
           <p className="font-display" style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
           <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
         </div>
@@ -6262,6 +6293,45 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
               ))}
             </div>
           </div>
+
+          {/* Prioridades por loja — só na visão multi-loja. Onde olhar primeiro. */}
+          {briefing.stores && briefing.stores.length > 0 && (
+            <div>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades por loja</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {briefing.stores.map(s => {
+                  const critico = s.overdue > 0 || s.criticalHotspots > 0;
+                  const barra = critico ? C.critical : s.pendingToday > 0 ? C.warning : C.success;
+                  const sinais = [];
+                  if (s.closedToday) sinais.push('fechada hoje');
+                  else {
+                    if (s.overdue > 0) sinais.push(`${s.overdue} atrasado${s.overdue > 1 ? 's' : ''}`);
+                    if (s.criticalHotspots > 0) sinais.push(`${s.criticalHotspots} crítico${s.criticalHotspots > 1 ? 's' : ''} recorrente${s.criticalHotspots > 1 ? 's' : ''}`);
+                    if (s.pendingToday > 0) sinais.push(`${s.pendingToday} pendente${s.pendingToday > 1 ? 's' : ''} hoje`);
+                    if (sinais.length === 0) sinais.push('em dia');
+                  }
+                  return (
+                    <button key={s.unitId} onClick={() => onNavigate(s.unitId, 'painel')}
+                      className="flex items-stretch gap-2"
+                      style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', textAlign: 'left', overflow: 'hidden' }}>
+                      <span style={{ width: 4, flexShrink: 0, background: barra }} />
+                      <span style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
+                        <span className="flex items-center justify-between gap-2">
+                          <span style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{s.name}</span>
+                          {s.yAdherence != null && (
+                            <span style={{ fontSize: T.label, color: C.muted, flexShrink: 0 }}>ontem {s.yAdherence}%</span>
+                          )}
+                        </span>
+                        <span style={{ display: 'block', fontSize: T.label, color: critico ? C.critical : C.muted, marginTop: 2, lineHeight: 1.4 }}>
+                          {sinais.join(' · ')}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Micro-pergunta qualitativa (§10) */}
           <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
@@ -7340,7 +7410,7 @@ function AppInner() {
                 dia chega ao gestor sem takeover (anti-fadiga). */}
             <button onClick={openBriefing}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: R.md, border: `1.5px solid ${briefingHasSignal && !briefingSeenToday ? C.warning : C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer' }}>
-              ☀️ Ver briefing do dia
+              Ver briefing do dia
               {briefingHasSignal && !briefingSeenToday && (
                 <span aria-label="Há novidades no briefing" style={{ width: 8, height: 8, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
               )}
