@@ -4,15 +4,17 @@
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
-// Chaves de teste oficiais da Cloudflare. Em dev/preview, o cliente usa a
-// site key de teste (1x00000000000000000000AA), cujo par de secret é este —
-// siteverify sempre aprova. Deixa o fluxo local rodar sem segredo real.
+// Chave de teste oficial da Cloudflare (par da site key 1x00000000000000000000AA):
+// siteverify sempre aprova. Só serve fora de produção, para o fluxo local rodar
+// sem segredo real. NUNCA em produção — lá, secret ausente vira misconfigured, e
+// não um captcha que aprova qualquer um (senão o anti-bot fica desligado calado).
 const TEST_SECRET = '1x0000000000000000000000000000000AA';
 
-// Retorna true/false. Se o secret não estiver configurado, devolve null para o
-// chamador decidir (as rotas tratam null como 'server_misconfigured').
+// Retorna true/false, ou null quando o secret não está configurado (em produção)
+// — o chamador trata null como 'server_misconfigured'.
 export async function verifyTurnstile(token, ip) {
-  const secret = process.env.TURNSTILE_SECRET_KEY || TEST_SECRET;
+  const secret = process.env.TURNSTILE_SECRET_KEY
+    || (process.env.NODE_ENV !== 'production' ? TEST_SECRET : null);
   if (!secret) return null;
   if (typeof token !== 'string' || !token) return false;
 

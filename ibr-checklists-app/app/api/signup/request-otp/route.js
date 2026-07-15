@@ -27,8 +27,10 @@ export async function POST(request) {
 
   const ip = clientIp(request);
 
-  // Turnstile server-side. Com a test key (dev/preview) sempre aprova.
+  // Turnstile server-side. null = secret ausente em produção (misconfigurado);
+  // false = token inválido. Fora de produção, a test key sempre aprova.
   const captchaOk = await verifyTurnstile(body?.turnstileToken, ip);
+  if (captchaOk === null) return json({ ok: false, reason: 'server_misconfigured' }, 500);
   if (!captchaOk) return json({ ok: false, reason: 'captcha_failed' }, 400);
 
   // Rate-limit: por e-mail e por IP na última hora.
