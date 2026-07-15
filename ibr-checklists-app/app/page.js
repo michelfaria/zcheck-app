@@ -1,18 +1,19 @@
 import {
-  CheckSquare, Sun, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
-  AlertTriangle, Clock, Check,
+  CheckSquare, Bell, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
+  AlertTriangle, Clock, Check, Eye, MapPin, Target, TrendingUp, Award,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 import { LIBRARY_VERTICALS } from '../lib/library';
+import { TIER_LIST, CUSTOM_TIER } from '../lib/plans';
 
-// Landing pública. Consome os mesmos tokens do app (lib/tokens.js) — era uma
-// das superfícies com paleta divergente. O CTA é o waitlist (/lista): não há
-// self-service enquanto o isolamento multi-tenant não estiver no ar em
-// produção; cada empresa é provisionada manualmente (decisão de 09/07/2026).
-// O hero mostra um EXEMPLO ILUSTRATIVO do briefing, rotulado — nunca dados
-// falsos apresentados como reais.
+// Landing pública. Consome os mesmos tokens do app (lib/tokens.js). O CTA é o
+// cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 7 dias
+// e assina — o fluxo existe (signup + trial + Mercado Pago). Os preços vêm de
+// lib/plans.js (fonte única). O hero mostra um EXEMPLO ILUSTRATIVO do briefing,
+// rotulado — nunca dados falsos apresentados como reais.
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
+const SIGNUP = '/comecar';
 
 // h2 para leitor de tela onde o layout não pede um título visível — conserta a
 // hierarquia de headings sem alterar o visual.
@@ -63,6 +64,20 @@ function BriefingExample() {
   );
 }
 
+// Os cinco pilares — a narrativa de posicionamento.
+const PILLARS = [
+  { Icon: Eye, title: 'Você enxerga a operação inteira',
+    text: 'Um briefing por dia com o que caiu, o que atrasou e o que priorizar. Sem garimpar planilha nem rolar o grupo do WhatsApp.' },
+  { Icon: MapPin, title: 'Acompanhe de qualquer lugar',
+    text: 'Uma loja ou cinco: você não precisa estar presente para saber como cada unidade abriu, rodou e fechou.' },
+  { Icon: Target, title: 'Aja no que importa',
+    text: 'As prioridades sobem sozinhas quando um item crítico falha mais de uma vez. E o ZCheck só interrompe quando há sinal real — dia tranquilo não vira barulho.' },
+  { Icon: TrendingUp, title: 'Constrói cultura de execução',
+    text: 'Consistência na execução constrói cultura, e cultura mantém o padrão mesmo quando você não está.' },
+  { Icon: Award, title: 'Reconhece quem faz acontecer',
+    text: 'Cada pessoa tem seu ID operacional e é reconhecida pela consistência. Quem sustenta o padrão aparece — não fica invisível.' },
+];
+
 export default function LandingPage() {
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: C.ink, background: 'white', overflowX: 'hidden' }}>
@@ -80,8 +95,6 @@ export default function LandingPage() {
         details.lp-faq[open] summary::after { content: '–'; }
         details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
         details.lp-faq summary::-webkit-details-marker { display: none; }
-        /* O header é sticky (68px): sem isto, navegar por âncora esconde o
-           título da seção atrás dele. */
         section[id] { scroll-margin-top: 84px; }
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
@@ -94,13 +107,13 @@ export default function LandingPage() {
       {/* HEADER */}
       <header style={{ background: 'white', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, zIndex: 100 }}>
         <div className="lp-container" style={{ height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          {/* 400×100 original: dimensões explícitas evitam layout shift */}
           <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32} style={{ height: 32, width: 'auto' }} />
           <nav style={{ display: 'flex', alignItems: 'center', gap: 22 }} aria-label="Navegação principal">
+            <a className="lp-nav-links" href="#por-que" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Por que ZCheck</a>
             <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
-            <a className="lp-nav-links" href="#para-quem" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Para quem</a>
+            <a className="lp-nav-links" href="#preco" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Preço</a>
             <a className="lp-nav-links" href="/entrar" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Entrar</a>
-            <a href="/lista" className="lp-btn lp-btn-primary" style={{ padding: '10px 20px', fontSize: T.bodySm }}>Entrar na lista</a>
+            <a href={SIGNUP} className="lp-btn lp-btn-primary" style={{ padding: '10px 20px', fontSize: T.bodySm }}>Começar grátis</a>
           </nav>
         </div>
       </header>
@@ -109,20 +122,20 @@ export default function LandingPage() {
       <section style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
         <div className="lp-container lp-grid-2" style={{ paddingTop: 72, paddingBottom: 72 }}>
           <div>
-            <Eyebrow color={C.success}>Inteligência operacional</Eyebrow>
+            <Eyebrow color={C.success}>Do checklist à cultura de execução</Eyebrow>
             <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em', marginBottom: 20 }}>
               Saiba onde sua operação precisa de atenção — antes que vire problema.
             </h1>
             <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.7, maxWidth: 460, marginBottom: 32 }}>
               Sua equipe executa os checklists pelo celular. Você acompanha de onde
-              estiver — todo dia, um briefing com o que caiu, onde, e o que priorizar.
+              estiver — e todo dia recebe um briefing com o que caiu, onde, e o que priorizar.
             </p>
             <div className="lp-hero-ctas" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <a href="/lista" className="lp-btn lp-btn-primary">Entrar na lista de acesso</a>
+              <a href={SIGNUP} className="lp-btn lp-btn-primary">Começar teste grátis</a>
               <a href="#como-funciona" className="lp-btn lp-btn-ghost">Ver como funciona</a>
             </div>
             <p style={{ fontSize: T.caption, color: C.muted }}>
-              Acesso antecipado gratuito · configuramos sua operação com você
+              7 dias grátis · sem cartão para começar · cancele quando quiser
             </p>
           </div>
           <BriefingExample />
@@ -154,29 +167,25 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 3 · A VIRADA */}
-      <section style={{ background: C.ink, color: 'white', padding: '72px 0' }}>
-        <div className="lp-container lp-grid-2">
-          <div>
-            <Eyebrow color={greenOnDark}>A diferença</Eyebrow>
-            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 18 }}>
-              Não é mais um app de checklist.
+      {/* 3 · OS CINCO PILARES */}
+      <section id="por-que" style={{ background: C.ink, color: 'white', padding: '72px 0' }}>
+        <div className="lp-container">
+          <div style={{ maxWidth: 620, marginBottom: 40 }}>
+            <Eyebrow color={greenOnDark}>Por que ZCheck</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
+              Cinco coisas que um checklist comum não te dá.
             </h2>
-            <p style={{ fontSize: T.body, lineHeight: 1.75, opacity: 0.85, maxWidth: 460 }}>
-              O checklist é o insumo. O produto é o <strong>briefing do dia</strong>:
-              toda manhã, a gestão recebe o que caiu ontem, o que está atrasado agora
-              e o que ficou de ser tratado — com cobrança até resolver.
-            </p>
           </div>
-          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {[
-              ['Prioridades do dia', 'Itens críticos que ficaram pendentes mais de uma vez sobem para o topo — antes de virarem padrão.'],
-              ['Plano de ação com cobrança', 'O que você marcar para tratar volta amanhã perguntando se foi resolvido. Nada evapora.'],
-              ['Sem fadiga de alerta', 'O briefing só toma a tela quando há sinal real. Dia tranquilo não interrompe ninguém.'],
-            ].map(([t, d]) => (
-              <li key={t} style={{ border: '1px solid rgba(255,255,255,0.18)', borderRadius: R.md, padding: '16px 18px' }}>
-                <p style={{ fontSize: T.body, fontWeight: W.semibold, marginBottom: 4 }}>{t}</p>
-                <p style={{ fontSize: T.bodySm, opacity: 0.75, lineHeight: 1.6 }}>{d}</p>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {PILLARS.map(({ Icon, title, text }) => (
+              <li key={title} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', border: '1px solid rgba(255,255,255,0.18)', borderRadius: R.md, padding: '18px 20px' }}>
+                <span style={{ flexShrink: 0, width: 42, height: 42, borderRadius: R.md, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon size={20} color={greenOnDark} aria-hidden />
+                </span>
+                <div>
+                  <p style={{ fontSize: T.bodyLg, fontWeight: W.semibold, marginBottom: 4 }}>{title}</p>
+                  <p style={{ fontSize: T.bodySm, opacity: 0.78, lineHeight: 1.65, maxWidth: 640 }}>{text}</p>
+                </div>
               </li>
             ))}
           </ul>
@@ -189,13 +198,13 @@ export default function LandingPage() {
           <div style={{ maxWidth: 620, marginBottom: 40 }}>
             <Eyebrow>Como funciona</Eyebrow>
             <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
-              Do zero ao briefing em três passos.
+              Da conta criada ao briefing em três passos.
             </h2>
           </div>
           <div className="lp-grid-3">
             {[
-              ['Adote um modelo do seu setor', 'A biblioteca traz checklists prontos por segmento — restaurante, café, hotel, varejo, padaria. Adote e ajuste ao seu jeito.'],
-              ['A equipe executa pelo celular', 'Cada colaborador vê só o que é do seu turno e setor. Foto onde importa, e funciona sem internet.'],
+              ['Crie sua conta e adote um modelo', 'Em minutos: escolha seu segmento e a biblioteca traz os checklists prontos — restaurante, café, hotel, varejo, padaria. Ajuste ao seu jeito.'],
+              ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só o que é do seu turno e setor. Foto onde importa, e funciona sem internet.'],
               ['Você recebe o briefing e age', 'O que caiu, o que atrasou, o que priorizar. E o que você marcar para tratar volta até ser resolvido.'],
             ].map(([t, d], i) => (
               <div key={t} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
@@ -208,18 +217,48 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 5 · RECURSOS */}
+      {/* 5 · A EQUIPE JUNTO (ID operacional + reconhecimento) */}
       <section style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '72px 0' }}>
+        <div className="lp-container lp-grid-2">
+          <div>
+            <Eyebrow color={C.success}>A equipe junto</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 18 }}>
+              Execução que a equipe vê valer a pena.
+            </h2>
+            <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.75, maxWidth: 460 }}>
+              Cada colaborador tem um <strong style={{ color: C.ink }}>ID operacional</strong>: entra com um PIN,
+              vê só o que é do seu turno e vai formando um histórico de execução. Quem
+              mantém o padrão recebe <strong style={{ color: C.ink }}>reconhecimento</strong> — a consistência
+              fica visível, não invisível. É assim que a rotina vira cultura.
+            </p>
+          </div>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[
+              ['ID operacional por pessoa', 'Cada um tem seu acesso e seu histórico — dá para saber o que foi feito, por quem e quando.'],
+              ['Reconhecimento pela consistência', 'Quem sustenta o padrão aparece. O bom trabalho deixa de ser invisível.'],
+              ['Cada um vê só o seu', 'Turno e setor filtram a tela: menos ruído para a equipe, mais foco no que é dela.'],
+            ].map(([t, d]) => (
+              <li key={t} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: '16px 18px' }}>
+                <p style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>{t}</p>
+                <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.6 }}>{d}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* 6 · RECURSOS */}
+      <section style={{ padding: '72px 0' }}>
         <div className="lp-container">
           <h2 style={srOnly}>Recursos</h2>
           <div className="lp-grid-4">
             {[
               { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, rotina e fechamento. Cada equipe vê só o que é dela.' },
-              { Icon: Sun, title: 'Briefing diário para a gestão', text: 'Prioridades e cobranças do dia, direto de quem executou.' },
+              { Icon: Bell, title: 'Briefing diário para a gestão', text: 'Prioridades e cobranças do dia, direto de quem executou.' },
               { Icon: Camera, title: 'Evidência com foto', text: 'Itens críticos podem exigir foto. Histórico completo por período, loja e setor.' },
               { Icon: WifiOff, title: 'Funciona offline', text: 'Instala como app no celular. Sem sinal, registra local e sincroniza depois.' },
             ].map(({ Icon, title, text }) => (
-              <div key={title} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
+              <div key={title} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
                 <Icon size={20} color={C.success} aria-hidden style={{ marginBottom: 12 }} />
                 <h3 style={{ fontSize: T.bodySm, fontWeight: W.semibold, marginBottom: 6, lineHeight: 1.4 }}>{title}</h3>
                 <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.6 }}>{text}</p>
@@ -229,8 +268,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 6 · PARA QUEM */}
-      <section id="para-quem" style={{ padding: '72px 0' }}>
+      {/* 7 · PARA QUEM */}
+      <section id="para-quem" style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '72px 0' }}>
         <div className="lp-container" style={{ textAlign: 'center' }}>
           <Eyebrow>Para quem é</Eyebrow>
           <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, marginBottom: 28 }}>
@@ -238,51 +277,100 @@ export default function LandingPage() {
           </h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 640, margin: '0 auto 16px' }}>
             {LIBRARY_VERTICALS.map(v => (
-              <span key={v.id} style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: R.pill, padding: '10px 20px' }}>
+              <span key={v.id} style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: R.pill, padding: '10px 20px', background: 'white' }}>
                 {v.label}
               </span>
             ))}
           </div>
           <p style={{ fontSize: T.caption, color: C.muted }}>
-            Outro setor? Conte na lista — a biblioteca de modelos cresce com a demanda.
+            Outro setor? A biblioteca de modelos cresce com a demanda — comece do zero e monte o seu.
           </p>
         </div>
       </section>
 
-      {/* 7 · PROVA HONESTA + 8 · CTA */}
+      {/* 8 · PREÇO */}
+      <section id="preco" style={{ padding: '72px 0' }}>
+        <div className="lp-container">
+          <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 44px' }}>
+            <Eyebrow>Preço</Eyebrow>
+            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 12 }}>
+              Simples, por unidade. Sem surpresa.
+            </h2>
+            <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.7 }}>
+              7 dias grátis para testar, sem cartão. Depois, escolha o plano que cabe na sua operação — quanto mais unidades, menor o custo por loja.
+            </p>
+          </div>
+          <div className="lp-grid-3">
+            {TIER_LIST.map((t, i) => {
+              const featured = i === 1; // "até 3 unidades" — o melhor custo/benefício de entrada
+              return (
+                <div key={t.id} style={{
+                  background: featured ? C.ink : 'white', color: featured ? 'white' : C.ink,
+                  border: `1.5px solid ${featured ? C.ink : C.border}`, borderRadius: R.lg, padding: 28,
+                  display: 'flex', flexDirection: 'column', gap: 6,
+                }}>
+                  <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: featured ? 0.85 : 1, color: featured ? 'white' : C.muted }}>{t.label}</p>
+                  <p style={{ fontSize: 34, fontWeight: W.bold, letterSpacing: '-0.02em' }}>
+                    R${t.price}<span style={{ fontSize: T.bodySm, fontWeight: W.medium, color: featured ? 'rgba(255,255,255,0.7)' : C.muted }}>/mês</span>
+                  </p>
+                  <p style={{ fontSize: T.caption, color: featured ? 'rgba(255,255,255,0.7)' : C.muted, marginBottom: 14 }}>
+                    R${(t.price / t.unitLimit).toFixed(0).replace('.', ',')} por unidade/mês
+                  </p>
+                  <a href={SIGNUP} className="lp-btn" style={{
+                    background: featured ? C.success : C.ink, color: 'white', padding: '12px 20px', fontSize: T.body, marginTop: 'auto',
+                  }}>
+                    Começar grátis
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ textAlign: 'center', fontSize: T.bodySm, color: C.muted, marginTop: 20 }}>
+            {CUSTOM_TIER.label}?{' '}
+            <a href={CUSTOM_TIER.whatsapp} target="_blank" rel="noreferrer" style={{ color: C.ink, fontWeight: W.semibold, textDecoration: 'none' }}>
+              Fale com a gente para condições especiais →
+            </a>
+          </p>
+          <p style={{ textAlign: 'center', fontSize: T.caption, color: C.muted, marginTop: 8 }}>
+            Cancele quando quiser, sem multa ou período mínimo de fidelidade.
+          </p>
+        </div>
+      </section>
+
+      {/* 9 · PROVA + CTA */}
       <section style={{ background: C.ink, color: 'white', padding: '72px 0', textAlign: 'center' }}>
         <div className="lp-container" style={{ maxWidth: 660 }}>
           <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
             Em operação diária nas lojas da Ilhabela Republic — nosso piloto fundador.
           </p>
           <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: W.bold, marginBottom: 14 }}>
-            Entre na lista de acesso
+            Comece hoje. Configure em minutos.
           </h2>
           <p style={{ fontSize: T.body, opacity: 0.8, lineHeight: 1.7, marginBottom: 32 }}>
-            Acesso antecipado gratuito durante o piloto. Cada empresa é configurada
-            manualmente pela nossa equipe — você recebe retorno em até 2 dias úteis.
+            Crie sua conta, escolha um modelo do seu setor e comece o teste de 7 dias.
+            Se fizer sentido, você assina — e cancela quando quiser.
           </p>
-          {/* C.success, não successBright: texto branco sobre o verde vivo dá
-              3.30:1 — a própria doc do token proíbe. Sobre #15803D: 5.02:1. */}
-          <a href="/lista" className="lp-btn" style={{ background: C.success, color: 'white', padding: '15px 34px', fontSize: T.bodyLg, fontWeight: W.semibold }}>
-            Entrar na lista
+          {/* C.success (não successBright) com texto branco: 5.02:1, passa AA. */}
+          <a href={SIGNUP} className="lp-btn" style={{ background: C.success, color: 'white', padding: '15px 34px', fontSize: T.bodyLg, fontWeight: W.semibold }}>
+            Criar minha conta
           </a>
-          <p style={{ fontSize: T.caption, opacity: 0.6, marginTop: 14 }}>Sem cartão, sem compromisso.</p>
+          <p style={{ fontSize: T.caption, opacity: 0.6, marginTop: 14 }}>7 dias grátis · sem cartão para começar.</p>
         </div>
       </section>
 
-      {/* 9 · FAQ */}
+      {/* 10 · FAQ */}
       <section style={{ padding: '72px 0' }}>
         <div className="lp-container" style={{ maxWidth: 680 }}>
           <h2 style={srOnly}>Perguntas frequentes</h2>
           <Eyebrow>Perguntas frequentes</Eyebrow>
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
-              ['Quanto custa?', 'Durante o acesso antecipado, nada. O preço será definido junto com os primeiros clientes — quem entra agora participa dessa conversa.'],
+              ['Minha equipe vai usar?', 'Foi o teste do nosso piloto. Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
+              ['Quanto custa?', '7 dias grátis, sem cartão. Depois, a partir de R$97/mês por unidade, com custo por loja menor conforme você cresce. Cancele quando quiser, sem multa.'],
               ['Precisa instalar alguma coisa?', 'Não. O ZCheck roda no navegador e pode ser adicionado à tela inicial do celular como um app (PWA). Sem loja de aplicativos, sem atualização manual.'],
               ['Funciona sem internet?', 'Sim. A execução registra tudo localmente e sincroniza quando a conexão volta — feito para estoque, câmara fria e subsolo.'],
+              ['Quanto tempo até começar a usar?', 'Minutos. Você cria a conta, escolhe um modelo do seu setor e já começa o teste — sem esperar aprovação da nossa equipe.'],
               ['Como ficam os meus dados?', 'Isolados por empresa e tratados conforme a LGPD. Os detalhes estão nos Termos de Uso e na Política de Privacidade, no rodapé.'],
-              ['Quanto tempo até começar a usar?', 'Depois do retorno (até 2 dias úteis), configuramos sua operação com você — lojas, setores e checklists — normalmente em uma única sessão.'],
             ].map(([q, a]) => (
               <details key={q} className="lp-faq" style={{ borderBottom: `1px solid ${C.border}` }}>
                 <summary>{q}</summary>
