@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // Emite tokens de sessão assinados com o JWT secret do próprio Supabase.
 // O mesmo token serve a dois propósitos: identifica o chamador nas rotas de API
@@ -18,6 +18,28 @@ function signHS256(payload, secret) {
 
 // Um turno de trabalho. Não há refresh: expirou, o usuário digita o PIN de novo.
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+const b64urlDecode = (str) =>
+  Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+// Verifica um token emitido por mintSessionToken: assinatura HS256 e expiração.
+// Retorna o payload (com user_id, user_role, company_id) ou null se inválido.
+// Usado pelas rotas de API que precisam identificar a empresa do chamador.
+export function verifySessionToken(token, { secret }) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [header, payload, signature] = parts;
+
+  const expected = createHmac('sha256', secret).update(`${header}.${payload}`).digest();
+  const got = b64urlDecode(signature);
+  if (expected.length !== got.length || !timingSafeEqual(expected, got)) return null;
+
+  let claims;
+  try { claims = JSON.parse(b64urlDecode(payload).toString('utf8')); } catch { return null; }
+  if (!claims || (claims.exp && claims.exp < Math.floor(Date.now() / 1000))) return null;
+  return claims;
+}
 
 export function mintSessionToken(user, { secret, issuer }) {
   const now = Math.floor(Date.now() / 1000);
