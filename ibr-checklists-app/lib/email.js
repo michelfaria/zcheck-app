@@ -6,7 +6,16 @@
 
 const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
 
-const SENDER = { name: 'ZCheck', email: 'contato@zcheckapp.com' };
+// O remetente PRECISA ser um remetente verificado no Brevo, senão o envio é
+// recusado. Configurável por env para apontar para o que estiver verificado
+// (ex.: contato@zcheckapp.com quando o domínio estiver autenticado, ou um
+// e-mail já verificado enquanto isso). Default: contato@zcheckapp.com.
+function sender() {
+  return {
+    name: process.env.BREVO_SENDER_NAME || 'ZCheck',
+    email: process.env.BREVO_SENDER_EMAIL || 'contato@zcheckapp.com',
+  };
+}
 
 // Retorna { ok: true } ou { ok: false, reason }. Não lança — o chamador decide
 // o status HTTP. 'not_configured' distingue falta de chave de falha de rede.
@@ -30,7 +39,7 @@ export async function sendOtpEmail(email, code) {
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        sender: SENDER,
+        sender: sender(),
         to: [{ email }],
         subject: `Seu código ZCheck: ${code}`,
         htmlContent: html,
