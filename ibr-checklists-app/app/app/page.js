@@ -6,6 +6,7 @@ import {
   Plus, Trash2, X, ClipboardCheck, LayoutGrid, Settings2, Clock, Lock, Camera,
   Users, User, LogOut, Store, BarChart3, ChevronUp, ChevronDown, Calendar,
   WifiOff, RefreshCw, Bell, BellOff, ExternalLink, Award, Star,
+  FileText, PlayCircle,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -16,6 +17,7 @@ import {
   sendRecognition, fetchRecognitions,
   fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
+  uploadRefDoc, getRefDocUrl,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission,
@@ -775,25 +777,40 @@ function summarizeCompletions(filtered) {
   };
 }
 
-// "Nível de realização das tarefas" por colaborador: % de itens concluídos do total executado por essa pessoa.
+// "Nível de realização das tarefas" por colaborador.
+// A contagem é por TAREFA executada (item.doneBy — execução colaborativa), não
+// só por checklist submetido: quem divide um checklist com um colega recebe
+// crédito pelas tarefas que fez. Registros antigos (sem doneBy) creditam as
+// tarefas a quem submeteu o checklist.
 function collaboratorStats(filtered) {
   const map = new Map();
+  const ensure = (key, name, at) => {
+    if (!map.has(key)) map.set(key, { key, name: name || 'Sem responsável', checklists: 0, totalItems: 0, doneItems: 0, tasksDone: 0, criticalDone: 0, criticalPending: 0, photos: 0, last: at });
+    return map.get(key);
+  };
   filtered.forEach(c => {
-    const key = c.operatorUserId || c.operatorName || '—';
-    if (!map.has(key)) map.set(key, { key, name: c.operatorName || 'Sem responsável', checklists: 0, totalItems: 0, doneItems: 0, criticalPending: 0, photos: 0, last: c.completedAt });
-    const s = map.get(key);
+    const subKey = c.operatorUserId || c.operatorName || '—';
+    const s = ensure(subKey, c.operatorName, c.completedAt);
     s.checklists += 1;
     s.totalItems += c.items.length;
+    if (c.completedAt > s.last) s.last = c.completedAt;
     c.items.forEach(i => {
-      if (i.done) s.doneItems += 1;
       if (i.critical && !i.done) s.criticalPending += 1;
       if (i.hasPhoto) s.photos += 1;
+      if (!i.done) return;
+      s.doneItems += 1; // realização do checklist que a pessoa submeteu
+      const ex = i.doneBy && i.doneBy !== subKey
+        ? ensure(i.doneBy, i.doneByName, i.doneAt || c.completedAt)
+        : s;
+      ex.tasksDone += 1;
+      if (i.critical) ex.criticalDone += 1;
+      const at = i.doneAt || c.completedAt;
+      if (at > ex.last) ex.last = at;
     });
-    if (c.completedAt > s.last) s.last = c.completedAt;
   });
   return [...map.values()]
-    .map(s => ({ ...s, rate: s.totalItems ? (s.doneItems / s.totalItems) * 100 : 0 }))
-    .sort((a, b) => b.rate - a.rate || b.checklists - a.checklists);
+    .map(s => ({ ...s, rate: s.totalItems ? (s.doneItems / s.totalItems) * 100 : null }))
+    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1) || b.tasksDone - a.tasksDone);
 }
 
 // Agrupa por loja, setor ou turno.
@@ -822,6 +839,70 @@ function groupStats(filtered, groupBy) {
     .sort((a, b) => b.checklists - a.checklists);
 }
 
+/* ------------------------------ produtividade ------------------------------ */
+//
+// Fórmula (transparente para a gestão):
+//   Pontos      tarefa comum concluída = 1 · tarefa CRÍTICA = 2 ·
+//               checklist 100% completo = +3 pts distribuídos entre os
+//               executores na proporção das tarefas que cada um fez.
+//   Tempo ativo por checklist e por executor: intervalo entre a primeira e a
+//               última tarefa que a pessoa marcou (mínimo 1 min). Registros
+//               antigos sem horário por tarefa não entram no ritmo.
+//   Ritmo       pontos por hora ativa (pts/h).
+//   Score       ritmo ÷ ritmo médio da EMPRESA no período × 100.
+//               100 = na média da empresa · >100 acima · <100 abaixo.
+// O mesmo cálculo agrega colaborador, setor, loja e empresa — comparáveis entre si.
+function computeProductivity(completions) {
+  const mkAgg = (key, name) => ({ key, name, points: 0, timedPoints: 0, minutes: 0, tasks: 0, criticals: 0, fullChecklists: 0, unitIds: new Set() });
+  const collabs = new Map(), units = new Map(), sectors = new Map();
+  const company = mkAgg('empresa', 'Empresa');
+  const ensure = (map, key, name) => { if (!map.has(key)) map.set(key, mkAgg(key, name)); return map.get(key); };
+
+  (completions || []).forEach(c => {
+    const items = c.items || [];
+    const doneItems = items.filter(i => i.done);
+    if (doneItems.length === 0) return;
+    const isFull = doneItems.length === items.length;
+    const subKey = c.operatorUserId || c.operatorName || '—';
+
+    // Agrupa as tarefas concluídas por quem executou (colaborativo ou não)
+    const byExec = new Map();
+    doneItems.forEach(i => {
+      const key = i.doneBy || subKey;
+      if (!byExec.has(key)) byExec.set(key, { key, name: i.doneByName || c.operatorName || 'Sem responsável', pts: 0, tasks: 0, criticals: 0, times: [] });
+      const e = byExec.get(key);
+      e.pts += i.critical ? 2 : 1;
+      e.tasks += 1;
+      if (i.critical) e.criticals += 1;
+      if (i.doneAt) e.times.push(new Date(i.doneAt).getTime());
+    });
+
+    byExec.forEach(e => {
+      const pts = e.pts + (isFull ? 3 * (e.tasks / doneItems.length) : 0);
+      const minutes = e.times.length ? Math.max(1, (Math.max(...e.times) - Math.min(...e.times)) / 60000) : null;
+      const apply = agg => {
+        agg.points += pts; agg.tasks += e.tasks; agg.criticals += e.criticals;
+        if (isFull) agg.fullChecklists += e.tasks / doneItems.length; // participação proporcional
+        agg.unitIds.add(c.unitId);
+        if (minutes != null) { agg.timedPoints += pts; agg.minutes += minutes; }
+      };
+      apply(ensure(collabs, e.key, e.name));
+      apply(ensure(units, c.unitId || '—', c.unitId || '—'));
+      apply(ensure(sectors, `${c.unitId}|${c.sector || '—'}`, c.sector || '—'));
+      apply(company);
+    });
+  });
+
+  const finish = agg => ({ ...agg, rate: agg.minutes > 0 ? agg.timedPoints / (agg.minutes / 60) : null });
+  const companyF = finish(company);
+  const withScore = agg => {
+    const f = finish(agg);
+    return { ...f, score: f.rate != null && companyF.rate ? Math.round((f.rate / companyF.rate) * 100) : null };
+  };
+  const toList = map => [...map.values()].map(withScore).sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.points - a.points);
+  return { company: companyF, collaborators: toList(collabs), units: toList(units), sectors: toList(sectors) };
+}
+
 // Generates ~7 days of realistic-looking completion history (for testing the Relatórios tab).
 function generateSimulatedCompletions(templates, users, days = 7) {
   const completions = [];
@@ -842,15 +923,23 @@ function generateSimulatedCompletions(templates, users, days = 7) {
         ? candidates[(offset + t.id.length) % candidates.length]
         : (users.find(u => u.unitId === t.unitId && u.role === 'colaborador') || users[0]);
 
-      const recordItems = items.map(i => {
+      const baseHour = shiftName === 'Manhã' ? 8.5 : shiftName === 'Tarde' ? 17.5 : 14;
+      const startedAt = new Date(d);
+      startedAt.setHours(Math.floor(baseHour), Math.floor(Math.random() * 30), 0, 0);
+      const spanMin = 10 + Math.random() * 50; // execução de ~10 a 60 min
+
+      const recordItems = items.map((i, idx) => {
         const p = i.critical ? 0.92 : 0.85;
         const done = Math.random() < p;
-        return { id: i.id, critical: !!i.critical, required: !!i.required, done, note: '', hasPhoto: !!i.photoRequired && done };
+        const doneAt = done ? new Date(startedAt.getTime() + ((idx + 1) / items.length) * spanMin * 60000) : null;
+        return {
+          id: i.id, critical: !!i.critical, required: !!i.required, done, note: '', hasPhoto: !!i.photoRequired && done,
+          doneBy: done ? operator.id : null, doneByName: done ? operator.name : null,
+          doneAt: doneAt ? doneAt.toISOString() : null,
+        };
       });
 
-      const baseHour = shiftName === 'Manhã' ? 8.5 : shiftName === 'Tarde' ? 17.5 : 14;
-      const completedAt = new Date(d);
-      completedAt.setHours(Math.floor(baseHour + Math.random() * 1.5), Math.floor(Math.random() * 60), 0, 0);
+      const completedAt = new Date(startedAt.getTime() + spanMin * 60000);
 
       completions.push({
         id: uid(), templateId: t.id, templateName: t.name, unitId: t.unitId, sector: t.sector,
@@ -996,6 +1085,48 @@ function PillButton({ active, accent, onClick, children }) {
 
 /* ------------------------------ item row ---------------------------------- */
 
+// Converte URLs comuns do YouTube (watch, youtu.be, shorts, live) em URL de embed.
+// Retorna null para qualquer outro link — nesse caso mostramos só o botão.
+function youtubeEmbedUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    let id = null;
+    if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+    else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+      if (u.pathname === '/watch') id = u.searchParams.get('v');
+      else if (/^\/(shorts|live|embed)\//.test(u.pathname)) id = u.pathname.split('/')[2];
+    }
+    return id && /^[\w-]{6,20}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+  } catch { return null; }
+}
+
+// Abre um documento de referência (POP) via signed URL do storage.
+function RefDocButton({ doc, accent }) {
+  const [loading, setLoading] = useState(false);
+  const open = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const url = await getRefDocUrl(doc.path);
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (e) { console.warn('getRefDocUrl failed', e); }
+    setLoading(false);
+  };
+  return (
+    <button onClick={open}
+      className="flex items-center gap-2"
+      style={{ fontSize: 13, fontWeight: 700, color: accent, background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, padding: '8px 12px', cursor: 'pointer', maxWidth: '100%' }}>
+      <FileText size={14} style={{ flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loading ? 'Abrindo…' : doc.name}</span>
+    </button>
+  );
+}
+
+// Um item tem material de apoio quando a gestão cadastrou qualquer referência.
+const hasGuidance = item =>
+  !!(item.description || item.refPhotos?.length > 0 || item.refDocs?.length > 0 || item.refVideo || item.refLink);
+
 function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveInfo, onReopen, currentUserId }) {
   const fileInputRef = useRef(null);
   const [showDesc, setShowDesc] = useState(false);
@@ -1026,7 +1157,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             <p style={{ fontSize: T.body, fontWeight: W.medium, color: effDone ? C.muted : C.ink, textDecoration: effDone ? 'line-through' : 'none', flex: 1 }}>
               {item.text}
             </p>
-            {(item.description || (item.refPhotos?.length > 0) || item.refLink) && (
+            {hasGuidance(item) && (
               <button
                 onClick={() => setShowDesc(v => !v)}
                 style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: R.pill, padding: '3px 10px', flexShrink: 0, cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1036,13 +1167,13 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             )}
           </div>
 
-          {showDesc && (item.description || (item.refPhotos?.length > 0) || item.refLink) && (
-            <div style={{ marginTop: 8, padding: '10px 12px', background: C.bg, borderRadius: 8, border: `1px solid ${C.border}` }}>
+          {showDesc && hasGuidance(item) && (
+            <div style={{ marginTop: 8, padding: '10px 12px', background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {item.description && (
-                <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: (item.refPhotos?.length > 0 || item.refLink) ? 10 : 0 }}>{item.description}</p>
+                <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{item.description}</p>
               )}
               {item.refPhotos?.length > 0 && (
-                <div style={{ marginBottom: item.refLink ? 10 : 0 }}>
+                <div>
                   <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Referências</p>
                   <div className="flex flex-wrap gap-2">
                     {item.refPhotos.map((photo, pi) => (
@@ -1054,10 +1185,41 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                   </div>
                 </div>
               )}
+              {item.refVideo && (() => {
+                const embed = youtubeEmbedUrl(item.refVideo);
+                return (
+                  <div>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo de orientação</p>
+                    {embed ? (
+                      <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                        <iframe
+                          src={embed} title="Vídeo de orientação"
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
+                          allow="accelerometer; encrypted-media; picture-in-picture" allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <a href={item.refVideo} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2"
+                        style={{ fontSize: 13, fontWeight: 700, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}>
+                        <PlayCircle size={14} /> Assistir vídeo
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
+              {item.refDocs?.length > 0 && (
+                <div>
+                  <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {item.refDocs.map((doc, di) => <RefDocButton key={di} doc={doc} accent={accent} />)}
+                  </div>
+                </div>
+              )}
               {item.refLink && (
                 <a href={item.refLink} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2"
-                  style={{ fontSize: 13, fontWeight: 700, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, marginTop: item.description || item.refPhotos?.length > 0 ? 4 : 0 }}
+                  style={{ fontSize: 13, fontWeight: 700, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}
                 >
                   <ExternalLink size={14} /> Abrir material de referência
                 </a>
@@ -1326,11 +1488,20 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       completedAt: new Date().toISOString(),
       operatorName: currentUser.name,
       operatorUserId: currentUser.id,
-      items: items.map(i => ({
-        id: i.id, text: i.text, critical: i.critical, required: !!i.required,
-        done: itemStates[i.id].done || !!liveByItem[i.id]?.done, note: itemStates[i.id].note,
-        hasPhoto: !!itemStates[i.id].photo,
-      })),
+      items: items.map(i => {
+        const live = liveByItem[i.id];
+        const done = itemStates[i.id].done || !!live?.done;
+        return {
+          id: i.id, text: i.text, critical: i.critical, required: !!i.required,
+          done, note: itemStates[i.id].note,
+          hasPhoto: !!itemStates[i.id].photo,
+          // Atribuição individual (execução colaborativa): quem de fato concluiu
+          // cada tarefa e quando — base da contagem por tarefa e da produtividade.
+          doneBy: done ? (live?.operatorUserId || currentUser.id) : null,
+          doneByName: done ? (live?.operatorName || currentUser.name) : null,
+          doneAt: done ? (live?.completedAt || new Date().toISOString()) : null,
+        };
+      }),
     };
 
     // Upload photos to Supabase Storage (falls back to local cache if offline)
@@ -2356,6 +2527,34 @@ const formatDateTime = iso => {
   return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+// Linha do comparativo de produtividade. A barra vai até 150 de score, com a
+// marca vertical em 100 (média da empresa) como referência visual.
+function ProdRow({ entry, accent }) {
+  const score = entry.score;
+  const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? '#C6842A' : C.critical;
+  const barPct = score == null ? 0 : Math.min(score, 150) / 1.5;
+  return (
+    <Ticket accent={color}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</p>
+        <p className="font-display" style={{ fontWeight: 800, color, flexShrink: 0 }}>
+          {score == null ? 'sem ritmo' : score}
+        </p>
+      </div>
+      <div style={{ position: 'relative', width: '100%', height: 6, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 6 }}>
+        <div style={{ height: '100%', width: `${barPct}%`, background: color, borderRadius: 999 }} />
+        <div style={{ position: 'absolute', left: `${100 / 1.5}%`, top: 0, bottom: 0, width: 2, background: C.ink, opacity: 0.35 }} />
+      </div>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+        {entry.rate != null ? `${entry.rate.toFixed(1)} pts/h · ` : ''}
+        {Math.round(entry.points)} ponto{Math.round(entry.points) !== 1 ? 's' : ''} · {entry.tasks} tarefa{entry.tasks !== 1 ? 's' : ''}
+        {entry.criticals > 0 && ` (${entry.criticals} crítica${entry.criticals > 1 ? 's' : ''})`}
+        {entry.fullChecklists >= 0.5 && ` · ${Math.round(entry.fullChecklists)} checklist${Math.round(entry.fullChecklists) !== 1 ? 's' : ''} 100%`}
+      </p>
+    </Ticket>
+  );
+}
+
 function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits }) {
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [period, setPeriod] = useState('7d');
@@ -2411,6 +2610,16 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
 
   const collaborators = collaboratorStats(filtered);
   const groups = groupStats(filtered, groupBy);
+
+  // ── Produtividade ──────────────────────────────────────────────────────────
+  // O baseline é sempre a EMPRESA inteira no período (sem filtro de loja/setor),
+  // para o score do colaborador/setor/loja ser comparável contra a mesma régua.
+  const prod = computeProductivity(filterCompletions(completions, { dates }));
+  const prodUnits = canSeeAllUnits ? prod.units : prod.units.filter(u => u.key === filterUnitId);
+  const prodSectors = prod.sectors.filter(s => s.key.startsWith(`${filterUnitId}|`));
+  const prodCollabs = prod.collaborators
+    .filter(cb => cb.unitIds.has(filterUnitId) && (!filterUserId || cb.key === filterUserId))
+    .slice(0, 15);
 
   // ── Export helpers ─────────────────────────────────────────────────────────
   const periodLabel = period === 'custom'
@@ -2481,8 +2690,8 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       `<tr>
         <td>${c.name}</td>
         <td style="text-align:center">${c.checklists}</td>
-        <td style="text-align:center">${c.doneItems}/${c.totalItems}</td>
-        <td style="text-align:center;font-weight:800;color:${c.rate>=80?'#31C85A':c.rate>=50?unitColor:'#D1462F'}">${c.rate.toFixed(0)}%</td>
+        <td style="text-align:center">${c.tasksDone}${c.criticalDone > 0 ? ` (${c.criticalDone} crít.)` : ''}</td>
+        <td style="text-align:center;font-weight:800;color:${c.rate==null?'#888':c.rate>=80?'#31C85A':c.rate>=50?unitColor:'#D1462F'}">${c.rate==null?'—':c.rate.toFixed(0)+'%'}</td>
         <td style="text-align:center;color:${c.criticalPending>0?'#D1462F':'#888'}">${c.criticalPending > 0 ? `⚠ ${c.criticalPending}` : '—'}</td>
       </tr>`
     ).join('');
@@ -2604,7 +2813,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
     <thead><tr>
       <th>Colaborador</th>
       <th style="text-align:center">Checklists</th>
-      <th style="text-align:center">Tarefas</th>
+      <th style="text-align:center">Tarefas exec.</th>
       <th style="text-align:center">% Realização</th>
       <th style="text-align:center">Críticos pend.</th>
     </tr></thead>
@@ -2744,11 +2953,12 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
             <Ticket key={c.key} accent={unit.color}>
               <div className="flex items-center justify-between gap-2">
                 <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{c.name}</p>
-                <p className="font-display" style={{ fontWeight: 800, color: c.rate >= 80 ? C.success : c.rate >= 50 ? unit.color : C.critical }}>{c.rate.toFixed(0)}%</p>
+                <p className="font-display" style={{ fontWeight: 800, color: c.rate == null ? C.muted : c.rate >= 80 ? C.success : c.rate >= 50 ? unit.color : C.critical }}>{c.rate == null ? '—' : `${c.rate.toFixed(0)}%`}</p>
               </div>
-              <RateBar rate={c.rate} accent={unit.color} />
+              <RateBar rate={c.rate || 0} accent={unit.color} />
               <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-                {c.checklists} checklist{c.checklists > 1 ? 's' : ''} · {c.doneItems} de {c.totalItems} tarefas
+                {c.checklists} checklist{c.checklists !== 1 ? 's' : ''} · {c.tasksDone} tarefa{c.tasksDone !== 1 ? 's' : ''} executada{c.tasksDone !== 1 ? 's' : ''}
+                {c.criticalDone > 0 && ` (${c.criticalDone} crítica${c.criticalDone > 1 ? 's' : ''})`}
                 {c.criticalPending > 0 && ` · ${c.criticalPending} crítico${c.criticalPending > 1 ? 's' : ''} pendente${c.criticalPending > 1 ? 's' : ''}`}
                 {c.photos > 0 && ` · ${c.photos} foto${c.photos > 1 ? 's' : ''}`}
               </p>
@@ -2776,6 +2986,57 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
             </Ticket>
           ))}
         </div>
+      )}
+
+      {/* ── Produtividade — colaborador vs setor vs loja vs empresa ── */}
+      {prod.company.points > 0 && (
+        <>
+          <Eyebrow>Produtividade · score 100 = média da empresa</Eyebrow>
+          <Ticket accent={unit.color}>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Empresa (período)</p>
+                <p className="font-display" style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginTop: 2 }}>
+                  {prod.company.rate != null ? `${prod.company.rate.toFixed(1)} pts/h` : '—'}
+                </p>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+                <p>{Math.round(prod.company.points)} pontos · {prod.company.tasks} tarefas</p>
+                <p>{prod.company.criticals} críticas · {Math.round(prod.company.fullChecklists)} checklists 100%</p>
+              </div>
+            </div>
+          </Ticket>
+
+          {canSeeAllUnits && prodUnits.length > 1 && (
+            <div className="space-y-2">
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Por loja</p>
+              {prodUnits.map(u => (
+                <ProdRow key={u.key} entry={{ ...u, name: UNITS.find(x => x.id === u.key)?.name || u.name }} accent={unit.color} />
+              ))}
+            </div>
+          )}
+
+          {prodSectors.length > 1 && (
+            <div className="space-y-2">
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Por setor</p>
+              {prodSectors.map(s => <ProdRow key={s.key} entry={s} accent={unit.color} />)}
+            </div>
+          )}
+
+          {prodCollabs.length > 0 && (
+            <div className="space-y-2">
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Por colaborador</p>
+              {prodCollabs.map(cb => <ProdRow key={cb.key} entry={cb} accent={unit.color} />)}
+            </div>
+          )}
+
+          <p style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.6 }}>
+            Como o score é calculado: tarefa comum = 1 pt · tarefa crítica = 2 pts · checklist 100% completo = +3 pts
+            divididos entre quem executou. O ritmo (pts/h) usa o tempo ativo dentro do checklist — da primeira à última
+            tarefa marcada por cada pessoa. Score = ritmo ÷ ritmo médio da empresa × 100. Execuções antigas, sem horário
+            por tarefa, contam pontos mas ficam fora do ritmo.
+          </p>
+        </>
       )}
 
       {/* ── Gráfico por dia da semana ── */}
@@ -2913,6 +3174,8 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
   const [deadline, setDeadline] = useState(template?.deadline || '');
   const [items, setItems] = useState(template?.items || [{ id: uid(), text: '', critical: false, required: false, photoRequired: false }]);
   const [itemCopyTargets, setItemCopyTargets] = useState({});  // kept for future use
+  const [docUploading, setDocUploading] = useState({}); // itemId → true enquanto envia POP
+  const [docError, setDocError] = useState({});         // itemId → mensagem de falha de upload
   const [dragState, setDragState] = useState(null); // { id, startIndex, overIndex, type }
   const dragRef = useRef(null);
 
@@ -3155,12 +3418,68 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                 )}
               </div>
 
+              {/* Documentos de referência (POP) */}
+              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP, manual — PDF, Word etc.)</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                {(item.refDocs || []).map((doc, di) => (
+                  <div key={di} className="flex items-center gap-2" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px' }}>
+                    <FileText size={14} color={C.muted} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 12.5, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+                    <button
+                      onClick={() => updateItem(item.id, { refDocs: (item.refDocs || []).filter((_, i) => i !== di) })}
+                      style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', flexShrink: 0 }}
+                    ><X size={14} color={C.muted} /></button>
+                  </div>
+                ))}
+                {(item.refDocs || []).length < 3 && (
+                  <label className="flex items-center gap-2" style={{ width: 'fit-content', fontSize: 11, fontWeight: 700, color: docUploading[item.id] ? C.muted : unit.color, border: `1.5px dashed ${docUploading[item.id] ? C.border : unit.color}`, borderRadius: 6, padding: '7px 12px', cursor: docUploading[item.id] ? 'default' : 'pointer' }}>
+                    <Plus size={13} />
+                    {docUploading[item.id] ? 'Enviando…' : 'Anexar documento'}
+                    <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" style={{ display: 'none' }}
+                      disabled={!!docUploading[item.id]}
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        e.target.value = '';
+                        if (file.size > 10 * 1024 * 1024) {
+                          setDocError(m => ({ ...m, [item.id]: 'Arquivo acima de 10 MB — reduza e tente de novo.' }));
+                          return;
+                        }
+                        setDocError(m => ({ ...m, [item.id]: null }));
+                        setDocUploading(m => ({ ...m, [item.id]: true }));
+                        try {
+                          const doc = await uploadRefDoc(file);
+                          // setItems via updater: o upload é assíncrono e o item pode ter mudado
+                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, refDocs: [...(i.refDocs || []), doc] } : i));
+                        } catch (err) {
+                          console.warn('uploadRefDoc failed', err);
+                          setDocError(m => ({ ...m, [item.id]: 'Falha no envio — verifique a conexão e tente de novo.' }));
+                        }
+                        setDocUploading(m => ({ ...m, [item.id]: false }));
+                      }}
+                    />
+                  </label>
+                )}
+                {docError[item.id] && (
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.critical }}>{docError[item.id]}</p>
+                )}
+              </div>
+
+              {/* Vídeo externo (YouTube etc.) */}
+              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo externo (YouTube — passo a passo da tarefa)</p>
+              <input
+                value={item.refVideo || ''}
+                onChange={e => updateItem(item.id, { refVideo: e.target.value })}
+                placeholder="https://youtube.com/watch?v=..."
+                style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit', marginBottom: 8 }}
+              />
+
               {/* Link externo */}
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (vídeo ou documento)</p>
+              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (documento online, Drive etc.)</p>
               <input
                 value={item.refLink || ''}
                 onChange={e => updateItem(item.id, { refLink: e.target.value })}
-                placeholder="https://youtube.com/... ou link de documento"
+                placeholder="https://... link de material de apoio"
                 style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit' }}
               />
             </div>
@@ -6408,7 +6727,24 @@ function computeOperationalProfile(completions, userId, userName) {
   const avgRate = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
   const criticalRate = critTotal ? Math.round((critDone / critTotal) * 100) : null;
 
-  const days = [...new Set(mine.map(c => c.date))];
+  // Tarefas executadas pela pessoa — inclui participação em checklists que um
+  // colega submeteu (execução colaborativa, item.doneBy). Registros antigos sem
+  // doneBy creditam ao responsável pelo checklist.
+  let tasksDone = 0, criticalDone = 0;
+  const participationDays = new Set();
+  (completions || []).forEach(c => {
+    const isSubmitter = c.operatorUserId === userId || c.operatorName === userName;
+    (c.items || []).forEach(i => {
+      if (!i.done) return;
+      const executedByMe = i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
+      if (!executedByMe) return;
+      tasksDone++;
+      if (i.critical) criticalDone++;
+      if (c.date) participationDays.add(c.date);
+    });
+  });
+
+  const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
   const streak = currentStreak(new Set(days));
   const bestStreak = longestStreak(days);
 
@@ -6442,6 +6778,7 @@ function computeOperationalProfile(completions, userId, userName) {
 
   return {
     checklists, avgRate, criticalRate, evidences,
+    tasksDone, criticalDone,
     streak, bestStreak, activeDays: days.length,
     level, intoLevel, perLevel, weekly, achievements,
     recent: mine.slice(-8).reverse(),
@@ -6517,7 +6854,7 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
     </div>
   );
 
-  if (p.checklists === 0) {
+  if (p.checklists === 0 && p.tasksDone === 0) {
     return (
       <div style={{ padding: 20 }}>
         <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, padding: '28px 20px', textAlign: 'center' }}>
@@ -6584,11 +6921,13 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
         </div>
       )}
 
-      {/* Indicadores */}
-      <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, display: 'flex' }}>
+      {/* Indicadores — tarefas contam também a participação em checklists de colegas */}
+      <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
         <Metric value={p.checklists} label="Checklists" />
+        <Metric value={p.tasksDone} label="Tarefas" />
+        <Metric value={p.criticalDone} label="Críticas feitas" color={p.criticalDone > 0 ? C.success : C.ink} />
         <Metric value={`${p.avgRate}%`} label="Conclusão" color={p.avgRate >= 80 ? C.success : p.avgRate >= 50 ? '#C6842A' : C.critical} />
-        <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
+        <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos em dia" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
         <Metric value={`${p.streak}${p.streak ? '🔥' : ''}`} label="Sequência" />
       </div>
 
@@ -6752,7 +7091,7 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
     const scoped = canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
     return scoped
       .map(u => ({ user: u, profile: computeOperationalProfile(completions, u.id, u.name) }))
-      .sort((a, b) => b.profile.checklists - a.profile.checklists);
+      .sort((a, b) => b.profile.tasksDone - a.profile.tasksDone || b.profile.checklists - a.profile.checklists);
   }, [users, completions, currentUser, canSeeAllUnits]);
 
   // Perfil do colaborador selecionado (visão do líder)
@@ -6798,7 +7137,7 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 14, fontWeight: 800, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
                 <p style={{ fontSize: 11.5, color: C.muted }}>
-                  {profile.checklists} checklists · {profile.avgRate}% conclusão{profile.streak ? ` · ${profile.streak}🔥` : ''}
+                  {profile.checklists} checklists · {profile.tasksDone} tarefas · {profile.avgRate}% conclusão{profile.streak ? ` · ${profile.streak}🔥` : ''}
                 </p>
               </div>
               <ChevronRight size={18} color={C.mutedLight} />
@@ -7039,29 +7378,39 @@ function AppInner() {
     console.log('[App] tenant slug:', tenantSlug, '| hostname:', typeof window !== 'undefined' ? window.location.hostname : 'SSR');
     if (!tenantSlug) return;
 
-    Promise.all([
-      fetchCompany(tenantSlug),
-      fetchUnits(tenantSlug),
-      fetchSectors(tenantSlug),
-      fetchChecklistTypes(tenantSlug),
-      fetchPublicUsers(tenantSlug),
-    ]).then(([co, units, sectors, types, publicUsers]) => {
-      if (co) setCompany(co);
-      if (units?.length) {
-        setDynamicUnits(units.map(u => ({
-          id: u.id, name: u.name, color: u.color,
-          sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
-        })));
+    // Resolve a empresa pela slug do subdomínio PRIMEIRO. O company_id real pode
+    // diferir da slug: no self-service a empresa nasce com id = slug + sufixo
+    // (ex.: subdomínio `teste-1` → id `teste-1-ssfp3kv8`). units/setores/tipos e a
+    // lista de login são escopados pelo id real — usar a slug direto os deixa
+    // vazios (ninguém no seletor de nomes). Fallback pro slug preserva o IBR,
+    // cujo id já é igual à slug detectada ('ibr').
+    (async () => {
+      try {
+        const co = await fetchCompany(tenantSlug);
+        const cid = co?.id || tenantSlug;
+        const [units, sectors, types, publicUsers] = await Promise.all([
+          fetchUnits(cid),
+          fetchSectors(cid),
+          fetchChecklistTypes(cid),
+          fetchPublicUsers(cid),
+        ]);
+        if (co) setCompany(co);
+        if (units?.length) {
+          setDynamicUnits(units.map(u => ({
+            id: u.id, name: u.name, color: u.color,
+            sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
+          })));
+        }
+        if (sectors?.length) setDynamicSectors(sectors);
+        if (types?.length) setDynamicTypes(types);
+        // Alimenta o seletor de nomes da LoginScreen. Nunca deixar em null: o
+        // render trava na tela de carregamento se a lista não chegar.
+        setUsers(publicUsers || []);
+      } catch (e) {
+        console.error('[App] Startup error:', e);
+        setUsers([]);
       }
-      if (sectors?.length) setDynamicSectors(sectors);
-      if (types?.length) setDynamicTypes(types);
-      // Alimenta o seletor de nomes da LoginScreen. Nunca deixar em null: o
-      // render trava na tela de carregamento se a lista não chegar.
-      setUsers(publicUsers || []);
-    }).catch(e => {
-      console.error('[App] Startup error:', e);
-      setUsers([]);
-    });
+    })();
   }, []);
 
   // Dados operacionais: só com sessão aberta, e escopados por company_id no RLS.
