@@ -6315,7 +6315,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
 
   // 3. Loja com pior aderência ontem (só na visão multi-loja).
   if (!scopeUnitId && yFiltered.length > 0) {
-    const worst = groupStats(yFiltered, 'loja', ACTIVE_UNITS).filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
+    const worst = groupStats(yFiltered, 'loja', units).filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
     if (worst && worst.rate < 80) {
       recs.push({
         id: 'low_adherence', type: 'low_adherence', icon: '📉',
@@ -6344,7 +6344,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
   if (!scopeUnitId && unitIds.length > 1) {
     // aderência de ONTEM por loja (item-level), para contexto de tendência
     const yByStore = {};
-    groupStats(yFiltered, 'loja', ACTIVE_UNITS).forEach(g => { yByStore[g.key] = Math.round(g.rate); });
+    groupStats(yFiltered, 'loja', units).forEach(g => { yByStore[g.key] = Math.round(g.rate); });
 
     stores = unitIds.map(uid => {
       const closedToday = isUnitClosed(closures, uid, today);
@@ -6370,7 +6370,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
   // Análise automática que conecta pontos que um humano teria que garimpar:
   // tendência, falha crítica recorrente ou loja destoante. Hoje é rule-based;
   // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
-  const insight = buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
+  const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
 
   return {
     date: today,
@@ -6384,7 +6384,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
 
 // Motor de insight (H4) — escolhe o padrão MAIS relevante dos dados recentes.
 // Prioridade: queda de tendência > falha crítica recorrente > loja destoante > estável.
-function buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence }) {
+function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence }) {
   const today = todayStr();
   const wkThis = weekStartStr(today);
   const dPrev = new Date(); dPrev.setDate(dPrev.getDate() - 7);
@@ -6439,7 +6439,7 @@ function buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, h
 
   // 3. Loja destoante ontem (diferença ≥25 p.p. entre melhor e pior).
   if (!scopeUnitId && yFiltered.length > 0) {
-    const groups = groupStats(yFiltered, 'loja', ACTIVE_UNITS).filter(g => g.checklists > 0);
+    const groups = groupStats(yFiltered, 'loja', units).filter(g => g.checklists > 0);
     const worst = [...groups].sort((a, b) => a.rate - b.rate)[0];
     const best = [...groups].sort((a, b) => b.rate - a.rate)[0];
     if (worst && best && best.rate - worst.rate >= 25) {
