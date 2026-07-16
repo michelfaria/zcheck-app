@@ -21,6 +21,7 @@ import {
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission,
+  setCacheScope,
 } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
@@ -7494,6 +7495,10 @@ function AppInner() {
       try {
         const co = await fetchCompany(tenantSlug);
         const cid = co?.id || tenantSlug;
+        // Namespaceia o cache local antes de qualquer leitura: sem isto, o
+        // fallback offline pode servir dados de outra empresa aberta antes
+        // neste mesmo navegador (inclusive os nomes da tela de login).
+        setCacheScope(cid);
         const [units, sectors, types, publicUsers] = await Promise.all([
           fetchUnits(cid),
           fetchSectors(cid),
@@ -7701,6 +7706,7 @@ function AppInner() {
         company={company}
         users={users}
         onLogin={u => {
+          setCacheScope(u.companyId || u.company_id || null);
           setCurrentUser(u);
           setUnitId(u.unitId || null);
           setTab(ROLE_TABS[u.role][0]);

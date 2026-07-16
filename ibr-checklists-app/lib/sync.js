@@ -22,12 +22,31 @@ import { storageGet, storageSet, getSyncQueue, clearSyncQueue } from './storage'
 // de realtime — ver setSessionToken(), que reautoriza o socket no login.
 const db = () => authedSupabase();
 
+// Escopo do cache local. As chaves eram globais ('ibr_templates', 'ibr_users',
+// 'ibr_public_users'…), herança do app single-tenant: abrir o IBR e depois outra
+// empresa no mesmo navegador podia servir dados do IBR pelo fallback offline —
+// inclusive os NOMES da tela de login de outra empresa. Agora cada empresa tem o
+// seu namespace. Sem escopo definido, cai no comportamento antigo.
+let cacheScope = '';
+export function setCacheScope(companyId) { cacheScope = companyId || ''; }
+const scoped = (key) => (cacheScope ? `${cacheScope}::${key}` : key);
+
 const cache = {
   async get(key) {
-    try { const r = await storageGet(key); return JSON.parse(r.value); } catch { return null; }
+    try { const r = await storageGet(scoped(key)); return JSON.parse(r.value); } catch { return null; }
   },
   async set(key, value) {
-    try { await storageSet(key, JSON.stringify(value)); } catch (e) { console.warn('cache.set failed', e); }
+    try { await storageSet(scoped(key), JSON.stringify(value)); } catch (e) { console.warn('cache.set failed', e); }
+  },
+  // SEM escopo, de propósito: a fila offline guarda escritas pendentes. Escopar
+  // agora orfanaria o que estiver pendente no aparelho de quem está offline no
+  // momento do deploy — perda de dado. Fica global até haver uma migração
+  // explícita da fila.
+  async getRaw(key) {
+    try { const r = await storageGet(key); return JSON.parse(r.value); } catch { return null; }
+  },
+  async setRaw(key, value) {
+    try { await storageSet(key, JSON.stringify(value)); } catch (e) { console.warn('cache.setRaw failed', e); }
   },
 };
 
@@ -377,27 +396,27 @@ export async function saveClosures(closures) {
 
 async function queueOfflineCompletion(record) {
   try {
-    const q = (await cache.get('ibr_offline_queue')) || [];
+    const q = (await cache.getRaw('ibr_offline_queue')) || [];
     q.push({ type: 'completion', record, ts: Date.now() });
-    await cache.set('ibr_offline_queue', q);
+    await cache.setRaw('ibr_offline_queue', q);
   } catch (e) { console.warn('queueOfflineCompletion failed', e); }
 }
 
 async function queueOfflinePhoto({ completionId, itemId }) {
   try {
-    const q = (await cache.get('ibr_offline_queue')) || [];
+    const q = (await cache.getRaw('ibr_offline_queue')) || [];
     // Dedupe: reenfileirar a mesma foto não pode multiplicar o trabalho do dreno.
     if (!q.some(e => e.type === 'photo' && e.completionId === completionId && e.itemId === itemId)) {
       q.push({ type: 'photo', completionId, itemId, ts: Date.now() });
-      await cache.set('ibr_offline_queue', q);
+      await cache.setRaw('ibr_offline_queue', q);
     }
   } catch (e) { console.warn('queueOfflinePhoto failed', e); }
 }
 
 async function removeQueuedPhoto(completionId, itemId) {
   try {
-    const q = (await cache.get('ibr_offline_queue')) || [];
-    await cache.set('ibr_offline_queue',
+    const q = (await cache.getRaw('ibr_offline_queue')) || [];
+    await cache.setRaw('ibr_offline_queue',
       q.filter(e => !(e.type === 'photo' && e.completionId === completionId && e.itemId === itemId)));
   } catch (e) { console.warn('removeQueuedPhoto failed', e); }
 }
@@ -409,7 +428,7 @@ export async function drainOfflineQueue() {
   // login, então drenar aqui só queimaria tentativas contra a fila do usuário.
   if (!getSessionToken()) return { drained: 0, failed: 0 };
   try {
-    const q = (await cache.get('ibr_offline_queue')) || [];
+    const q = (await cache.getRaw('ibr_offline_queue')) || [];
     if (q.length === 0) return { drained: 0, failed: 0 };
 
     let drained = 0, failed = 0;
@@ -433,7 +452,7 @@ export async function drainOfflineQueue() {
       }
     }
 
-    await cache.set('ibr_offline_queue', remaining);
+    await cache.setRaw('ibr_offline_queue', remaining);
     return { drained, failed };
   } catch (e) {
     console.warn('drainOfflineQueue failed', e);
@@ -442,7 +461,7 @@ export async function drainOfflineQueue() {
 }
 
 export async function getOfflineQueueLength() {
-  const q = (await cache.get('ibr_offline_queue')) || [];
+  const q = (await cache.getRaw('ibr_offline_queue')) || [];
   return q.length;
 }
 
