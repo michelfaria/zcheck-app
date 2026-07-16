@@ -75,6 +75,28 @@ const ROLES = ['colaborador', 'lideranca', 'gerencia', 'gestao'];
 const UnitsContext = React.createContext(UNITS);
 const useUnits = () => React.useContext(UnitsContext);
 
+// Linhas de `sectors` do tenant logado ({id, name, unit_id}), para resolver o
+// setor de um usuário pelo id. O IBR usa pseudo-ids ('salao'/'cozinha') que não
+// existem na tabela, por isso o resolvedor abaixo trata os dois casos.
+const SectorsContext = React.createContext([]);
+const useSectors = () => React.useContext(SectorsContext);
+
+// Logo a exibir para a empresa logada. Ordem: o logo que ela subiu → o asset do
+// IBR (que não tem logo_url e depende do embutido) → ZCheck neutro. Antes a tela
+// de login mostrava o logo da Ilhabela Republic para QUALQUER empresa.
+function companyLogoSrc(company) {
+  if (company?.logo_url) return company.logo_url;
+  if (company?.id === 'ibr') return LOGO_LOGIN_URI;
+  return '/zcheck-logo.png';
+}
+
+function sectorLabelFor(sectorId, sectorRows) {
+  if (!sectorId) return '';
+  if (sectorId === 'salao') return 'Salão';      // legado IBR
+  if (sectorId === 'cozinha') return 'Cozinha';  // legado IBR
+  return (sectorRows || []).find(s => s.id === sectorId)?.name || '';
+}
+
 const ROLE_LABELS = {
   colaborador: 'Colaborador',
   lideranca: 'Liderança',
@@ -1864,6 +1886,7 @@ function PhotoModal({ recordId, item, onClose }) {
 
 function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
+  const sectorRows = useSectors(); // linhas de sectors da empresa logada
   const today = todayStr();
   const [selectedDate, setSelectedDate] = useState(today);
   const [viewingPhoto, setViewingPhoto] = useState(null);
@@ -2205,7 +2228,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
             <div className="flex items-end justify-between">
               <div>
                 <p style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  {unit.name}{currentUser?.sectorId ? ` · ${currentUser.sectorId === 'salao' ? 'Salão' : 'Cozinha'}` : ''}
+                  {unit.name}{sectorLabelFor(currentUser?.sectorId, sectorRows) ? ` · ${sectorLabelFor(currentUser?.sectorId, sectorRows)}` : ''}
                 </p>
                 <p className="font-display" style={{ fontSize: 56, fontWeight: 800, color: 'white', lineHeight: 1, marginTop: 4 }}>
                   {rateToday !== null ? `${rateToday}%` : '—'}
@@ -5727,10 +5750,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       {/* Linha: empresa + data + usuário */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          {company?.logo_url
-            ? <img src={company.logo_url} alt={company.name} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
-            : <img src={LOGO_LOGIN_URI} alt="Empresa" style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
-          }
+          <img src={companyLogoSrc(company)} alt={company?.name || 'ZCheck'} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
           <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: 600 }}>{dateLabel}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -5914,7 +5934,7 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
 
         {/* Logo empresa */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <img src={LOGO_LOGIN_URI} alt="Ilhabela Republic" style={{ width: 120, height: 'auto' }} />
+          <img src={companyLogoSrc(initialCompany)} alt={initialCompany?.name || 'ZCheck'} style={{ width: 120, height: 'auto' }} />
         </div>
 
         <div className="w-full" style={{ maxWidth: 320 }}>
@@ -7796,6 +7816,7 @@ function AppInner() {
 
   return (
     <UnitsContext.Provider value={ACTIVE_UNITS}>
+    <SectorsContext.Provider value={dynamicSectors}>
     <div style={{ minHeight: '100vh', background: C.bg, color: C.ink, fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column' }}>
       <style>{`
         .font-display { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 800; }
@@ -7964,6 +7985,7 @@ function AppInner() {
 
       <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs} />
     </div>
+    </SectorsContext.Provider>
     </UnitsContext.Provider>
   );
 }
