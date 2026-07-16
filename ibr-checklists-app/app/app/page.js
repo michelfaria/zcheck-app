@@ -43,6 +43,11 @@ const LOGO_LOGIN_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADVCA
 
 /* --------------------------------- data ---------------------------------- */
 
+// UNITS são as lojas do IBR — herança de quando o app era single-tenant. Vários
+// componentes liam esta constante direto, o que fazia QUALQUER empresa ver
+// IBR1/IBR2/IBR3. Use `useUnits()` no lugar: o provider injeta as unidades do
+// tenant logado (ACTIVE_UNITS). O default abaixo só serve ao IBR, que ainda
+// depende da constante enquanto não migra para dados dinâmicos.
 const UNITS = [
   {
     id: 'ibr1', name: 'IBR1', color: '#2F6F5E',
@@ -64,6 +69,11 @@ const UNITS = [
 /* ------------------------------ access levels ----------------------------- */
 
 const ROLES = ['colaborador', 'lideranca', 'gerencia', 'gestao'];
+
+// Unidades do tenant logado. O provider (em AppInner) injeta ACTIVE_UNITS; o
+// default UNITS mantém o IBR funcionando enquanto ele depende da constante.
+const UnitsContext = React.createContext(UNITS);
+const useUnits = () => React.useContext(UnitsContext);
 
 const ROLE_LABELS = {
   colaborador: 'Colaborador',
@@ -814,11 +824,14 @@ function collaboratorStats(filtered) {
 }
 
 // Agrupa por loja, setor ou turno.
-function groupStats(filtered, groupBy) {
+// `units` vem do chamador (as unidades da empresa logada). O default UNITS
+// preserva o IBR; sem o parâmetro, toda empresa resolvia nomes de loja pela
+// tabela do IBR e caía no fallback do id cru.
+function groupStats(filtered, groupBy, units = UNITS) {
   const map = new Map();
   filtered.forEach(c => {
     let key;
-    if (groupBy === 'loja') key = UNITS.find(u => u.id === c.unitId)?.name || c.unitId;
+    if (groupBy === 'loja') key = units.find(u => u.id === c.unitId)?.name || c.unitId;
     else if (groupBy === 'setor') key = c.sector;
     else if (groupBy === 'tipo') {
       const ct = CHECKLIST_TYPE_ORDER.find(ct => ct.match({ name: c.templateName }));
@@ -1850,6 +1863,7 @@ function PhotoModal({ recordId, item, onClose }) {
 }
 
 function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users }) {
+  const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const today = todayStr();
   const [selectedDate, setSelectedDate] = useState(today);
   const [viewingPhoto, setViewingPhoto] = useState(null);
@@ -2038,7 +2052,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
 
           {/* Main comparison cards */}
           <div className="flex flex-col gap-3">
-            {UNITS.map((u, idx) => {
+            {units.map((u, idx) => {
               const unitClosed = isUnitClosed(closures, u.id, viewDate);
               const rate = unitClosed ? null : calcRate(viewDate, u.id, u.sectors);
               const rateYest = calcRate(yesterday, u.id, u.sectors);
@@ -2075,7 +2089,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
               };
 
               const rankLabel = idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉';
-              const sortedUnits = [...UNITS].sort((a, b) => {
+              const sortedUnits = [...units].sort((a, b) => {
                 const ra = isUnitClosed(closures, a.id, viewDate) ? -1 : (calcRate(viewDate, a.id, a.sectors) ?? -1);
                 const rb = isUnitClosed(closures, b.id, viewDate) ? -1 : (calcRate(viewDate, b.id, b.sectors) ?? -1);
                 return rb - ra;
@@ -2147,7 +2161,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
 
           {/* Ranking geral entre lojas */}
           {(() => {
-            const sorted = [...UNITS]
+            const sorted = [...units]
               .map(u => ({
                 u,
                 rate: isUnitClosed(closures, u.id, viewDate) ? null : calcRate(viewDate, u.id, u.sectors)
@@ -2556,6 +2570,7 @@ function ProdRow({ entry, accent }) {
 }
 
 function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits }) {
+  const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [period, setPeriod] = useState('7d');
   const [customFrom, setCustomFrom] = useState(todayStr());
@@ -2597,7 +2612,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
   // Exclude days when the selected unit(s) were closed
   const openDates = effectiveDates.filter(d => {
     if (filterUnitId) return !isUnitClosed(closures, filterUnitId, d);
-    return UNITS.some(u => !isUnitClosed(closures, u.id, d));
+    return units.some(u => !isUnitClosed(closures, u.id, d));
   });
   const expectedChecklists = openDates.reduce((sum, d) => sum + countApplicableTemplatesOnDate(templates, reportFilter, d), 0);
   const numDays = effectiveDates.length;
@@ -2606,10 +2621,10 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
   // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors
   const sectorOptions = filterUnitId === 'ibr1'
     ? [{ id: 'salao', label: 'Salão' }, { id: 'cozinha', label: 'Cozinha' }]
-    : (UNITS.find(u => u.id === filterUnitId)?.sectors || []).map(s => ({ id: s, label: s }));
+    : (units.find(u => u.id === filterUnitId)?.sectors || []).map(s => ({ id: s, label: s }));
 
   const collaborators = collaboratorStats(filtered);
-  const groups = groupStats(filtered, groupBy);
+  const groups = groupStats(filtered, groupBy, units);
 
   // ── Produtividade ──────────────────────────────────────────────────────────
   // O baseline é sempre a EMPRESA inteira no período (sem filtro de loja/setor),
@@ -2638,7 +2653,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
         const crit = c.items.filter(i => i.critical && !i.done).length;
         return [
           c.date,
-          UNITS.find(u => u.id === c.unitId)?.name || c.unitId,
+          units.find(u => u.id === c.unitId)?.name || c.unitId,
           c.sector,
           c.templateName,
           c.operatorName,
@@ -2661,8 +2676,8 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
   };
 
   const exportPDF = () => {
-    const unitLabel = filterUnitId ? UNITS.find(u => u.id === filterUnitId)?.name : 'Todas as lojas';
-    const unitColor = filterUnitId ? (UNITS.find(u => u.id === filterUnitId)?.color || '#063C5C') : '#063C5C';
+    const unitLabel = filterUnitId ? units.find(u => u.id === filterUnitId)?.name : 'Todas as lojas';
+    const unitColor = filterUnitId ? (units.find(u => u.id === filterUnitId)?.color || '#063C5C') : '#063C5C';
 
     // Build bar chart SVG for groups
     const maxRate = 100;
@@ -2705,7 +2720,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
         const fotos = c.items.filter(i => i.hasPhoto).length;
         return `<tr>
           <td style="white-space:nowrap">${new Date(c.completedAt).toLocaleDateString('pt-BR')} ${new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
-          <td>${UNITS.find(u => u.id === c.unitId)?.name || c.unitId}</td>
+          <td>${units.find(u => u.id === c.unitId)?.name || c.unitId}</td>
           <td>${c.sector} · ${c.templateName}</td>
           <td>${c.operatorName}</td>
           <td style="text-align:center">${done}/${c.items.length}</td>
@@ -3011,7 +3026,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
             <div className="space-y-2">
               <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Por loja</p>
               {prodUnits.map(u => (
-                <ProdRow key={u.key} entry={{ ...u, name: UNITS.find(x => x.id === u.key)?.name || u.name }} accent={unit.color} />
+                <ProdRow key={u.key} entry={{ ...u, name: units.find(x => x.id === u.key)?.name || u.name }} accent={unit.color} />
               ))}
             </div>
           )}
@@ -4534,16 +4549,17 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
 /* ------------------------------- user editor -------------------------------- */
 
 function UserEditor({ user, onSave, onCancel }) {
+  const units = useUnits(); // lojas da empresa logada (antes: constante do IBR)
   const [name, setName] = useState(user?.name || '');
   const [pin, setPin] = useState(user?.pin || '');
   const [role, setRole] = useState(user?.role || 'colaborador');
-  const [unitId, setUnitId] = useState(user?.unitId ?? (UNITS[0].id));
+  const [unitId, setUnitId] = useState(user?.unitId ?? (units[0].id));
   const [sectorId, setSectorId] = useState(user?.sectorId ?? null);
   const [suspended, setSuspended] = useState(!!user?.suspended);
   const [error, setError] = useState('');
 
   const needsUnit = role === 'colaborador' || role === 'lideranca' || role === 'gerencia';
-  const unitObj = UNITS.find(u => u.id === unitId);
+  const unitObj = units.find(u => u.id === unitId);
   const showSectorPicker = needsUnit && unitId === 'ibr1' && (role === 'colaborador' || role === 'lideranca');
   const sectorGroups = showSectorPicker
     ? [
@@ -4612,7 +4628,7 @@ function UserEditor({ user, onSave, onCancel }) {
         <>
           <Eyebrow>Loja vinculada</Eyebrow>
           <div className="flex gap-2 mt-2 mb-3">
-            {UNITS.map(u => (
+            {units.map(u => (
               <PillButton key={u.id} active={u.id === unitId} accent={u.color}
                 onClick={() => { setUnitId(u.id); setSectorId(null); }}>{u.name}</PillButton>
             ))}
@@ -4749,6 +4765,7 @@ function SelfieViewer({ path }) {
 }
 
 function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult }) {
+  const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [onlineUsers, setOnlineUsers] = useState(new Set());
 
   useEffect(() => {
@@ -4957,7 +4974,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   // Approval modal
   if (reviewingRequest) {
     const req = reviewingRequest;
-    const unitObj = UNITS.find(u => u.id === req.unit_id);
+    const unitObj = units.find(u => u.id === req.unit_id);
     const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
     const showSector = !isAlteracao && approvalRole === 'colaborador' && req.unit_id === 'ibr1';
 
@@ -5043,7 +5060,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                     : 'Loja de vinculação'}
                 </Eyebrow>
                 <div className="flex gap-2">
-                  {UNITS.map(u => {
+                  {units.map(u => {
                     const isGerencia = approvalRole === 'gerencia';
                     const selected = isGerencia
                       ? approvalUnits.includes(u.id)
@@ -5089,7 +5106,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                 <Eyebrow>Setor</Eyebrow>
                 <div className="space-y-2">
                   {[{ id: null, label: 'Todos os setores' }, { id: 'salao', label: 'Salão' }, { id: 'cozinha', label: 'Cozinha' }].map(sg => {
-                    const unitColor = UNITS.find(u => u.id === 'ibr1')?.color;
+                    const unitColor = units.find(u => u.id === 'ibr1')?.color;
                     return (
                       <button key={String(sg.id)} onClick={() => setApprovalSector(sg.id)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                         <Ticket accent={approvalSector === sg.id ? unitColor : C.border}>
@@ -5180,7 +5197,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
           ) : (
           <div className="space-y-2">
             {requests.map(req => {
-              const unitObj = UNITS.find(u => u.id === req.unit_id);
+              const unitObj = units.find(u => u.id === req.unit_id);
               const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
               return (
                 <button
@@ -5266,7 +5283,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                   </div>
                   <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                     <span style={{ fontWeight: 800, color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
-                    {' · '}{u.unitId ? UNITS.find(x => x.id === u.unitId)?.name : 'Todas as lojas'}
+                    {' · '}{u.unitId ? units.find(x => x.id === u.unitId)?.name : 'Todas as lojas'}
                     {' · PIN '}{u.pin}
                   </p>
                 </div>
@@ -5372,6 +5389,7 @@ function PushPermissionModal({ onAllow, onDismiss }) {
 /* ----------------------------- folgas view -------------------------------- */
 
 function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
+  const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const today = todayStr();
   const [selectedUnitId, setSelectedUnitId] = useState(canSeeAllUnits ? unit.id : unit.id);
   const [month, setMonth] = useState(() => today.slice(0, 7)); // YYYY-MM
@@ -5388,7 +5406,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
   };
 
   const isClosed = date => closures.some(c => c.unitId === selectedUnitId && c.date === date);
-  const selectedUnit = UNITS.find(u => u.id === selectedUnitId);
+  const selectedUnit = units.find(u => u.id === selectedUnitId);
 
   const toggleDay = date => {
     let next;
@@ -5416,7 +5434,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
 
       {canSeeAllUnits && (
         <div className="flex gap-2">
-          {UNITS.map(u => (
+          {units.map(u => (
             <PillButton key={u.id} active={selectedUnitId === u.id} accent={u.color} onClick={() => setSelectedUnitId(u.id)}>
               {u.name}
             </PillButton>
@@ -5667,7 +5685,10 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company }) {
+function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits }) {
+  // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
+  // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
+  const unitList = allUnits?.length ? allUnits : UNITS;
   const dateLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
   const roleColor = ROLE_COLORS[currentUser.role];
   const [showDataChange, setShowDataChange] = useState(false);
@@ -5751,7 +5772,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
 
       {canSwitchUnit ? (
         <div className="flex gap-2">
-          {UNITS.map(u => (
+          {unitList.map(u => (
             <button
               key={u.id} onClick={() => onSelectUnit(u.id)}
               className="flex-1 py-2"
@@ -6273,7 +6294,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
 
   // 3. Loja com pior aderência ontem (só na visão multi-loja).
   if (!scopeUnitId && yFiltered.length > 0) {
-    const worst = groupStats(yFiltered, 'loja').filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
+    const worst = groupStats(yFiltered, 'loja', ACTIVE_UNITS).filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
     if (worst && worst.rate < 80) {
       recs.push({
         id: 'low_adherence', type: 'low_adherence', icon: '📉',
@@ -6302,7 +6323,7 @@ function buildBriefing(completions, templates, closures, units, scopeUnitId) {
   if (!scopeUnitId && unitIds.length > 1) {
     // aderência de ONTEM por loja (item-level), para contexto de tendência
     const yByStore = {};
-    groupStats(yFiltered, 'loja').forEach(g => { yByStore[g.key] = Math.round(g.rate); });
+    groupStats(yFiltered, 'loja', ACTIVE_UNITS).forEach(g => { yByStore[g.key] = Math.round(g.rate); });
 
     stores = unitIds.map(uid => {
       const closedToday = isUnitClosed(closures, uid, today);
@@ -6397,7 +6418,7 @@ function buildInsight({ completions, unitIds, scopeUnitId, unitName, itemText, h
 
   // 3. Loja destoante ontem (diferença ≥25 p.p. entre melhor e pior).
   if (!scopeUnitId && yFiltered.length > 0) {
-    const groups = groupStats(yFiltered, 'loja').filter(g => g.checklists > 0);
+    const groups = groupStats(yFiltered, 'loja', ACTIVE_UNITS).filter(g => g.checklists > 0);
     const worst = [...groups].sort((a, b) => a.rate - b.rate)[0];
     const best = [...groups].sort((a, b) => b.rate - a.rate)[0];
     if (worst && best && best.rate - worst.rate >= 25) {
@@ -7214,7 +7235,9 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
 
 function AppInner() {
   const { isOnline, pendingSync, syncing } = useNetworkStatus();
-  const [unitId, setUnitId] = useState('ibr1');
+  // Nasce nulo: a unidade ativa é derivada de ACTIVE_UNITS (as da própria
+  // empresa). Antes o default era 'ibr1' — uma loja do IBR, em todo tenant.
+  const [unitId, setUnitId] = useState(null);
   const [tab, setTab] = useState('executar');
   const [templates, setTemplates] = useState(null);
   const [completions, setCompletions] = useState(null);
@@ -7482,7 +7505,18 @@ function AppInner() {
     const TEMPLATES_VERSION = 'v5-stable-ids';
     let cancelled = false;
 
+    // SEED_TEMPLATES e SEED_USERS são dados do IBR, herança de quando o app era
+    // single-tenant. NUNCA podem ser gravados nem exibidos em outro tenant: sem
+    // este gate, toda empresa nova recebia os checklists do IBR gravados no seu
+    // próprio company_id no 1º login (o storedVersion nasce nulo num navegador
+    // novo, então o seed sempre disparava) e ainda os via na tela.
+    const isIbr = (currentUser.companyId || currentUser.company_id) === 'ibr';
+
     const loadTemplates = async () => {
+      // Empresa que não é o IBR começa com os próprios checklists (nenhum, até o
+      // onboarding criar) — sem fallback nem seed do IBR.
+      if (!isIbr) return await fetchTemplates([]);
+
       // Check version to reset stale local cache
       let storedVersion = null;
       try { const r = await storageGet('ibr_templates_version'); storedVersion = r.value; } catch {}
@@ -7500,7 +7534,7 @@ function AppInner() {
     Promise.all([
       loadTemplates(),
       fetchCompletions(),
-      fetchUsers(SEED_USERS),
+      fetchUsers(isIbr ? SEED_USERS : []),
       fetchClosures(),
     ]).then(async ([tpl, comp, usr, cls]) => {
       if (cancelled) return;
@@ -7648,7 +7682,7 @@ function AppInner() {
         users={users}
         onLogin={u => {
           setCurrentUser(u);
-          setUnitId(u.unitId || 'ibr1');
+          setUnitId(u.unitId || null);
           setTab(ROLE_TABS[u.role][0]);
 
           // Instrumentação: abre a sessão de tracking e registra o login.
@@ -7735,9 +7769,33 @@ function AppInner() {
   const allowedTabs = ROLE_TABS[currentUser.role];
   const canSwitchUnit = currentUser.unitId == null;
   const activeTab = allowedTabs.includes(tab) ? tab : allowedTabs[0];
-  const unit = UNITS.find(u => u.id === unitId) || UNITS[0];
+  // A unidade ativa sai das unidades DA EMPRESA (ACTIVE_UNITS), não da constante
+  // UNITS do IBR. `unitId` nulo (login recém-feito) cai na primeira da empresa.
+  const unit = ACTIVE_UNITS.find(u => u.id === unitId) || ACTIVE_UNITS[0];
+
+  // Empresa sem nenhuma unidade configurada: não dá para renderizar a operação.
+  // Na Fase 2 este é o gancho do onboarding guiado; por ora, mensagem honesta.
+  if (!unit) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, maxWidth: 380, textAlign: 'center' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 8 }}>Configuração pendente</h2>
+          <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
+            {currentUser.role === 'gestao'
+              ? 'Sua empresa ainda não tem lojas configuradas. Configure em Gerenciar para começar.'
+              : 'A empresa ainda está sendo configurada. Peça ao gestor para concluir.'}
+          </p>
+          <button onClick={doLogout}
+            style={{ padding: '10px 20px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            Sair
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
+    <UnitsContext.Provider value={ACTIVE_UNITS}>
     <div style={{ minHeight: '100vh', background: C.bg, color: C.ink, fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column' }}>
       <style>{`
         .font-display { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 800; }
@@ -7765,7 +7823,7 @@ function AppInner() {
       )}
 
       <Header
-        unit={unit} onSelectUnit={setUnitId}
+        unit={unit} onSelectUnit={setUnitId} allUnits={ACTIVE_UNITS}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
         onLogout={async () => {
           clearTrackSession();
@@ -7906,6 +7964,7 @@ function AppInner() {
 
       <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs} />
     </div>
+    </UnitsContext.Provider>
   );
 }
 
