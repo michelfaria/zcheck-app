@@ -318,6 +318,30 @@ export async function getPhotoUrl(completionId, itemId) {
   } catch { return null; }
 }
 
+// ── Documentos de referência (POP etc.) ──────────────────────────────────────
+//
+// Diferente das fotos de referência (base64 no template), documentos podem ter
+// alguns MB — vivem no bucket `checklist-photos` sob `refdocs/` e o template
+// guarda só { name, path }. A leitura usa signed URL, como as fotos de prova.
+
+export async function uploadRefDoc(file) {
+  const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-80);
+  const path = `refdocs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}/${safeName}`;
+  const { error } = await supabase.storage
+    .from('checklist-photos')
+    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+  if (error) throw error;
+  return { name: file.name, path };
+}
+
+export async function getRefDocUrl(path) {
+  const { data, error } = await supabase.storage
+    .from('checklist-photos')
+    .createSignedUrl(path, 3600); // 1h — abre e pode ser lido com calma
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
 // ── Closures ──────────────────────────────────────────────────────────────────
 
 export async function fetchClosures() {

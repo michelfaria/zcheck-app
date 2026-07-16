@@ -3169,13 +3169,144 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
 
 /* ----------------------------- template editor ------------------------------- */
 
+// Editor de orientação de um item (texto, fotos, documentos POP, vídeo, link).
+// Compartilhado entre o TemplateEditor (edição) e o formulário "+ Novo".
+// `apply(fn)` recebe uma função (itemAtual → patch) — os uploads são assíncronos
+// e o item pode ter mudado até a resposta chegar.
+function ItemGuidanceEditor({ item, accent, apply }) {
+  const [docUploading, setDocUploading] = useState(false);
+  const [docError, setDocError] = useState(null);
+
+  const compressRefPhoto = file => new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxW = 400; // base64 pequeno (~30KB) — vive no JSON do template
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = url;
+  });
+
+  return (
+    <div className="mt-2" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>
+        Orientação — aparece no botão "Ver mais"
+      </p>
+
+      {/* Texto */}
+      <textarea
+        value={item.description || ''}
+        onChange={e => { const v = e.target.value; apply(() => ({ description: v })); }}
+        placeholder="Instruções detalhadas para orientar o colaborador..."
+        rows={2}
+        style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', resize: 'vertical', lineHeight: 1.5, fontFamily: 'inherit', marginBottom: 8 }}
+      />
+
+      {/* Fotos de referência */}
+      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Fotos de referência</p>
+      <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
+        {(item.refPhotos || []).map((photo, pi) => (
+          <div key={pi} style={{ position: 'relative' }}>
+            <img src={photo} alt={`ref ${pi+1}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: `1px solid ${C.border}` }} />
+            <button
+              onClick={() => apply(i => ({ refPhotos: (i.refPhotos || []).filter((_, x) => x !== pi) }))}
+              style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: C.critical, border: 'none', color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, lineHeight: 1 }}
+            >×</button>
+          </div>
+        ))}
+        {(item.refPhotos || []).length < 5 && (
+          <label style={{ width: 72, height: 72, borderRadius: 6, border: `2px dashed ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 4 }}>
+            <Camera size={18} color={C.muted} />
+            <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Adicionar</span>
+            <input type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={async e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                e.target.value = '';
+                const compressed = await compressRefPhoto(file);
+                apply(i => ({ refPhotos: [...(i.refPhotos || []), compressed] }));
+              }}
+            />
+          </label>
+        )}
+      </div>
+
+      {/* Documentos de referência (POP) */}
+      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP, manual — PDF, Word etc.)</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+        {(item.refDocs || []).map((doc, di) => (
+          <div key={di} className="flex items-center gap-2" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px' }}>
+            <FileText size={14} color={C.muted} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 12.5, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+            <button
+              onClick={() => apply(i => ({ refDocs: (i.refDocs || []).filter((_, x) => x !== di) }))}
+              style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', flexShrink: 0 }}
+            ><X size={14} color={C.muted} /></button>
+          </div>
+        ))}
+        {(item.refDocs || []).length < 3 && (
+          <label className="flex items-center gap-2" style={{ width: 'fit-content', fontSize: 11, fontWeight: 700, color: docUploading ? C.muted : accent, border: `1.5px dashed ${docUploading ? C.border : accent}`, borderRadius: 6, padding: '7px 12px', cursor: docUploading ? 'default' : 'pointer' }}>
+            <Plus size={13} />
+            {docUploading ? 'Enviando…' : 'Anexar documento'}
+            <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" style={{ display: 'none' }}
+              disabled={docUploading}
+              onChange={async e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                e.target.value = '';
+                if (file.size > 10 * 1024 * 1024) {
+                  setDocError('Arquivo acima de 10 MB — reduza e tente de novo.');
+                  return;
+                }
+                setDocError(null);
+                setDocUploading(true);
+                try {
+                  const doc = await uploadRefDoc(file);
+                  apply(i => ({ refDocs: [...(i.refDocs || []), doc] }));
+                } catch (err) {
+                  console.warn('uploadRefDoc failed', err);
+                  setDocError('Falha no envio — verifique a conexão e tente de novo.');
+                }
+                setDocUploading(false);
+              }}
+            />
+          </label>
+        )}
+        {docError && <p style={{ fontSize: 11, fontWeight: 700, color: C.critical }}>{docError}</p>}
+      </div>
+
+      {/* Vídeo externo (YouTube etc.) */}
+      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo externo (YouTube — passo a passo da tarefa)</p>
+      <input
+        value={item.refVideo || ''}
+        onChange={e => { const v = e.target.value; apply(() => ({ refVideo: v })); }}
+        placeholder="https://youtube.com/watch?v=..."
+        style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit', marginBottom: 8 }}
+      />
+
+      {/* Link externo */}
+      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (documento online, Drive etc.)</p>
+      <input
+        value={item.refLink || ''}
+        onChange={e => { const v = e.target.value; apply(() => ({ refLink: v })); }}
+        placeholder="https://... link de material de apoio"
+        style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit' }}
+      />
+    </div>
+  );
+}
+
 function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistType, allTemplates }) {
   const [name, setName] = useState(template?.name || '');
   const [deadline, setDeadline] = useState(template?.deadline || '');
   const [items, setItems] = useState(template?.items || [{ id: uid(), text: '', critical: false, required: false, photoRequired: false }]);
   const [itemCopyTargets, setItemCopyTargets] = useState({});  // kept for future use
-  const [docUploading, setDocUploading] = useState({}); // itemId → true enquanto envia POP
-  const [docError, setDocError] = useState({});         // itemId → mensagem de falha de upload
   const [dragState, setDragState] = useState(null); // { id, startIndex, overIndex, type }
   const dragRef = useRef(null);
 
@@ -3358,131 +3489,11 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
               </button>
             </div>
 
-            {/* Orientação expandida — texto + fotos de referência + link */}
-            <div className="mt-2" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>
-                Orientação — aparece no botão "Ver mais"
-              </p>
-
-              {/* Texto */}
-              <textarea
-                value={item.description || ''}
-                onChange={e => updateItem(item.id, { description: e.target.value })}
-                placeholder="Instruções detalhadas para orientar o colaborador..."
-                rows={2}
-                style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', resize: 'vertical', lineHeight: 1.5, fontFamily: 'inherit', marginBottom: 8 }}
-              />
-
-              {/* Fotos de referência */}
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Fotos de referência</p>
-              <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
-                {(item.refPhotos || []).map((photo, pi) => (
-                  <div key={pi} style={{ position: 'relative' }}>
-                    <img src={photo} alt={`ref ${pi+1}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: `1px solid ${C.border}` }} />
-                    <button
-                      onClick={() => updateItem(item.id, { refPhotos: (item.refPhotos || []).filter((_, i) => i !== pi) })}
-                      style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: C.critical, border: 'none', color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, lineHeight: 1 }}
-                    >×</button>
-                  </div>
-                ))}
-                {(item.refPhotos || []).length < 5 && (
-                  <label style={{ width: 72, height: 72, borderRadius: 6, border: `2px dashed ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 4 }}>
-                    <Camera size={18} color={C.muted} />
-                    <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Adicionar</span>
-                    <input type="file" accept="image/*" style={{ display: 'none' }}
-                      onChange={async e => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        e.target.value = '';
-                        // Compress image to max 400px wide, quality 0.7 — keeps base64 small (~30KB)
-                        const compressImage = (file) => new Promise(resolve => {
-                          const img = new Image();
-                          const url = URL.createObjectURL(file);
-                          img.onload = () => {
-                            const maxW = 400;
-                            const scale = Math.min(1, maxW / img.width);
-                            const canvas = document.createElement('canvas');
-                            canvas.width = Math.round(img.width * scale);
-                            canvas.height = Math.round(img.height * scale);
-                            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-                            URL.revokeObjectURL(url);
-                            resolve(canvas.toDataURL('image/jpeg', 0.7));
-                          };
-                          img.src = url;
-                        });
-                        const compressed = await compressImage(file);
-                        updateItem(item.id, { refPhotos: [...(item.refPhotos || []), compressed] });
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-
-              {/* Documentos de referência (POP) */}
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP, manual — PDF, Word etc.)</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                {(item.refDocs || []).map((doc, di) => (
-                  <div key={di} className="flex items-center gap-2" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px' }}>
-                    <FileText size={14} color={C.muted} style={{ flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 12.5, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
-                    <button
-                      onClick={() => updateItem(item.id, { refDocs: (item.refDocs || []).filter((_, i) => i !== di) })}
-                      style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', flexShrink: 0 }}
-                    ><X size={14} color={C.muted} /></button>
-                  </div>
-                ))}
-                {(item.refDocs || []).length < 3 && (
-                  <label className="flex items-center gap-2" style={{ width: 'fit-content', fontSize: 11, fontWeight: 700, color: docUploading[item.id] ? C.muted : unit.color, border: `1.5px dashed ${docUploading[item.id] ? C.border : unit.color}`, borderRadius: 6, padding: '7px 12px', cursor: docUploading[item.id] ? 'default' : 'pointer' }}>
-                    <Plus size={13} />
-                    {docUploading[item.id] ? 'Enviando…' : 'Anexar documento'}
-                    <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" style={{ display: 'none' }}
-                      disabled={!!docUploading[item.id]}
-                      onChange={async e => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        e.target.value = '';
-                        if (file.size > 10 * 1024 * 1024) {
-                          setDocError(m => ({ ...m, [item.id]: 'Arquivo acima de 10 MB — reduza e tente de novo.' }));
-                          return;
-                        }
-                        setDocError(m => ({ ...m, [item.id]: null }));
-                        setDocUploading(m => ({ ...m, [item.id]: true }));
-                        try {
-                          const doc = await uploadRefDoc(file);
-                          // setItems via updater: o upload é assíncrono e o item pode ter mudado
-                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, refDocs: [...(i.refDocs || []), doc] } : i));
-                        } catch (err) {
-                          console.warn('uploadRefDoc failed', err);
-                          setDocError(m => ({ ...m, [item.id]: 'Falha no envio — verifique a conexão e tente de novo.' }));
-                        }
-                        setDocUploading(m => ({ ...m, [item.id]: false }));
-                      }}
-                    />
-                  </label>
-                )}
-                {docError[item.id] && (
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.critical }}>{docError[item.id]}</p>
-                )}
-              </div>
-
-              {/* Vídeo externo (YouTube etc.) */}
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo externo (YouTube — passo a passo da tarefa)</p>
-              <input
-                value={item.refVideo || ''}
-                onChange={e => updateItem(item.id, { refVideo: e.target.value })}
-                placeholder="https://youtube.com/watch?v=..."
-                style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit', marginBottom: 8 }}
-              />
-
-              {/* Link externo */}
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (documento online, Drive etc.)</p>
-              <input
-                value={item.refLink || ''}
-                onChange={e => updateItem(item.id, { refLink: e.target.value })}
-                placeholder="https://... link de material de apoio"
-                style={{ width: '100%', fontSize: 13, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', outline: 'none', fontFamily: 'inherit' }}
-              />
-            </div>
+            {/* Orientação expandida — texto, fotos, documentos POP, vídeo e link */}
+            <ItemGuidanceEditor
+              item={item} accent={unit.color}
+              apply={fn => setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...fn(i) } : i))}
+            />
             <div className="flex flex-wrap gap-3 mt-2">
               <label
                 className="flex items-center gap-1.5"
@@ -3627,6 +3638,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
   const [novoSector, setNovoSector] = useState('');
   const [novoDeadline, setNovoDeadline] = useState('');
   const [novoItems, setNovoItems] = useState([{ id: uid(), text: '', critical: false }]);
+  const [novoGuidanceOpen, setNovoGuidanceOpen] = useState({}); // itemId → orientação expandida
   const [novoSaving, setNovoSaving] = useState(false);
   const [novoSuccess, setNovoSuccess] = useState(false);
 
@@ -4311,24 +4323,41 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
           <div>
             <Eyebrow>Itens do checklist</Eyebrow>
             <div className="space-y-2 mt-1">
-              {novoItems.map((item, idx) => (
-                <div key={item.id} className="flex items-center gap-2">
-                  <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, width: 20, textAlign: 'right', flexShrink: 0 }}>{idx + 1}</span>
-                  <input value={item.text}
-                    onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, text: e.target.value } : i))}
-                    placeholder="Descreva a tarefa"
-                    className="flex-1 px-3 py-2"
-                    style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', color: C.ink }} />
-                  <label className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: item.critical ? C.critical : C.muted, flexShrink: 0 }}>
-                    <input type="checkbox" checked={!!item.critical} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
-                    ⚠
-                  </label>
-                  <button onClick={() => setNovoItems(prev => prev.filter(i => i.id !== item.id))}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    <X size={14} color={C.muted} />
-                  </button>
-                </div>
-              ))}
+              {novoItems.map((item, idx) => {
+                const hasGuide = !!(item.description || item.refPhotos?.length || item.refDocs?.length || item.refVideo || item.refLink);
+                const guideOpen = !!novoGuidanceOpen[item.id];
+                return (
+                  <div key={item.id} style={{ background: guideOpen ? 'white' : 'none', border: guideOpen ? `1px solid ${C.border}` : 'none', borderRadius: 10, padding: guideOpen ? 10 : 0 }}>
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, width: 20, textAlign: 'right', flexShrink: 0 }}>{idx + 1}</span>
+                      <input value={item.text}
+                        onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, text: e.target.value } : i))}
+                        placeholder="Descreva a tarefa"
+                        className="flex-1 px-3 py-2"
+                        style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', color: C.ink, minWidth: 0 }} />
+                      <label className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: item.critical ? C.critical : C.muted, flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!item.critical} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
+                        ⚠
+                      </label>
+                      <button onClick={() => setNovoGuidanceOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
+                        title="Orientação: instruções, fotos, POP, vídeo"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+                        <FileText size={15} color={hasGuide || guideOpen ? unit.color : C.mutedLight} />
+                      </button>
+                      <button onClick={() => setNovoItems(prev => prev.filter(i => i.id !== item.id))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+                        <X size={14} color={C.muted} />
+                      </button>
+                    </div>
+                    {guideOpen && (
+                      <ItemGuidanceEditor
+                        item={item} accent={unit.color}
+                        apply={fn => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, ...fn(i) } : i))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
               <button onClick={() => setNovoItems(prev => [...prev, { id: uid(), text: '', critical: false }])}
                 className="flex items-center gap-2 w-full py-2"
                 style={{ borderRadius: 8, border: `2px dashed ${C.border}`, fontWeight: 700, color: C.muted, background: 'none', fontSize: 13 }}>
@@ -6791,6 +6820,11 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
     () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
     [completions, targetUser.id, targetUser.name],
   );
+  // Score de produtividade da pessoa vs média da empresa (mesma régua do Relatórios)
+  const prodScore = useMemo(() => {
+    const prod = computeProductivity(completions);
+    return prod.collaborators.find(e => e.key === targetUser.id || e.name === targetUser.name) || null;
+  }, [completions, targetUser.id, targetUser.name]);
   const [survey, setSurvey] = useState(null);
   const [recognitions, setRecognitions] = useState([]);
 
@@ -6930,6 +6964,35 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
         <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos em dia" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
         <Metric value={`${p.streak}${p.streak ? '🔥' : ''}`} label="Sequência" />
       </div>
+
+      {/* Score de produtividade — mesma régua do Relatórios (100 = média da empresa) */}
+      {(() => {
+        const score = prodScore?.score ?? null;
+        const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? '#C6842A' : C.critical;
+        const barPct = score == null ? 0 : Math.min(score, 150) / 1.5;
+        return (
+          <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Score de produtividade</p>
+                <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>100 = média da empresa</p>
+              </div>
+              <p className="font-display" style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1, flexShrink: 0 }}>
+                {score == null ? '—' : score}
+              </p>
+            </div>
+            <div style={{ position: 'relative', width: '100%', height: 7, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
+              <div style={{ height: '100%', width: `${barPct}%`, background: color, borderRadius: 999 }} />
+              <div style={{ position: 'absolute', left: `${100 / 1.5}%`, top: 0, bottom: 0, width: 2, background: C.ink, opacity: 0.35 }} />
+            </div>
+            <p style={{ fontSize: 10.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+              {score == null
+                ? 'O score aparece conforme as novas execuções registram o horário de cada tarefa.'
+                : `${prodScore.rate.toFixed(1)} pts/h · ${Math.round(prodScore.points)} pontos no período · tarefa crítica vale 2 pts e checklist 100% dá bônus.`}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Evolução */}
       <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
