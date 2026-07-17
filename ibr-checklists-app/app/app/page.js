@@ -6097,7 +6097,7 @@ function InstallPrompt() {
 // boas-vindas, deixa escolher o segmento e cria as cópias da biblioteca
 // mapeadas para as lojas/setores da própria empresa — resolve a página em
 // branco sem exigir migração no provisionamento.
-const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
 const VERTICAL_EMOJI = { restaurante: '🍽️', cafe: '☕', hotel: '🏨', varejo: '🛍️', padaria: '🥐' };
 
@@ -7484,6 +7484,19 @@ function AppInner() {
       }))
     : CHECKLIST_TYPE_ORDER;
 
+  // ── Onboarding guiado (Fase 2) ─────────────────────────────────────────────
+  // Gestor/gerência de empresa nova (nenhum checklist ainda, fora o IBR): abre o
+  // fluxo de boas-vindas que cria os checklists prontos do segmento escolhido.
+  // Some sozinho assim que existir o primeiro checklist.
+  useEffect(() => {
+    if (!currentUser || !templates) return;
+    const isIbr = (currentUser.companyId || currentUser.company_id) === 'ibr';
+    if (isIbr || !['gerencia', 'gestao'].includes(currentUser.role)) return;
+    if (templates.length > 0) { setShowCompanyOnboarding(false); return; }
+    try { if (localStorage.getItem(`zc_company_onboarding_${currentUser.id}`)) return; } catch (_) {}
+    setShowCompanyOnboarding(true);
+  }, [currentUser, templates]);
+
   // ── Daily Briefing (H1) ────────────────────────────────────────────────────
   const briefing = useMemo(() => {
     if (!templates || !completions) return null;
@@ -8055,13 +8068,26 @@ function AppInner() {
         company={company}
       />
 
+      {/* Onboarding guiado — primeiro acesso da gestão de empresa nova */}
+      {showCompanyOnboarding && (
+        <CompanyOnboarding
+          company={company} units={ACTIVE_UNITS} currentUser={currentUser}
+          onCreateTemplates={async created => { await saveTemplates([...(templates || []), ...created], created.map(t => t.id)); }}
+          onClose={() => {
+            setShowCompanyOnboarding(false);
+            try { localStorage.setItem(`zc_company_onboarding_${currentUser.id}`, '1'); } catch (_) {}
+          }}
+          onGoToTab={t => { if (allowedTabs.includes(t)) setTab(t); }}
+        />
+      )}
+
       {/* Tela de boas-vindas — primeiro acesso */}
-      {showWelcome && (
+      {showWelcome && !showCompanyOnboarding && (
         <WelcomeScreen role={currentUser.role} onClose={() => setShowWelcome(false)} />
       )}
 
       {/* Daily Briefing (H1) — primeira tela do dia para gestão */}
-      {showBriefing && !showWelcome && briefing && (
+      {showBriefing && !showWelcome && !showCompanyOnboarding && briefing && (
         <DailyBriefing
           briefing={briefing}
           currentUser={currentUser}
