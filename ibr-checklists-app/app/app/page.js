@@ -6131,7 +6131,7 @@ function libraryPlanForCompany(vertical, units) {
   return plan;
 }
 
-function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab }) {
+function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab, onStartTour }) {
   const [step, setStep] = useState(0); // 0 segmento · 1 revisão · 2 pronto
   const [vertical, setVertical] = useState(() => guessVertical(units));
   const [creating, setCreating] = useState(false);
@@ -6271,9 +6271,104 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                   </div>
                 ))}
               </div>
-              <Btn primary onClick={() => { onClose(); onGoToTab('executar'); }}>Começar a usar →</Btn>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Btn primary onClick={() => { onClose(); onStartTour(); }}>Fazer o tour guiado (2 min) →</Btn>
+                <Btn onClick={() => { onClose(); onGoToTab('executar'); }}>Explorar sozinho</Btn>
+              </div>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Tour guiado do gestor ── */
+// Percorre as abas REAIS do app, uma a uma: o cartão fica ancorado embaixo,
+// a tela de verdade aparece atrás (já com os checklists criados no onboarding)
+// e cada passo traz uma orientação prática de primeiro uso. Diferente de um
+// modal estático: o gestor vê exatamente onde cada coisa está.
+const GESTOR_TOUR_STEPS = [
+  {
+    tab: 'executar', icon: '☑️', title: 'Executar — onde a equipe trabalha',
+    desc: 'Os checklists do dia, por setor e turno. Cada tarefa pode ter orientação, foto de referência, POP e vídeo no botão "Ver mais". Itens críticos ganham destaque; alguns exigem foto.',
+    dica: 'Toque num checklist e execute você mesmo — é o jeito mais rápido de entender o que a equipe vai ver.',
+  },
+  {
+    tab: 'painel', icon: '📊', title: 'Painel — o dia em tempo real',
+    desc: 'Score do dia, o que está pendente, atrasado e concluído — e o comparativo entre lojas quando houver mais de uma.',
+    dica: 'Abra o Painel todo início de turno: é a foto instantânea da operação.',
+  },
+  {
+    tab: 'relatorios', icon: '📈', title: 'Relatórios — histórico e produtividade',
+    desc: 'Desempenho por período, setor e colaborador, com o score de produtividade (100 = média da empresa) e exportação em PDF ou CSV.',
+    dica: 'Os dados aparecem conforme a equipe executa. Use o PDF nas reuniões semanais.',
+  },
+  {
+    tab: 'gerenciar', icon: '⚙️', title: 'Gerenciar — seus checklists',
+    desc: 'Edite os checklists criados: itens, prazos, dias da semana, críticos e foto obrigatória. Em cada item, anexe orientação, fotos, POP e vídeo — a tarefa vira treinamento.',
+    dica: 'Revise os checklists prontos e ajuste ao seu padrão — eles são cópias suas, sem medo de editar.',
+  },
+  {
+    tab: 'usuarios', icon: '👥', title: 'Usuários — cadastre a equipe',
+    desc: 'Cada pessoa entra com o próprio nome + PIN de 4 dígitos. Solicitações de acesso feitas pelo app chegam aqui para você aprovar.',
+    dica: 'Primeiro passo recomendado: cadastre 2–3 colaboradores e peça para executarem um checklist hoje.',
+  },
+  {
+    tab: 'equipe', icon: '🏅', title: 'Equipe — perfis e reconhecimento',
+    desc: 'O perfil de cada colaborador: nível, tarefas executadas, sequência de dias e score de produtividade. Daqui você envia reconhecimentos.',
+    dica: 'Reconheça um bom resultado por semana — engajamento é o que sustenta a rotina.',
+  },
+];
+
+function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
+  const steps = GESTOR_TOUR_STEPS.filter(s => allowedTabs.includes(s.tab));
+  const [i, setI] = useState(0);
+  const step = steps[i];
+  const isLast = i === steps.length - 1;
+
+  useEffect(() => { track('gestor_tour_started', { source: 'onboarding' }); }, []);
+  useEffect(() => { if (step) onGoToTab(step.tab); }, [i]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!step) return null;
+
+  const finish = done => {
+    track(done ? 'gestor_tour_completed' : 'gestor_tour_skipped', { source: 'onboarding', metadata: { step: i + 1, of: steps.length } });
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))', zIndex: 150, padding: '0 12px', pointerEvents: 'none' }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', background: 'white', borderRadius: 16, border: `2px solid ${accent}`, boxShadow: '0 8px 32px rgba(6,60,92,0.35)', padding: '14px 16px', pointerEvents: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
+            Tour guiado · {i + 1} de {steps.length}
+          </p>
+          <button onClick={() => finish(false)} style={{ background: 'none', border: 'none', fontSize: 11.5, fontWeight: 700, color: C.muted, cursor: 'pointer', padding: '4px 6px', margin: '-4px -6px' }}>
+            Pular tour
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+          {steps.map((_, x) => (
+            <div key={x} style={{ flex: 1, height: 3, borderRadius: 999, background: x <= i ? accent : C.border }} />
+          ))}
+        </div>
+        <p style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 4 }}>{step.icon} {step.title}</p>
+        <p style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.55, marginBottom: 8 }}>{step.desc}</p>
+        <p style={{ fontSize: 12, color: accent, lineHeight: 1.5, fontWeight: 700, background: `${accent}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
+          💡 {step.dica}
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {i > 0 && (
+            <button onClick={() => setI(i - 1)}
+              style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
+              ← Voltar
+            </button>
+          )}
+          <button onClick={() => (isLast ? finish(true) : setI(i + 1))}
+            style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
+            {isLast ? 'Concluir tour ✓' : 'Próximo →'}
+          </button>
         </div>
       </div>
     </div>
@@ -7463,6 +7558,7 @@ function AppInner() {
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showCompanyOnboarding, setShowCompanyOnboarding] = useState(false);
+  const [showTour, setShowTour] = useState(false); // tour guiado pós-onboarding
   const [showBriefing, setShowBriefing] = useState(false);
   const [briefingSource, setBriefingSource] = useState('auto');
 
@@ -8078,6 +8174,16 @@ function AppInner() {
             try { localStorage.setItem(`zc_company_onboarding_${currentUser.id}`, '1'); } catch (_) {}
           }}
           onGoToTab={t => { if (allowedTabs.includes(t)) setTab(t); }}
+          onStartTour={() => setShowTour(true)}
+        />
+      )}
+
+      {/* Tour guiado pelas abas reais — primeiros passos do gestor */}
+      {showTour && !showCompanyOnboarding && (
+        <GestorTour
+          allowedTabs={allowedTabs} accent={unit.color}
+          onGoToTab={t => { if (allowedTabs.includes(t)) setTab(t); }}
+          onClose={() => setShowTour(false)}
         />
       )}
 
@@ -8087,7 +8193,7 @@ function AppInner() {
       )}
 
       {/* Daily Briefing (H1) — primeira tela do dia para gestão */}
-      {showBriefing && !showWelcome && !showCompanyOnboarding && briefing && (
+      {showBriefing && !showWelcome && !showCompanyOnboarding && !showTour && briefing && (
         <DailyBriefing
           briefing={briefing}
           currentUser={currentUser}
