@@ -5933,19 +5933,14 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
         input, textarea, button, select { font-family: inherit; }
       `}</style>
 
-      {/* Header ZCheck — fundo claro + logo horizontal, igual à landing. */}
-      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <a href="https://zcheckapp.com" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
-        </a>
+      {/* Cabeçalho — único logo da tela: o da empresa (ou ZCheck como fallback).
+          Antes havia dois (ZCheck no header + o da empresa no corpo), que
+          apareciam idênticos quando a empresa ainda não tinha logo próprio. */}
+      <div style={{ width: '100%', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <img src={companyLogoSrc(initialCompany)} alt={initialCompany?.name || 'ZCheck'} style={{ maxHeight: 44, maxWidth: 180, width: 'auto', objectFit: 'contain' }} />
       </div>
 
       <div className="flex flex-col items-center" style={{ flex: 1, justifyContent: 'center', padding: '24px 24px 80px' }}>
-
-        {/* Logo empresa */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <img src={companyLogoSrc(initialCompany)} alt={initialCompany?.name || 'ZCheck'} style={{ width: 120, height: 'auto' }} />
-        </div>
 
         <div className="w-full" style={{ maxWidth: 320 }}>
           <Eyebrow>Usuário</Eyebrow>
@@ -6016,10 +6011,13 @@ function InstallPrompt() {
   const [isIos, setIsIos] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
+  const [isAndroid, setIsAndroid] = useState(false);
+
   useEffect(() => {
     // Detecta iOS
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     setIsIos(ios);
+    setIsAndroid(/android/i.test(navigator.userAgent));
     // Detecta se já está instalado como PWA
     const standalone = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true;
@@ -6088,6 +6086,32 @@ function InstallPrompt() {
             <li>Toque no botão <strong>Compartilhar</strong> <span style={{ fontSize: 14 }}>⎋</span> no Safari</li>
             <li>Role para baixo e toque em <strong>"Adicionar à Tela de Início"</strong></li>
             <li>Confirme tocando em <strong>"Adicionar"</strong></li>
+          </ol>
+          <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
+            O app aparecerá na sua tela inicial como qualquer outro app.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // Android SEM o prompt nativo (Firefox, ou o evento disparou antes do mount):
+  // guia manual, para nunca ficar sem caminho de instalação.
+  if (isAndroid) return (
+    <div style={{ marginTop: 20, textAlign: 'center' }}>
+      <button
+        onClick={() => setShowIosGuide(v => !v)}
+        style={{ fontSize: 12, fontWeight: 700, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+      >
+        📲 Adicionar à tela inicial
+      </button>
+      {showIosGuide && (
+        <div style={{ marginTop: 10, padding: '12px 16px', borderRadius: 10, background: 'white', border: '1.5px solid #E2EAF0', textAlign: 'left', maxWidth: 280, margin: '10px auto 0' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#063C5C', marginBottom: 8 }}>Como instalar no Android:</p>
+          <ol style={{ fontSize: 12, color: '#555', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
+            <li>Toque no menu <strong>⋮</strong> do navegador</li>
+            <li>Toque em <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong></li>
+            <li>Confirme tocando em <strong>"Instalar"</strong></li>
           </ol>
           <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
             O app aparecerá na sua tela inicial como qualquer outro app.
@@ -8499,6 +8523,25 @@ const ONB_COLORS = ['#063C5C', '#1A6B4A', '#C6842A', '#7B3FA0', '#B5451B', '#1E7
 const nid = () => Math.random().toString(36).slice(2, 10);
 const ONB_STEPS = ['Segmento', 'Lojas', 'Setores', 'Checklists', 'Marca'];
 
+// Indicador de passo do wizard. Existia só no /comecar (arquivo separado); o
+// OnboardingWizard o referenciava sem que estivesse definido aqui, o que
+// derrubava o app com "Can't find variable: Step" logo após o login.
+function Step({ n, label, active, done }) {
+  return (
+    <div className="flex flex-col items-center gap-1" style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 800, fontSize: 12,
+        background: done ? C.success : active ? C.ink : C.border,
+        color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
+      }}>
+        {done ? '✓' : n}
+      </div>
+      <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: active ? C.ink : C.muted, textAlign: 'center' }}>{label}</span>
+    </div>
+  );
+}
+
 // Onboarding do primeiro acesso: o gestor configura a operação (lojas, setores,
 // tipos de checklist), sobe o logo e escolhe a cor. Ao concluir, grava tudo e
 // marca companies.onboarded_at — a partir daí o app abre normalmente.
@@ -8578,8 +8621,8 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
   const rm = (setter) => (id) => setter(prev => prev.length > 1 ? prev.filter(x => x.id !== id) : prev);
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '28px 20px 96px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", overflowX: 'hidden' }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', padding: '28px 20px 96px', width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Vamos configurar <strong>{company.name}</strong> em poucos passos.</p>

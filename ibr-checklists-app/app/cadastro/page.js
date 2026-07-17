@@ -3,13 +3,9 @@
 import { useState, useRef, useEffect } from 'react';
 // Cliente anônimo, de propósito: quem se cadastra ainda não tem conta.
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supabase';
+import { getTenantSlug } from '../../lib/tenant';
 
 import { C } from '../../lib/tokens';
-const UNITS = [
-  { id: 'ibr1', name: 'IBR1' },
-  { id: 'ibr2', name: 'IBR2' },
-  { id: 'ibr3', name: 'IBR3' },
-];
 
 const inputStyle = {
   width: '100%', fontSize: 15, fontWeight: 600, color: '#063C5C',
@@ -30,7 +26,7 @@ function formatPhone(v) {
     .replace(/(\d{5})(\d)/,'$1-$2');
 }
 
-async function notifyGestao(name, unitId) {
+async function notifyGestao(name, companyId) {
   try {
     await fetch(`${SUPABASE_URL}/functions/v1/notify-request`, {
       method: 'POST',
@@ -38,7 +34,7 @@ async function notifyGestao(name, unitId) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({ name, unitId }),
+      body: JSON.stringify({ name, companyId }),
     });
   } catch {}
 }
@@ -46,9 +42,22 @@ async function notifyGestao(name, unitId) {
 export default function CadastroPage() {
   const [step, setStep] = useState(null); // null = loading, avoids SSR flash
 
+  // Empresa deste subdomínio. A solicitação PRECISA nascer com o company_id
+  // certo, senão ela não aparece para o gestor da empresa. Antes o company_id era
+  // derivado da loja escolhida (trigger); agora o solicitante não escolhe loja —
+  // o gestor vincula depois —, então resolvemos direto pela slug do tenant.
+  const [companyId, setCompanyId] = useState(null);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setStep(params.get('status') === '1' ? 'status' : 'form');
+    (async () => {
+      try {
+        const { data } = await supabase.from('companies')
+          .select('id').eq('slug', getTenantSlug()).eq('active', true).maybeSingle();
+        if (data?.id) setCompanyId(data.id);
+      } catch (_) {}
+    })();
   }, []);
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
@@ -56,7 +65,6 @@ export default function CadastroPage() {
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
-  const [unitId, setUnitId] = useState('ibr2');
   const [selfie, setSelfie] = useState(null);
   const [selfiePreview, setSelfiePreview] = useState(null);
   const [error, setError] = useState('');
@@ -102,6 +110,7 @@ export default function CadastroPage() {
     if (!/^\d{4}$/.test(pin)) return 'O PIN deve ter exatamente 4 dígitos.';
     if (pin !== pinConfirm) return 'Os PINs não coincidem.';
     if (!selfie) return 'A selfie é obrigatória para confirmar sua identidade.';
+    if (!companyId) return 'Não foi possível identificar a empresa. Recarregue a página e tente de novo.';
     // captchaToken is optional — if Turnstile fails to load, allow submission
     return null;
   };
@@ -123,7 +132,8 @@ export default function CadastroPage() {
       const { error: dbErr } = await supabase.from('user_requests').insert({
         name: name.trim(),
         pin,
-        unit_id: unitId,
+        company_id: companyId,   // sem loja: o gestor vincula na aprovação
+        unit_id: null,
         cpf: cpf.replace(/\D/g,''),
         phone: phone.replace(/\D/g,''),
         email: email.trim().toLowerCase(),
@@ -132,7 +142,7 @@ export default function CadastroPage() {
       });
       if (dbErr) throw dbErr;
 
-      await notifyGestao(name.trim(), unitId);
+      await notifyGestao(name.trim(), companyId);
       setStep('success');
     } catch (e) {
       console.error(e);
@@ -218,21 +228,6 @@ export default function CadastroPage() {
           <div style={{ marginBottom: 20 }}>
             <Label>E-mail</Label>
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" type="email" inputMode="email" style={inputStyle} />
-          </div>
-          <Divider />
-
-          <div style={{ marginBottom: 20 }}>
-            <Label>Loja</Label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {UNITS.map(u => (
-                <button key={u.id} onClick={() => setUnitId(u.id)} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, fontWeight: 800, fontSize: 14, fontFamily: 'inherit',
-                  border: '1.5px solid ' + (unitId === u.id ? C.ink : C.border),
-                  background: unitId === u.id ? C.ink : 'white',
-                  color: unitId === u.id ? 'white' : C.muted, cursor: 'pointer',
-                }}>{u.name}</button>
-              ))}
-            </div>
           </div>
           <Divider />
 

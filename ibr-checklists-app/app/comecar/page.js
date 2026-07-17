@@ -16,9 +16,9 @@ const STEPS = ['E-mail', 'Código', 'Empresa', 'Gestor'];
 
 function Step({ n, label, active, done }) {
   return (
-    <div className="flex flex-col items-center gap-1" style={{ flex: 1 }}>
+    <div className="flex flex-col items-center gap-1" style={{ flex: 1, minWidth: 0 }}>
       <div style={{
-        width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         fontWeight: 800, fontSize: 12,
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
@@ -59,6 +59,7 @@ export default function ComecarPage() {
   // Empresa (só o nome — o resto é no onboarding)
   const [companyName, setCompanyName] = useState('');
   const [createdSlug, setCreatedSlug] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // Gestor
   const [gestorName, setGestorName] = useState('');
@@ -201,8 +202,16 @@ export default function ComecarPage() {
           sua operação — lojas, checklists, logo e cores — em poucos passos.
         </p>
         <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 24, maxWidth: 360, width: '100%', textAlign: 'center' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>Endereço da sua empresa</p>
-          <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, wordBreak: 'break-all' }}>{createdSlug}.zcheckapp.com/app</p>
+          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Endereço da sua empresa</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, wordBreak: 'break-all', marginBottom: 10 }}>{createdSlug}.zcheckapp.com/app</p>
+          <button
+            onClick={async () => {
+              try { await navigator.clipboard.writeText(appUrl); } catch (_) {}
+              setCopied(true); setTimeout(() => setCopied(false), 2000);
+            }}
+            style={{ width: '100%', padding: '9px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: copied ? '#F0FAF4' : 'white', color: copied ? C.success : C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            {copied ? '✓ Link copiado' : 'Copiar link'}
+          </button>
         </div>
         <a href={appUrl} style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>
           Entrar e configurar →
@@ -212,8 +221,8 @@ export default function ComecarPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 460, margin: '0 auto', padding: '32px 20px 100px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, sans-serif', overflowX: 'hidden' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto', padding: '32px 20px 100px', width: '100%' }}>
 
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32}
