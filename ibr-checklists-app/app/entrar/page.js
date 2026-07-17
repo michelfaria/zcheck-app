@@ -9,6 +9,14 @@ const SUBDOMAIN_ALIAS = {
   ibr: 'ilhabelarepublic',
 };
 
+// Códigos legados que o usuário pode digitar. O mapa fixo antigo aceitava tanto
+// 'ibr' quanto 'ilhabelarepublic' para o IBR; como a slug no banco é só 'ibr',
+// resolver direto pela slug faria quem digita o código antigo (que é o próprio
+// subdomínio deles) receber "não encontrado".
+const CODE_ALIAS = {
+  ilhabelarepublic: 'ibr',
+};
+
 export default function EntrarPage() {
   const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState('');
@@ -19,8 +27,9 @@ export default function EntrarPage() {
   // entrar por aqui — o código dela sempre dava "não encontrado".
   async function handleEntrar(e) {
     e.preventDefault();
-    const code = codigo.trim().toLowerCase().replace(/\s+/g, '');
-    if (!code) { setErro('Digite o código da sua empresa.'); return; }
+    const typed = codigo.trim().toLowerCase().replace(/\s+/g, '');
+    if (!typed) { setErro('Digite o código da sua empresa.'); return; }
+    const code = CODE_ALIAS[typed] || typed;
 
     setErro(''); setLoading(true);
     try {
