@@ -6,7 +6,7 @@ import {
   Plus, Trash2, X, ClipboardCheck, LayoutGrid, Settings2, Clock, Lock, Camera,
   Users, User, LogOut, Store, BarChart3, ChevronUp, ChevronDown, Calendar,
   WifiOff, RefreshCw, Bell, BellOff, ExternalLink, Award, Star,
-  FileText, PlayCircle,
+  FileText, PlayCircle, HelpCircle,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -5709,7 +5709,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits }) {
+function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -5770,6 +5770,14 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
         </div>
         <div className="flex items-center gap-3">
+          {/* Tour guiado sob demanda — quem pulou no 1º acesso pode voltar quando quiser */}
+          {onStartTour && MANAGER_ROLES.includes(currentUser.role) && (
+            <button onClick={onStartTour} title="Tour guiado pelas funcionalidades"
+              className="flex items-center gap-1"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+              <HelpCircle size={15} /> Tour
+            </button>
+          )}
           {currentUser.role === 'gestao' && (
             <button
               onClick={pushEnabled ? onDisablePush : onEnablePush}
@@ -8162,6 +8170,7 @@ function AppInner() {
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
         company={company}
+        onStartTour={() => { setShowBriefing(false); setShowTour(true); }}
       />
 
       {/* Onboarding guiado — primeiro acesso da gestão de empresa nova */}
