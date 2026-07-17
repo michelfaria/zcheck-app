@@ -5733,17 +5733,18 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
           <span style={{ fontSize: 12, fontWeight: 800 }}>Sincronizando…</span>
         </div>
       )}
-      {/* ── HEADER ── */}
+      {/* ── HEADER ── Fundo claro + logo horizontal, igual à landing (era uma
+          faixa azul #063C5C com o ícone). */}
       <div style={{
         width: '100%', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '0 16px',
-        height: 64, background: '#063C5C',
+        height: 64, background: 'white', borderBottom: `1px solid ${C.border}`,
         marginBottom: 0,
       }}>
         <img
-          src="/zcheck-icon.png"
+          src="/zcheck-logo.png"
           alt="ZCheck"
-          style={{ display: 'block', height: 40, width: 'auto', objectFit: 'contain', background: 'transparent' }}
+          style={{ display: 'block', height: 32, width: 'auto', objectFit: 'contain' }}
         />
       </div>
 
@@ -5924,10 +5925,10 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
         input, textarea, button, select { font-family: inherit; }
       `}</style>
 
-      {/* Header ZCheck */}
-      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#063C5C', flexShrink: 0 }}>
+      {/* Header ZCheck — fundo claro + logo horizontal, igual à landing. */}
+      <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
         <a href="https://zcheckapp.com" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src="/zcheck-icon.png" alt="ZCheck" style={{ height: 40, width: 'auto', objectFit: 'contain', background: 'transparent' }} />
+          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
         </a>
       </div>
 
@@ -6089,6 +6090,194 @@ function InstallPrompt() {
   );
 
   return null;
+}
+
+/* ── Onboarding guiado da empresa (primeiro acesso da gestão) ── */
+// Empresa recém-provisionada não tem nenhum checklist: este fluxo dá as
+// boas-vindas, deixa escolher o segmento e cria as cópias da biblioteca
+// mapeadas para as lojas/setores da própria empresa — resolve a página em
+// branco sem exigir migração no provisionamento.
+const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+const VERTICAL_EMOJI = { restaurante: '🍽️', cafe: '☕', hotel: '🏨', varejo: '🛍️', padaria: '🥐' };
+
+// Deduz o segmento comparando os setores da empresa com as áreas da biblioteca.
+function guessVertical(units) {
+  const names = new Set(units.flatMap(u => (u.sectors || []).map(normalizeName)));
+  let best = null, bestScore = 0;
+  LIBRARY_VERTICALS.forEach(v => {
+    const areas = [...new Set(LIBRARY_TEMPLATES.filter(t => t.vertical === v.id).map(t => normalizeName(t.area)))];
+    const score = areas.filter(a => names.has(a)).length;
+    if (score > bestScore) { best = v.id; bestScore = score; }
+  });
+  return best;
+}
+
+// Para cada loja da empresa, mapeia cada modelo do segmento para o setor de
+// nome equivalente; sem equivalente, cai no primeiro setor da loja.
+function libraryPlanForCompany(vertical, units) {
+  const models = LIBRARY_TEMPLATES.filter(t => t.vertical === vertical);
+  const plan = [];
+  units.forEach(u => {
+    const sectors = u.sectors || [];
+    models.forEach(m => {
+      const sector =
+        sectors.find(s => normalizeName(s) === normalizeName(m.area)) ||
+        sectors.find(s => normalizeName(s).includes(normalizeName(m.area)) || normalizeName(m.area).includes(normalizeName(s))) ||
+        sectors[0] || m.area;
+      plan.push({ model: m, unit: u, sector });
+    });
+  });
+  return plan;
+}
+
+function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab }) {
+  const [step, setStep] = useState(0); // 0 segmento · 1 revisão · 2 pronto
+  const [vertical, setVertical] = useState(() => guessVertical(units));
+  const [creating, setCreating] = useState(false);
+  const accent = units[0]?.color || C.ink;
+
+  useEffect(() => { track('onboarding_shown', { source: 'onboarding' }); }, []);
+
+  const plan = vertical ? libraryPlanForCompany(vertical, units) : [];
+
+  const createAll = async () => {
+    if (creating || plan.length === 0) return;
+    setCreating(true);
+    const created = plan.map(({ model: m, unit: u, sector }) => ({
+      id: uid(),
+      unitId: u.id,
+      sector,
+      shift: m.momento === 'Abertura' ? 'Manhã' : m.momento === 'Fechamento' ? 'Tarde' : ['Manhã', 'Tarde'],
+      name: `${m.area} — ${m.momento}`,
+      deadline: m.deadline || null,
+      items: (m.items || []).map(i => ({
+        id: uid(), text: i.text, critical: !!i.critical,
+        required: !!i.required, photoRequired: !!i.photoRequired,
+      })),
+    }));
+    await onCreateTemplates(created);
+    created.forEach(t => track('template_adopted', { source: 'onboarding', unitId: t.unitId, metadata: { vertical, name: t.name } }));
+    track('onboarding_completed', { source: 'onboarding', metadata: { vertical, templates: created.length } });
+    setCreating(false);
+    setStep(2);
+  };
+
+  const skip = () => {
+    track('onboarding_skipped', { source: 'onboarding' });
+    onClose();
+    onGoToTab('gerenciar');
+  };
+
+  const Btn = ({ children, onClick, primary, disabled }) => (
+    <button onClick={onClick} disabled={disabled}
+      style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontWeight: 800, fontSize: 15, cursor: disabled ? 'default' : 'pointer',
+        background: primary ? (disabled ? C.muted : accent) : 'white',
+        color: primary ? 'white' : C.muted,
+        border: primary ? 'none' : `1px solid ${C.border}` }}>
+      {children}
+    </button>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(11,60,92,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 400, background: C.bg, borderRadius: 20, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.4)', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ background: accent, padding: '22px 24px 18px', textAlign: 'center' }}>
+          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>
+            Bem-vindo ao ZCheck
+          </p>
+          <p style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>{company?.name || 'Sua empresa'} 🎉</p>
+        </div>
+
+        <div style={{ padding: '20px 22px' }}>
+          {step === 0 && (
+            <>
+              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: 700 }}>
+                Vamos deixar sua operação pronta em 1 minuto.
+              </p>
+              <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>
+                Escolha o seu segmento para carregar os checklists prontos da nossa base — você pode ajustar tudo depois em Gerenciar.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+                {LIBRARY_VERTICALS.map(v => {
+                  const active = vertical === v.id;
+                  const count = LIBRARY_TEMPLATES.filter(t => t.vertical === v.id).length;
+                  return (
+                    <button key={v.id} onClick={() => setVertical(v.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                        background: active ? `${accent}12` : 'white',
+                        border: `1.5px solid ${active ? accent : C.border}` }}>
+                      <span style={{ fontSize: 22 }}>{VERTICAL_EMOJI[v.id] || '📋'}</span>
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: 800, color: C.ink }}>{v.label}</span>
+                        <span style={{ display: 'block', fontSize: 11.5, color: C.muted }}>{count} checklists prontos</span>
+                      </span>
+                      {active && <CheckCircle2 size={18} color={accent} />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Btn primary disabled={!vertical} onClick={() => setStep(1)}>Continuar →</Btn>
+                <Btn onClick={skip}>Começar do zero em Gerenciar</Btn>
+              </div>
+            </>
+          )}
+
+          {step === 1 && (
+            <>
+              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: 700 }}>
+                Estes checklists serão criados para você:
+              </p>
+              <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, marginBottom: 14 }}>
+                Cada um vira uma cópia sua — edite itens, prazos e orientações quando quiser.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
+                {plan.map(({ model: m, unit: u, sector }, i) => (
+                  <div key={i} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                    <p style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>{m.area} — {m.momento}</p>
+                    <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>
+                      {u.name} · setor {sector} · {(m.items || []).length} itens
+                      {(m.items || []).some(x => x.critical) ? ` · ${(m.items || []).filter(x => x.critical).length} críticos` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Btn primary disabled={creating} onClick={createAll}>
+                  {creating ? 'Criando…' : `Criar ${plan.length} checklists ✓`}
+                </Btn>
+                <Btn onClick={() => setStep(0)}>← Trocar segmento</Btn>
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <p style={{ fontSize: 48, marginBottom: 8 }}>✅</p>
+                <p style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>Checklists criados!</p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+                {[
+                  { icon: '⚙️', text: 'Ajuste itens, fotos e orientações em Gerenciar.' },
+                  { icon: '👥', text: 'Cadastre a equipe em Usuários — cada um com seu PIN.' },
+                  { icon: '☑️', text: 'Execute o primeiro checklist na aba Executar.' },
+                  { icon: '📈', text: 'Os Relatórios e a produtividade aparecem conforme a equipe executa.' },
+                ].map((s, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                    <span style={{ fontSize: 18 }}>{s.icon}</span>
+                    <p style={{ fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{s.text}</p>
+                  </div>
+                ))}
+              </div>
+              <Btn primary onClick={() => { onClose(); onGoToTab('executar'); }}>Começar a usar →</Btn>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── WelcomeScreen ── */
@@ -7273,6 +7462,7 @@ function AppInner() {
   const [showRequestsPopup, setShowRequestsPopup] = useState(false);
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showCompanyOnboarding, setShowCompanyOnboarding] = useState(false);
   const [showBriefing, setShowBriefing] = useState(false);
   const [briefingSource, setBriefingSource] = useState('auto');
 

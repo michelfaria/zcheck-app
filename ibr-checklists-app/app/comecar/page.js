@@ -263,9 +263,9 @@ export default function ComecarPage() {
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '32px 20px 100px' }}>
 
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: C.muted, marginBottom: 4, letterSpacing: '-0.03em' }}>
-            <span style={{ color: '#063C5C' }}>Z</span>chek
-          </div>
+          {/* Mesmo logo da landing, em vez do wordmark "Zchek" escrito à mão. */}
+          <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32}
+            style={{ height: 32, width: 'auto', margin: '0 auto 8px' }} />
           <p style={{ fontSize: 13, color: C.muted }}>Crie sua empresa no ZCheck</p>
         </div>
 
