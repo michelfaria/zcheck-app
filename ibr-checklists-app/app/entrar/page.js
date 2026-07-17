@@ -1,32 +1,56 @@
 'use client';
 import { useState } from 'react';
+import { supabase } from '../../lib/supabase';
 
-const EMPRESAS = {
-  'ilhabelarepublic': 'ilhabelarepublic',
-  'ibr': 'ilhabelarepublic',
+// Subdomínios legados. A slug do IBR no banco é 'ibr', mas o subdomínio em uso
+// (e já instalado como PWA / nos favoritos da equipe) é 'ilhabelarepublic'.
+// Sem este apelido, resolver pela slug mandaria o IBR para outra origem.
+const SUBDOMAIN_ALIAS = {
+  ibr: 'ilhabelarepublic',
 };
 
 export default function EntrarPage() {
   const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleEntrar(e) {
+  // Resolve a empresa pelo BANCO. Antes havia um mapa fixo que só conhecia o
+  // IBR, então nenhuma empresa criada pelo cadastro self-service conseguia
+  // entrar por aqui — o código dela sempre dava "não encontrado".
+  async function handleEntrar(e) {
     e.preventDefault();
-    const slug = codigo.trim().toLowerCase().replace(/\s+/g, '');
-    const subdominio = EMPRESAS[slug];
-    if (subdominio) {
-      window.location.href = `https://${subdominio}.zcheckapp.com/app`;
-    } else {
-      setErro('Código não encontrado. Verifique e tente novamente.');
+    const code = codigo.trim().toLowerCase().replace(/\s+/g, '');
+    if (!code) { setErro('Digite o código da sua empresa.'); return; }
+
+    setErro(''); setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('slug')
+        .eq('slug', code)
+        .eq('active', true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        setErro('Código não encontrado. Verifique e tente novamente.');
+        setLoading(false);
+        return;
+      }
+      const sub = SUBDOMAIN_ALIAS[data.slug] || data.slug;
+      window.location.href = `https://${sub}.zcheckapp.com/app`;
+    } catch {
+      setErro('Não foi possível verificar agora. Tente novamente.');
+      setLoading(false);
     }
   }
 
   return (
     <div style={{ minHeight: '100vh', background: '#F7FAFC', fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <header style={{ background: '#063C5C', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Header claro + logo horizontal, igual à landing (era faixa azul). */}
+      <header style={{ background: '#fff', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #E5E7EB' }}>
         <a href="/">
-          <img src="/zcheck-icon.png" alt="ZCheck" style={{ height: 40, width: 'auto' }} />
+          <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 32, width: 'auto' }} />
         </a>
       </header>
 
@@ -46,7 +70,7 @@ export default function EntrarPage() {
               type="text"
               value={codigo}
               onChange={e => { setCodigo(e.target.value); setErro(''); }}
-              placeholder="ex: ilhabelarepublic"
+              placeholder="ex: minha-empresa"
               autoFocus
               style={{ width: '100%', padding: '12px 14px', fontSize: 15, border: `1.5px solid ${erro ? '#DC2626' : '#E5E7EB'}`, borderRadius: 10, outline: 'none', color: '#102A3A', background: '#fff', marginBottom: erro ? 8 : 20, transition: 'border 0.2s' }}
               onFocus={e => e.target.style.borderColor = '#063C5C'}
@@ -57,9 +81,10 @@ export default function EntrarPage() {
             )}
             <button
               type="submit"
-              style={{ width: '100%', padding: '13px', background: '#063C5C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+              disabled={loading}
+              style={{ width: '100%', padding: '13px', background: loading ? '#64748B' : '#063C5C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}
             >
-              Continuar →
+              {loading ? 'Verificando...' : 'Continuar →'}
             </button>
           </form>
 
