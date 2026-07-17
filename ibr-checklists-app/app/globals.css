@@ -21,6 +21,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* iOS dá zoom automático ao focar um campo com fonte < 16px, e esse zoom
+   "desconfigura"/desloca a tela (o usuário via a página cortada ao editar). No
+   celular, forçamos >= 16px em todos os campos — mantém o visual em telas
+   maiores e elimina o zoom-on-focus. */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 body {
   margin: 0;
   padding: 0;

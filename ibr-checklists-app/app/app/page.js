@@ -8556,6 +8556,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
   const [types, setTypes] = useState([{ id: nid(), name: 'Abertura' }, { id: nid(), name: 'Fechamento' }]);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [skipLogo, setSkipLogo] = useState(false);
 
   const applySegment = (seg) => {
     setSegment(seg);
@@ -8568,6 +8569,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
   const onPickLogo = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
+    setSkipLogo(false);
     setLogoFile(f);
     const r = new FileReader(); r.onload = () => setLogoPreview(r.result); r.readAsDataURL(f);
   };
@@ -8610,7 +8612,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
       });
     } catch (e) {
       console.error('onboarding finish falhou:', e);
-      setError('Não foi possível salvar a configuração. Tente novamente.');
+      setError(`Não foi possível salvar${e?.message ? ` (${e.message})` : ''}. Tente novamente.`);
       setSaving(false);
     }
   };
@@ -8711,16 +8713,28 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Seu logo e a cor aparecem no app para a equipe.</p>
             <div>
               <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Logotipo</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                  {logoPreview ? <img src={logoPreview} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 11, color: C.muted }}>sem logo</span>}
-                </div>
-                <label style={{ padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  {logoFile ? 'Trocar imagem' : 'Escolher imagem'}
-                  <input type="file" accept="image/*" onChange={onPickLogo} style={{ display: 'none' }} />
-                </label>
-              </div>
-              <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>PNG ou JPG. Pode pular e adicionar depois.</p>
+              {!skipLogo && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                      {logoPreview ? <img src={logoPreview} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 11, color: C.muted }}>sem logo</span>}
+                    </div>
+                    <label style={{ padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                      {logoFile ? 'Trocar imagem' : 'Escolher imagem'}
+                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickLogo} style={{ display: 'none' }} />
+                    </label>
+                  </div>
+                  <p style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+                    PNG, JPG ou WebP. Recomendado <strong>quadrado, ~512×512 px</strong> (até 2&nbsp;MB).
+                  </p>
+                </>
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={skipLogo}
+                  onChange={e => { setSkipLogo(e.target.checked); if (e.target.checked) { setLogoFile(null); setLogoPreview(null); } }}
+                  style={{ width: 18, height: 18, accentColor: C.ink, cursor: 'pointer' }} />
+                <span style={{ fontSize: 13, color: C.ink }}>Continuar sem logotipo (adiciono depois)</span>
+              </label>
             </div>
             <div>
               <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8, marginTop: 8 }}>Cor principal</p>

@@ -900,7 +900,11 @@ export async function saveChecklistType(type) {
 // logo sem precisar reenviar name/slug/plan. Antes era um upsert com o objeto
 // inteiro, que zeraria colunas ausentes.
 export async function saveCompany(company) {
-  const patch = { id: company.id };
+  // UPDATE, não upsert: a empresa SEMPRE já existe aqui (o onboarding roda depois
+  // do provisionamento). Um upsert parcial tentaria o INSERT primeiro e o
+  // Postgres checa NOT NULL (name/slug) antes de resolver o ON CONFLICT — então
+  // o "Concluir" do onboarding quebrava com violação de NOT NULL.
+  const patch = {};
   if (company.name !== undefined) patch.name = company.name;
   if (company.slug !== undefined) patch.slug = company.slug;
   if (company.primaryColor !== undefined) patch.primary_color = company.primaryColor;
@@ -908,7 +912,7 @@ export async function saveCompany(company) {
   if (company.active !== undefined) patch.active = company.active;
   if (company.logoUrl !== undefined) patch.logo_url = company.logoUrl;
   if (company.onboardedAt !== undefined) patch.onboarded_at = company.onboardedAt;
-  const { error } = await db().from('companies').upsert(patch, { onConflict: 'id' });
+  const { error } = await db().from('companies').update(patch).eq('id', company.id);
   if (error) throw error;
 }
 
