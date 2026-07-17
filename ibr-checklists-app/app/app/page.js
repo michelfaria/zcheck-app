@@ -8106,17 +8106,34 @@ function AppInner() {
   // UNITS do IBR. `unitId` nulo (login recém-feito) cai na primeira da empresa.
   const unit = ACTIVE_UNITS.find(u => u.id === unitId) || ACTIVE_UNITS[0];
 
-  // Empresa sem nenhuma unidade configurada: não dá para renderizar a operação.
-  // Na Fase 2 este é o gancho do onboarding guiado; por ora, mensagem honesta.
-  if (!unit) {
+  // ── Onboarding guiado ──
+  // Empresa que ainda não concluiu a configuração (onboarded_at nulo). A gestão
+  // cai no wizard passo a passo; os demais papéis pedem para o gestor concluir.
+  const needsOnboarding = company && !company.onboarded_at;
+  if (needsOnboarding && currentUser.role === 'gestao') {
+    return (
+      <OnboardingWizard
+        company={company} currentUser={currentUser} onLogout={doLogout}
+        onDone={({ patch, units: us, sectors: ss, types: ts }) => {
+          setCompany(c => ({ ...(c || {}), ...patch }));
+          setDynamicUnits(us.map(u => ({
+            id: u.id, name: u.name, color: u.color,
+            sectors: ss.filter(s => s.unitId === u.id).map(s => s.name),
+          })));
+          setDynamicSectors(ss.map(s => ({ id: s.id, unit_id: s.unitId, name: s.name })));
+          setDynamicTypes(ts.map(t => ({ id: t.id, name: t.name })));
+          setUnitId(us[0]?.id || null);
+        }}
+      />
+    );
+  }
+  if (needsOnboarding || !unit) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, maxWidth: 380, textAlign: 'center' }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 8 }}>Configuração pendente</h2>
           <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
-            {currentUser.role === 'gestao'
-              ? 'Sua empresa ainda não tem lojas configuradas. Configure em Gerenciar para começar.'
-              : 'A empresa ainda está sendo configurada. Peça ao gestor para concluir.'}
+            A empresa ainda está sendo configurada. Peça ao gestor para concluir o primeiro acesso.
           </p>
           <button onClick={doLogout}
             style={{ padding: '10px 20px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
@@ -8463,6 +8480,233 @@ function TrialNudge({ daysLeft, onDismiss, onOpen }) {
           style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: 'none', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
           Agora não
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------- onboarding guiado do 1º acesso --------------------- */
+
+const ONB_SEGMENTS = {
+  restaurante: { label: 'Restaurante', units: ['Loja Principal'], sectors: ['Salão', 'Cozinha', 'Caixa'], types: ['Abertura', 'Intermediário', 'Fechamento'] },
+  cafe:        { label: 'Café / Bar',  units: ['Unidade 1'],     sectors: ['Salão', 'Bar', 'Caixa'], types: ['Abertura', 'Intermediário', 'Fechamento'] },
+  hotel:       { label: 'Hotel / Pousada', units: ['Hotel'],     sectors: ['Recepção', 'Governança', 'Manutenção', 'Alimentos & Bebidas'], types: ['Abertura', 'Intermediário', 'Fechamento', 'Vistoria'] },
+  varejo:      { label: 'Varejo / Loja', units: ['Loja 1'],      sectors: ['Piso de Vendas', 'Estoque', 'Caixa'], types: ['Abertura', 'Conferência', 'Fechamento'] },
+  padaria:     { label: 'Padaria',     units: ['Padaria'],       sectors: ['Atendimento', 'Produção', 'Caixa'], types: ['Abertura', 'Produção Diária', 'Fechamento'] },
+  personalizado: { label: 'Personalizado', units: ['Unidade 1'], sectors: [], types: ['Abertura', 'Fechamento'] },
+};
+const ONB_COLORS = ['#063C5C', '#1A6B4A', '#C6842A', '#7B3FA0', '#B5451B', '#1E7A6E', '#8B4513', '#2C5F8A'];
+const nid = () => Math.random().toString(36).slice(2, 10);
+const ONB_STEPS = ['Segmento', 'Lojas', 'Setores', 'Checklists', 'Marca'];
+
+// Onboarding do primeiro acesso: o gestor configura a operação (lojas, setores,
+// tipos de checklist), sobe o logo e escolhe a cor. Ao concluir, grava tudo e
+// marca companies.onboarded_at — a partir daí o app abre normalmente.
+function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [segment, setSegment] = useState('');
+  const [primaryColor, setPrimaryColor] = useState(company?.primary_color || '#063C5C');
+  const [units, setUnits] = useState([{ id: nid(), name: '', color: '#063C5C' }]);
+  const [sectors, setSectors] = useState([]);
+  const [types, setTypes] = useState([{ id: nid(), name: 'Abertura' }, { id: nid(), name: 'Fechamento' }]);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
+
+  const applySegment = (seg) => {
+    setSegment(seg);
+    const t = ONB_SEGMENTS[seg]; if (!t) return;
+    const us = (t.units.length ? t.units : ['Unidade 1']).map(n => ({ id: nid(), name: n, color: primaryColor }));
+    setUnits(us);
+    setSectors(t.sectors.map(s => ({ id: nid(), name: s, unitId: us[0].id })));
+    setTypes((t.types.length ? t.types : ['Abertura', 'Fechamento']).map(n => ({ id: nid(), name: n })));
+  };
+
+  const onPickLogo = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    setLogoFile(f);
+    const r = new FileReader(); r.onload = () => setLogoPreview(r.result); r.readAsDataURL(f);
+  };
+
+  const next = () => {
+    setError('');
+    if (step === 1 && !segment) { setError('Escolha um segmento para começar.'); return; }
+    if (step === 2 && !units.some(u => u.name.trim())) { setError('Adicione ao menos uma loja.'); return; }
+    if (step === 4 && !types.some(t => t.name.trim())) { setError('Adicione ao menos um tipo de checklist.'); return; }
+    if (step === 5) { finish(); return; }
+    setStep(s => s + 1);
+  };
+
+  const finish = async () => {
+    setSaving(true); setError('');
+    try {
+      const cid = company.id;
+      const now = new Date().toISOString();
+      const m = await import('../../lib/sync');
+
+      const unitRows = units.filter(u => u.name.trim()).map((u, i) => ({ id: u.id, name: u.name.trim(), color: u.color, sortOrder: i }));
+      for (const u of unitRows) await m.saveUnit({ id: u.id, companyId: cid, name: u.name, color: u.color, sortOrder: u.sortOrder });
+
+      const sectorRows = sectors.filter(s => s.name.trim()).map((s, i) => ({ id: s.id, unitId: s.unitId || unitRows[0]?.id, name: s.name.trim(), sortOrder: i }));
+      for (const s of sectorRows) await m.saveSector({ id: s.id, companyId: cid, unitId: s.unitId, name: s.name, sortOrder: s.sortOrder });
+
+      const typeRows = types.filter(t => t.name.trim()).map((t, i) => ({ id: t.id, name: t.name.trim(), sortOrder: i }));
+      for (const t of typeRows) await m.saveChecklistType({ id: t.id, companyId: cid, name: t.name, sortOrder: t.sortOrder });
+
+      let logoUrl;
+      if (logoFile) {
+        try { logoUrl = await m.uploadCompanyLogo(cid, logoFile); }
+        catch (e) { console.warn('upload do logo falhou (segue sem logo):', e.message); }
+      }
+      await m.saveCompany({ id: cid, primaryColor, logoUrl, onboardedAt: now });
+
+      onDone({
+        patch: { onboarded_at: now, primary_color: primaryColor, logo_url: logoUrl ?? company.logo_url ?? null },
+        units: unitRows, sectors: sectorRows, types: typeRows,
+      });
+    } catch (e) {
+      console.error('onboarding finish falhou:', e);
+      setError('Não foi possível salvar a configuração. Tente novamente.');
+      setSaving(false);
+    }
+  };
+
+  const fieldRow = { display: 'flex', alignItems: 'center', gap: 8 };
+  const inputStyle = { flex: 1, fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' };
+  const addBtn = { width: '100%', padding: '12px', borderRadius: 10, border: `2px dashed ${C.border}`, fontWeight: 700, color: C.muted, background: 'none', cursor: 'pointer', fontSize: 14 };
+  const rm = (setter) => (id) => setter(prev => prev.length > 1 ? prev.filter(x => x.id !== id) : prev);
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', padding: '28px 20px 96px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 22 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
+          <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Vamos configurar <strong>{company.name}</strong> em poucos passos.</p>
+        </div>
+
+        <div className="flex items-start justify-between" style={{ marginBottom: 24, gap: 4 }}>
+          {ONB_STEPS.map((label, i) => (
+            <Step key={i} n={i + 1} label={label} active={step === i + 1} done={step > i + 1} />
+          ))}
+        </div>
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Qual o seu segmento?</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Pré-carregamos lojas, setores e checklists típicos — você ajusta tudo nos próximos passos.</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(ONB_SEGMENTS).map(([id, t]) => (
+                <button key={id} onClick={() => applySegment(id)}
+                  style={{ padding: '10px 16px', borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                    background: segment === id ? C.ink : 'white', color: segment === id ? 'white' : C.muted,
+                    border: `1.5px solid ${segment === id ? C.ink : C.border}` }}>{t.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Cada loja ou unidade operacional que você acompanha.</p>
+            <div className="space-y-3">
+              {units.map((u, i) => (
+                <div key={u.id} style={fieldRow}>
+                  <input type="color" value={u.color} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, color: e.target.value } : x))}
+                    style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                  <input value={u.name} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, name: e.target.value } : x))} placeholder={`Loja ${i + 1}`} style={inputStyle} />
+                  {units.length > 1 && <button onClick={() => rm(setUnits)(u.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 18 }}>×</button>}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setUnits(p => [...p, { id: nid(), name: '', color: primaryColor }])} style={addBtn}>+ Adicionar loja</button>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Setores</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>As áreas da operação (ex: Salão, Cozinha, Recepção). Opcional.</p>
+            <div className="space-y-3">
+              {sectors.map((s, i) => (
+                <div key={s.id} style={fieldRow}>
+                  {units.filter(u => u.name.trim()).length > 1 && (
+                    <select value={s.unitId || ''} onChange={e => setSectors(prev => prev.map(x => x.id === s.id ? { ...x, unitId: e.target.value } : x))}
+                      style={{ fontSize: 12, fontWeight: 700, color: C.ink, background: 'white', padding: '12px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, flexShrink: 0 }}>
+                      {units.filter(u => u.name.trim()).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  )}
+                  <input value={s.name} onChange={e => setSectors(prev => prev.map(x => x.id === s.id ? { ...x, name: e.target.value } : x))} placeholder={`Setor ${i + 1}`} style={inputStyle} />
+                  <button onClick={() => setSectors(prev => prev.filter(x => x.id !== s.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 18 }}>×</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setSectors(p => [...p, { id: nid(), name: '', unitId: units.filter(u => u.name.trim())[0]?.id }])} style={addBtn}>+ Adicionar setor</button>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-4">
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Tipos de checklist</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Ex: Abertura, Fechamento, Vistoria. Você cria os itens de cada um depois, em Gerenciar.</p>
+            <div className="space-y-3">
+              {types.map((t, i) => (
+                <div key={t.id} style={fieldRow}>
+                  <input value={t.name} onChange={e => setTypes(prev => prev.map(x => x.id === t.id ? { ...x, name: e.target.value } : x))} placeholder={`Tipo ${i + 1}`} style={inputStyle} />
+                  {types.length > 1 && <button onClick={() => rm(setTypes)(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 18 }}>×</button>}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setTypes(p => [...p, { id: nid(), name: '' }])} style={addBtn}>+ Adicionar tipo</button>
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="space-y-4">
+            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Marca da empresa</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Seu logo e a cor aparecem no app para a equipe.</p>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Logotipo</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                  {logoPreview ? <img src={logoPreview} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 11, color: C.muted }}>sem logo</span>}
+                </div>
+                <label style={{ padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  {logoFile ? 'Trocar imagem' : 'Escolher imagem'}
+                  <input type="file" accept="image/*" onChange={onPickLogo} style={{ display: 'none' }} />
+                </label>
+              </div>
+              <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>PNG ou JPG. Pode pular e adicionar depois.</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8, marginTop: 8 }}>Cor principal</p>
+              <div className="flex flex-wrap gap-2">
+                {ONB_COLORS.map(c => (
+                  <button key={c} onClick={() => setPrimaryColor(c)}
+                    style={{ width: 36, height: 36, borderRadius: '50%', background: c, border: primaryColor === c ? `3px solid ${C.ink}` : '3px solid transparent', cursor: 'pointer', outline: primaryColor === c ? '2px solid white' : 'none', outlineOffset: -4 }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginTop: 16, textAlign: 'center' }}>{error}</p>}
+
+        <div className="flex gap-3" style={{ marginTop: 30 }}>
+          {step > 1 && !saving && (
+            <button onClick={() => { setError(''); setStep(s => s - 1); }}
+              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>← Voltar</button>
+          )}
+          <button onClick={next} disabled={saving}
+            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 800, color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
+            {saving ? 'Salvando...' : step === 5 ? 'Concluir configuração →' : 'Próximo →'}
+          </button>
+        </div>
+
+        <p style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 20 }}>
+          <button onClick={onLogout} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', textDecoration: 'underline', fontSize: 11 }}>Sair</button>
+        </p>
       </div>
     </div>
   );

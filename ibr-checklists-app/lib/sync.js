@@ -896,11 +896,33 @@ export async function saveChecklistType(type) {
   if (error) throw error;
 }
 
+// Atualiza SÓ os campos enviados (patch), para o onboarding poder gravar cor e
+// logo sem precisar reenviar name/slug/plan. Antes era um upsert com o objeto
+// inteiro, que zeraria colunas ausentes.
 export async function saveCompany(company) {
-  const { error } = await db().from('companies').upsert({
-    id: company.id, name: company.name, slug: company.slug,
-    primary_color: company.primaryColor, plan: company.plan ?? 'trial',
-    active: company.active ?? true,
-  }, { onConflict: 'id' });
+  const patch = { id: company.id };
+  if (company.name !== undefined) patch.name = company.name;
+  if (company.slug !== undefined) patch.slug = company.slug;
+  if (company.primaryColor !== undefined) patch.primary_color = company.primaryColor;
+  if (company.plan !== undefined) patch.plan = company.plan;
+  if (company.active !== undefined) patch.active = company.active;
+  if (company.logoUrl !== undefined) patch.logo_url = company.logoUrl;
+  if (company.onboardedAt !== undefined) patch.onboarded_at = company.onboardedAt;
+  const { error } = await db().from('companies').upsert(patch, { onConflict: 'id' });
   if (error) throw error;
+}
+
+// Sobe o logotipo da empresa para o bucket público `company-logos` sob
+// `{companyId}/logo-<ts>.<ext>` (a policy exige que a 1ª pasta === company_id do
+// token) e devolve a URL pública. NÃO grava em companies — quem chama decide
+// quando persistir via saveCompany({ id, logoUrl }).
+export async function uploadCompanyLogo(companyId, file) {
+  const ext = (file.name?.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+  const path = `${companyId}/logo-${Date.now()}.${ext}`;
+  const { error } = await db().storage
+    .from('company-logos')
+    .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
+  if (error) throw error;
+  const { data } = db().storage.from('company-logos').getPublicUrl(path);
+  return data.publicUrl;
 }
