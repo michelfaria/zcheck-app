@@ -3872,6 +3872,12 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
     } catch (err) { console.error(err); alert('Não foi possível subir o logo. Tente uma imagem PNG/JPG menor.'); }
     finally { setHeaderLogoBusy(false); }
   };
+  const onRemoveHeaderLogo = async () => {
+    if (!confirm('Remover o logo da empresa?')) return;
+    setHeaderLogoBusy(true);
+    try { await onSaveCompany?.({ logoUrl: null }); showToast('Logo removido.'); }
+    catch (e) { console.error(e); } finally { setHeaderLogoBusy(false); }
+  };
   const [gerenciarTab, setGerenciarTab] = useState('editar'); // 'editar' | 'novo' | 'estrutura'
   const [checklistType, setChecklistType] = useState(null);
   const [sector, setSector] = useState(null);
@@ -4279,6 +4285,12 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
           🖼️ {headerLogoBusy ? 'Enviando…' : (company?.logo_url ? 'Trocar logo' : 'Subir logo')}
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickHeaderLogo} disabled={headerLogoBusy} style={{ display: 'none' }} />
         </label>
+        {company?.logo_url && !headerLogoBusy && (
+          <button onClick={onRemoveHeaderLogo}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.critical, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
+            Remover logo
+          </button>
+        )}
       </div>
       {showImport && (
         <ImportCsvModal company={company} allUnits={allUnits}
