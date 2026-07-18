@@ -4049,6 +4049,13 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         ))}
       </div>
 
+      {/* Importar CSV — movido do Usuários para cá (é gestão de checklists). */}
+      <div style={{ padding: '10px 16px 0' }}>
+        <a href="/importar" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, textDecoration: 'none', border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white' }}>
+          📥 Importar checklists via CSV
+        </a>
+      </div>
+
       {/* ── ABA: EDITAR ── */}
       {gerenciarTab === 'editar' && (
         <div className="p-4 space-y-3">
@@ -5273,20 +5280,8 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
         </div>
       </Ticket>
 
-      {/* Ferramentas de gestão */}
-      <Eyebrow>Ferramentas</Eyebrow>
-      <div className="flex gap-2">
-        <a href="/importar" style={{ flex: 1, padding: '12px 14px', borderRadius: 10, background: 'white', border: `1.5px solid ${C.border}`, textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 18 }}>📥</span>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.ink }}>Importar CSV</span>
-          <span style={{ fontSize: 11, color: C.muted }}>Checklists em lote</span>
-        </a>
-        <a href="/onboarding" style={{ flex: 1, padding: '12px 14px', borderRadius: 10, background: 'white', border: `1.5px solid ${C.border}`, textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 18 }}>🏢</span>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.ink }}>Nova empresa</span>
-          <span style={{ fontSize: 11, color: C.muted }}>Wizard de onboarding</span>
-        </a>
-      </div>
+      {/* "Nova empresa" saiu daqui (fluxo interno da equipe, não do gestor do
+          tenant). "Importar CSV" foi para a aba Gerenciar. */}
       {/* Users list */}
       <Eyebrow>Usuários e níveis de acesso</Eyebrow>
       <div className="space-y-2">
@@ -5735,24 +5730,30 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       )}
       {/* ── HEADER ── Fundo claro + logo horizontal, igual à landing (era uma
           faixa azul #063C5C com o ícone). */}
+      {/* Cabeçalho: ÚNICO logo da tela. Logo próprio da empresa quando existe;
+          senão o ZCheck, que leva à landing ao ser clicado. O logo antigo da
+          linha de baixo foi removido (duplicava). */}
       <div style={{
         width: '100%', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '0 16px',
         height: 64, background: 'white', borderBottom: `1px solid ${C.border}`,
         marginBottom: 0,
       }}>
-        <img
-          src="/zcheck-logo.png"
-          alt="ZCheck"
-          style={{ display: 'block', height: 32, width: 'auto', objectFit: 'contain' }}
-        />
+        {(company?.logo_url || company?.id === 'ibr') ? (
+          <img src={companyLogoSrc(company)} alt={company?.name || 'Empresa'}
+            style={{ display: 'block', maxHeight: 36, maxWidth: 160, width: 'auto', objectFit: 'contain' }} />
+        ) : (
+          <a href="https://zcheckapp.com" aria-label="ZCheck" style={{ display: 'block' }}>
+            <img src="/zcheck-logo.png" alt="ZCheck"
+              style={{ display: 'block', height: 32, width: 'auto', objectFit: 'contain' }} />
+          </a>
+        )}
       </div>
 
       <div className="px-4 pt-3 pb-2">
-      {/* Linha: empresa + data + usuário */}
+      {/* Linha: data + usuário (o logo saiu daqui — ficava duplicado) */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <img src={companyLogoSrc(company)} alt={company?.name || 'ZCheck'} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
           <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: 600 }}>{dateLabel}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
