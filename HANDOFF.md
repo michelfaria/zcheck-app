@@ -170,9 +170,11 @@ ponto estável, aguardando o usuário retestar a `kalit`.
 3. **Pix para plano ANUAL à vista** — pedido registrado na memória
    `pix-plano-anual.md`. Assinatura recorrente do MP só aceita cartão; Pix é
    avulso. Criar um fluxo separado de cobrança única por Pix (anual).
-4. **Otimizar latência do OTP** (usuário reportou ~1 min de "aguarde"): a rota
-   `request-otp` envia pela Brevo síncrono no cold start. Avaliar responder antes
-   e enfileirar o envio, ou aquecer a função.
+4. ~~**Otimizar latência do OTP**~~ — **FEITO em 18/07 (commit `086e2bd`)**: a rota
+   `request-otp` agora roda Turnstile + rate-limits em paralelo e envia o e-mail
+   pela Brevo DEPOIS de responder (`after()` do Next 15); se a Brevo recusar, a
+   linha de `signups` é apagada em background (não conta no rate-limit, código
+   fica inverificável). Deployado; falta o usuário confirmar que o e-mail chega.
 5. Backlog antigo (do handoff anterior): assistente de IA por texto (precisa
    `ANTHROPIC_API_KEY` + tabela `ai_usage`); extração do monólito de ~8300 linhas
    + smoke test em CI (não há testes nem CI hoje); verificação server-side do
