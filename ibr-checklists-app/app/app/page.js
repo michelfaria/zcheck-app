@@ -5730,30 +5730,27 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       )}
       {/* ── HEADER ── Fundo claro + logo horizontal, igual à landing (era uma
           faixa azul #063C5C com o ícone). */}
-      {/* Cabeçalho: ÚNICO logo da tela. Logo próprio da empresa quando existe;
-          senão o ZCheck, que leva à landing ao ser clicado. O logo antigo da
-          linha de baixo foi removido (duplicava). */}
+      {/* Cabeçalho: logo do ZCheck FIXO, com link para a landing. */}
       <div style={{
         width: '100%', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '0 16px',
         height: 64, background: 'white', borderBottom: `1px solid ${C.border}`,
         marginBottom: 0,
       }}>
-        {(company?.logo_url || company?.id === 'ibr') ? (
-          <img src={companyLogoSrc(company)} alt={company?.name || 'Empresa'}
-            style={{ display: 'block', maxHeight: 36, maxWidth: 160, width: 'auto', objectFit: 'contain' }} />
-        ) : (
-          <a href="https://zcheckapp.com" aria-label="ZCheck" style={{ display: 'block' }}>
-            <img src="/zcheck-logo.png" alt="ZCheck"
-              style={{ display: 'block', height: 32, width: 'auto', objectFit: 'contain' }} />
-          </a>
-        )}
+        <a href="https://zcheckapp.com" aria-label="ZCheck" style={{ display: 'block' }}>
+          <img src="/zcheck-logo.png" alt="ZCheck"
+            style={{ display: 'block', height: 32, width: 'auto', objectFit: 'contain' }} />
+        </a>
       </div>
 
       <div className="px-4 pt-3 pb-2">
-      {/* Linha: data + usuário (o logo saiu daqui — ficava duplicado) */}
+      {/* Linha de data: logo PRÓPRIO da empresa quando existe; senão, nada
+          (sem fallback do ZCheck aqui — ele já está no cabeçalho). */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
+          {company?.logo_url && (
+            <img src={company.logo_url} alt={company?.name || 'Empresa'} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
+          )}
           <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: 600 }}>{dateLabel}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
