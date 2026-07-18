@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { verifyTurnstile } from '../../../../lib/turnstile';
 import { sendOtpEmail } from '../../../../lib/email';
 import {
@@ -10,12 +11,15 @@ export const dynamic = 'force-dynamic';
 
 // Passo 1 do cadastro self-service: valida o e-mail + Turnstile, aplica
 // rate-limit, gera o OTP e o envia pela Brevo. O código sai daqui só por e-mail;
-// no banco fica apenas o hash.
+// no banco fica apenas o hash. O envio acontece DEPOIS da resposta (after()):
+// a Brevo era o item mais lento do caminho crítico e o usuário ficava preso
+// no "Aguarde...". Se o envio falhar, a linha é apagada em background — o
+// código não verificável some e não conta contra o rate-limit.
 export async function POST(request) {
   const supabase = serviceClient();
   const pepperOk = hashSecret('probe') !== null;
-  if (!supabase || !pepperOk) {
-    console.error('service_role ou SUPABASE_JWT_SECRET ausente — request-otp desabilitada.');
+  if (!supabase || !pepperOk || !process.env.BREVO_API_KEY) {
+    console.error('service_role, SUPABASE_JWT_SECRET ou BREVO_API_KEY ausente — request-otp desabilitada.');
     return json({ ok: false, reason: 'server_misconfigured' }, 500);
   }
 
@@ -27,39 +31,30 @@ export async function POST(request) {
 
   const ip = clientIp(request);
 
-  // Turnstile server-side. null = secret ausente em produção (misconfigurado);
-  // false = token inválido. Fora de produção, a test key sempre aprova.
-  const captchaOk = await verifyTurnstile(body?.turnstileToken, ip);
+  // Turnstile e rate-limits são independentes — rodam em paralelo (as counts
+  // são só leitura, não têm efeito colateral se o captcha reprovar).
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const countSignups = (col, val) => supabase
+    .from('signups').select('id', { count: 'exact', head: true })
+    .eq(col, val).gte('created_at', since);
+
+  const [captchaOk, byEmail, byIp] = await Promise.all([
+    // null = secret ausente em produção (misconfigurado); false = token inválido.
+    // Fora de produção, a test key sempre aprova.
+    verifyTurnstile(body?.turnstileToken, ip),
+    countSignups('email', email),
+    ip ? countSignups('ip', ip) : Promise.resolve({ count: 0, error: null }),
+  ]);
+
   if (captchaOk === null) return json({ ok: false, reason: 'server_misconfigured' }, 500);
   if (!captchaOk) return json({ ok: false, reason: 'captcha_failed' }, 400);
 
-  // Rate-limit: por e-mail e por IP na última hora.
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-
-  const { count: emailCount, error: e1 } = await supabase
-    .from('signups').select('id', { count: 'exact', head: true })
-    .eq('email', email).gte('created_at', since);
-  if (e1) { console.error('rate-limit email falhou:', e1.message); return json({ ok: false, reason: 'network_error' }, 502); }
-  if ((emailCount ?? 0) >= MAX_OTP_PER_EMAIL_HOUR) return json({ ok: false, reason: 'rate_limited' }, 429);
-
-  if (ip) {
-    const { count: ipCount, error: e2 } = await supabase
-      .from('signups').select('id', { count: 'exact', head: true })
-      .eq('ip', ip).gte('created_at', since);
-    if (e2) { console.error('rate-limit ip falhou:', e2.message); return json({ ok: false, reason: 'network_error' }, 502); }
-    if ((ipCount ?? 0) >= MAX_OTP_PER_IP_HOUR) return json({ ok: false, reason: 'rate_limited' }, 429);
-  }
+  if (byEmail.error) { console.error('rate-limit email falhou:', byEmail.error.message); return json({ ok: false, reason: 'network_error' }, 502); }
+  if ((byEmail.count ?? 0) >= MAX_OTP_PER_EMAIL_HOUR) return json({ ok: false, reason: 'rate_limited' }, 429);
+  if (byIp.error) { console.error('rate-limit ip falhou:', byIp.error.message); return json({ ok: false, reason: 'network_error' }, 502); }
+  if ((byIp.count ?? 0) >= MAX_OTP_PER_IP_HOUR) return json({ ok: false, reason: 'rate_limited' }, 429);
 
   const code = sixDigitCode();
-
-  // Envia ANTES de gravar: se a Brevo recusar, não deixamos uma linha que
-  // conta contra o rate-limit de um e-mail que nunca recebeu nada.
-  const sent = await sendOtpEmail(email, code);
-  if (!sent.ok) {
-    const status = sent.reason === 'not_configured' ? 500 : 502;
-    const reason = sent.reason === 'not_configured' ? 'server_misconfigured' : 'send_failed';
-    return json({ ok: false, reason }, status);
-  }
 
   const { data, error } = await supabase
     .from('signups')
@@ -76,6 +71,15 @@ export async function POST(request) {
     console.error('insert signup falhou:', error.message);
     return json({ ok: false, reason: 'network_error' }, 502);
   }
+
+  after(async () => {
+    const sent = await sendOtpEmail(email, code);
+    if (!sent.ok) {
+      console.error('envio do OTP falhou pós-resposta; apagando signup', data.id, sent.reason);
+      const { error: delError } = await supabase.from('signups').delete().eq('id', data.id);
+      if (delError) console.error('não consegui apagar o signup órfão:', delError.message);
+    }
+  });
 
   return json({ ok: true, signup_id: data.id }, 200);
 }
