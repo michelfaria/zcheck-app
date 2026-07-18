@@ -159,9 +159,15 @@ ponto estável, aguardando o usuário retestar a `kalit`.
 ## 5. Próximos passos (ordenados)
 
 1. **Retestar na `kalit`** (empresa de teste; gestora **Lili**; subdomínio
-   `kalit.zcheckapp.com/app`) com reload: editor de checklist (foto+dias),
-   Gerenciar (editar/remover loja + logo), Importar CSV (sem deslogar). Confirmar
-   com o usuário antes de qualquer coisa nova.
+   `kalit.zcheckapp.com/app`). O reteste de 18/07 gerou 6 correções, TODAS
+   entregues no commit `589ba8a` (deployado): (a) CSV com os mesmos campos do
+   editor — colunas novas `foto`, `dias`, `orientacao`, `video`, `link`, parser
+   respeita aspas; (b) botão "Criar checklist" lista o que falta em vez de ficar
+   cinza mudo; (c) biblioteca 12→26 modelos; (d) toast verde fixo em TODA criação
+   (tipo/loja/setor/checklist/logo/importação) — componente `ToastHost` +
+   `showToast()`; (e) botão Subir/Trocar logo ao lado do Importar CSV no
+   Gerenciar; (f) `Ticket` com barra lateral sólida de 4px (antes 10px
+   perfurada). **Aguardando novo reteste da Lili.**
 2. **Go-live real do Mercado Pago:** hoje o `MP_ACCESS_TOKEN` é de **TESTE**.
    Trocar por credenciais de **produção** no Vercel + criar o **webhook de
    produção** no painel MP (mesma URL `https://zcheckapp.com/api/billing/webhook`,
