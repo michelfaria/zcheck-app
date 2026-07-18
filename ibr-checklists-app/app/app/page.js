@@ -3662,7 +3662,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 
 /* ----------------------------- gerenciar view -------------------------------- */
 
-function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, company }) {
+function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, company }) {
   const [gerenciarTab, setGerenciarTab] = useState('editar'); // 'editar' | 'novo' | 'estrutura'
   const [checklistType, setChecklistType] = useState(null);
   const [sector, setSector] = useState(null);
@@ -4460,18 +4460,49 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
       {/* ── ABA: ESTRUTURA ── */}
       {gerenciarTab === 'estrutura' && (
         <EstruturView unit={unit} allUnits={allUnits} checklistTypes={checklistTypes} company={company}
-          onSaveUnit={onSaveUnit} onSaveSector={onSaveSector} onSaveChecklistType={onSaveChecklistType} />
+          onSaveUnit={onSaveUnit} onSaveSector={onSaveSector} onSaveChecklistType={onSaveChecklistType}
+          onDeleteUnit={onDeleteUnit} onSaveCompany={onSaveCompany} />
       )}
     </div>
   );
 }
 
 /* ─────────────────── Estrutura View ─────────────────── */
-function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onSaveSector, onSaveChecklistType }) {
+function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany }) {
   const [tab, setTab] = useState('tipos'); // 'tipos' | 'lojas' | 'setores'
   const [newTypeName, setNewTypeName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitColor, setNewUnitColor] = useState('#063C5C');
+  const [editUnit, setEditUnit] = useState(null); // { id, name, color } em edição
+  const [logoBusy, setLogoBusy] = useState(false);
+
+  const saveEditUnit = async () => {
+    if (!editUnit?.name.trim()) return;
+    setSaving(true);
+    try { await onSaveUnit?.({ id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(), color: editUnit.color }); flash('Loja atualizada!'); setEditUnit(null); }
+    catch (e) { console.error(e); } finally { setSaving(false); }
+  };
+  const removeUnit = async (u) => {
+    if (!confirm(`Remover a loja "${u.name}"? Os checklists dela deixam de aparecer.`)) return;
+    try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { console.error(e); }
+  };
+  const onPickCompanyLogo = async (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    setLogoBusy(true);
+    try {
+      const m = await import('../../lib/sync');
+      const url = await m.uploadCompanyLogo(company.id, f);
+      await onSaveCompany?.({ logoUrl: url });
+      flash('Logo atualizado!');
+    } catch (err) { console.error(err); alert('Não foi possível subir o logo. Tente uma imagem PNG/JPG menor.'); }
+    finally { setLogoBusy(false); }
+  };
+  const removeCompanyLogo = async () => {
+    if (!confirm('Remover o logo da empresa?')) return;
+    setLogoBusy(true);
+    try { await onSaveCompany?.({ logoUrl: null }); flash('Logo removido.'); }
+    catch (e) { console.error(e); } finally { setLogoBusy(false); }
+  };
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorUnit, setNewSectorUnit] = useState(unit.id);
   const [saving, setSaving] = useState(false);
@@ -4550,13 +4581,45 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
       {/* Lojas */}
       {tab === 'lojas' && (
         <div className="space-y-3">
+          {/* Logo da empresa — subir/trocar/remover aqui (além do onboarding). */}
+          <Eyebrow>Logo da empresa</Eyebrow>
+          <div className="flex items-center gap-3" style={{ marginBottom: 4 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+              {company?.logo_url ? <img src={company.logo_url} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 10, color: C.muted }}>sem logo</span>}
+            </div>
+            <label style={{ padding: '9px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: logoBusy ? 'default' : 'pointer', opacity: logoBusy ? 0.6 : 1 }}>
+              {logoBusy ? '...' : (company?.logo_url ? 'Trocar' : 'Subir logo')}
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickCompanyLogo} disabled={logoBusy} style={{ display: 'none' }} />
+            </label>
+            {company?.logo_url && !logoBusy && (
+              <button onClick={removeCompanyLogo} style={{ background: 'none', border: 'none', color: C.critical, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Remover</button>
+            )}
+          </div>
+
           <Eyebrow>Lojas</Eyebrow>
           {(allUnits || UNITS).map(u => (
             <Ticket key={u.id} accent={u.color}>
-              <div className="flex items-center gap-2">
-                <div style={{ width: 12, height: 12, borderRadius: '50%', background: u.color, flexShrink: 0 }} />
-                <p style={{ fontWeight: 700, color: C.ink }}>{u.name}</p>
-              </div>
+              {editUnit?.id === u.id ? (
+                <div className="flex items-center gap-2">
+                  <input type="color" value={editUnit.color} onChange={e => setEditUnit(p => ({ ...p, color: e.target.value }))}
+                    style={{ width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                  <input value={editUnit.name} onChange={e => setEditUnit(p => ({ ...p, name: e.target.value }))}
+                    className="flex-1 px-2 py-2" style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', minWidth: 0 }} />
+                  <button onClick={saveEditUnit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>Salvar</button>
+                  <button onClick={() => setEditUnit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: u.color, flexShrink: 0 }} />
+                  <p style={{ fontWeight: 700, color: C.ink, flex: 1, minWidth: 0 }}>{u.name}</p>
+                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color })} title="Editar"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><Settings2 size={16} /></button>
+                  {(allUnits || UNITS).length > 1 && (
+                    <button onClick={() => removeUnit(u)} title="Remover"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.critical, flexShrink: 0 }}><Trash2 size={15} /></button>
+                  )}
+                </div>
+              )}
             </Ticket>
           ))}
           <div className="flex gap-2">
@@ -8387,6 +8450,13 @@ function AppInner() {
             onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
             onSaveChecklistType={async t => { await import('../../lib/sync').then(m => m.saveChecklistType(t)); setDynamicTypes(prev => [...prev.filter(x => x.id !== t.id), t]); }}
+            onDeleteUnit={async id => { await import('../../lib/sync').then(m => m.deleteUnit(id)); setDynamicUnits(prev => prev.filter(u => u.id !== id)); if (unitId === id) setUnitId(null); }}
+            onSaveCompany={async patch => {
+              await import('../../lib/sync').then(m => m.saveCompany({ id: company.id, ...patch }));
+              setCompany(c => ({ ...(c || {}),
+                ...(patch.logoUrl !== undefined ? { logo_url: patch.logoUrl } : {}),
+                ...(patch.primaryColor !== undefined ? { primary_color: patch.primaryColor } : {}) }));
+            }}
           />
         )}
         {activeTab === 'usuarios' && (

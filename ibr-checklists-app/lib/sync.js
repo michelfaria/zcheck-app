@@ -880,6 +880,16 @@ export async function saveUnit(unit) {
   if (error) throw error;
 }
 
+export async function deleteUnit(id) {
+  const { error } = await db().from('units').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteSector(id) {
+  const { error } = await db().from('sectors').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function saveSector(sector) {
   const { error } = await db().from('sectors').upsert({
     id: sector.id, company_id: sector.companyId, unit_id: sector.unitId,
