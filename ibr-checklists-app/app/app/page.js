@@ -1039,16 +1039,42 @@ function Eyebrow({ children }) {
 }
 
 function Ticket({ accent, children, style, ...rest }) {
+  // Barra lateral sólida e fina, igual à dos cards do briefing do dia
+  // (a versão anterior tinha 10px com círculos perfurados — pedido de 18/07).
   return (
     <div {...rest} style={{ display: 'flex', background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden', ...style }}>
-      <div
-        style={{
-          width: 10, flexShrink: 0, background: accent,
-          backgroundImage: `radial-gradient(circle, ${C.bg} 2.5px, transparent 2.5px)`,
-          backgroundSize: '100% 14px', backgroundPosition: 'center top',
-        }}
-      />
+      <div style={{ width: 4, flexShrink: 0, background: accent }} />
       <div style={{ flex: 1, padding: 12, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+/* Toast global de confirmação — visível de qualquer scroll/tela, ao contrário
+   das mensagens inline que ficavam fora da área visível. Qualquer fluxo chama
+   showToast('Loja criada!') e o ToastHost (montado no App) exibe por 2,6s. */
+function showToast(msg) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('zcheck-toast', { detail: msg }));
+}
+
+function ToastHost() {
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    let t;
+    const h = (e) => { setMsg(e.detail); clearTimeout(t); t = setTimeout(() => setMsg(''), 2600); };
+    window.addEventListener('zcheck-toast', h);
+    return () => { window.removeEventListener('zcheck-toast', h); clearTimeout(t); };
+  }, []);
+  if (!msg) return null;
+  return (
+    <div style={{
+      position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+      bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', zIndex: 400,
+      display: 'flex', alignItems: 'center', gap: 8, maxWidth: 'calc(100vw - 32px)',
+      background: '#E8F4F0', border: `1px solid ${C.success}`, borderRadius: R.pill,
+      padding: '10px 16px', boxShadow: '0 4px 16px rgba(8,20,30,0.18)',
+    }}>
+      <CheckCircle2 size={16} color={C.success} style={{ flexShrink: 0 }} />
+      <p style={{ fontSize: 13, fontWeight: 700, color: C.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</p>
     </div>
   );
 }
@@ -3664,21 +3690,51 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 
 /* ── Importar CSV — DENTRO do app (usa a sessão atual; antes era uma página
    separada que perdia o token e caía no login ao "Voltar"). ── */
-const CSV_IMPORT_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,deadline
-checklist,Abertura,Loja 1,Salão,,,08:00
-tarefa,Abertura,Loja 1,Salão,Limpar mesas e cadeiras,nao,
-tarefa,Abertura,Loja 1,Salão,Verificar caixas,sim,
-checklist,Fechamento,Loja 1,Salão,,,18:00
-tarefa,Fechamento,Loja 1,Salão,Fechar caixas,sim,`;
+/* O CSV cobre os MESMOS campos do editor "+ Novo" (pedido 18/07): critico,
+   foto (exigir foto na execução), dias (da semana), orientacao, video, link.
+   Só fotos de referência e documentos ficam para anexar no app. */
+const CSV_IMPORT_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,foto,dias,orientacao,video,link,deadline
+checklist,Abertura,Loja 1,Salão,,,,,,,,08:00
+tarefa,Abertura,Loja 1,Salão,Limpar mesas e cadeiras,nao,sim,,"Conferir rodapés, cantos e vãos",,,
+tarefa,Abertura,Loja 1,Salão,Verificar caixas,sim,,seg qua sex,,,,
+checklist,Fechamento,Loja 1,Salão,,,,,,,,18:00
+tarefa,Fechamento,Loja 1,Salão,Fechar caixas,sim,,,,https://youtube.com/watch?v=exemplo,,`;
+
+// Divide uma linha CSV respeitando aspas ("..." com "" escapado) — orientação
+// e links podem conter vírgula, e o Excel/Sheets exporta assim.
+function splitCsvLine(line) {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(v => v.trim());
+}
+
+const CSV_DAY_CODES = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+// "seg qua sex" (ou "seg;qua;sex") → [1,3,5]; vazio/nada reconhecido → null (= todos os dias).
+function parseCsvDays(s) {
+  if (!s) return null;
+  const norm = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const days = [...new Set(norm.split(/[^a-z]+/).map(t => CSV_DAY_CODES[t]).filter(d => d !== undefined))].sort((a, b) => a - b);
+  return days.length ? days : null;
+}
 
 function parseImportCSV(text) {
   const lines = (text || '').trim().split('\n').filter(l => l.trim());
   if (!lines.length) return { error: 'Cole ou carregue um CSV.' };
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  // Cabeçalhos sem acento ("orientação" vale como "orientacao").
+  const headers = splitCsvLine(lines[0]).map(h => h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
   const missing = ['tipo', 'checklist', 'loja', 'setor'].filter(r => !headers.includes(r));
   if (missing.length) return { error: `Colunas obrigatórias ausentes: ${missing.join(', ')}` };
   const rows = lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim());
+    const vals = splitCsvLine(line);
     return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
   });
   const checklists = []; let current = null;
@@ -3688,7 +3744,13 @@ function parseImportCSV(text) {
       current = { id: uid(), name: row.checklist.trim(), unitName: row.loja.trim(), sector: row.setor.trim(), deadline: row.deadline?.trim() || null, items: [] };
       checklists.push(current);
     } else if (row.tipo === 'tarefa' && current && row.tarefa?.trim()) {
-      current.items.push({ id: uid(), text: row.tarefa.trim(), critical: row.critico?.toLowerCase() === 'sim' });
+      const item = { id: uid(), text: row.tarefa.trim(), critical: row.critico?.toLowerCase() === 'sim' };
+      if (row.foto?.toLowerCase() === 'sim') item.photoRequired = true;
+      const days = parseCsvDays(row.dias); if (days) item.recurrence = days;
+      if (row.orientacao) item.description = row.orientacao;
+      if (row.video) item.refVideo = row.video;
+      if (row.link) item.refLink = row.link;
+      current.items.push(item);
     }
   }
   if (!checklists.length) return { error: 'Nenhum checklist encontrado. Confira o formato.' };
@@ -3739,7 +3801,7 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
         if (!error) created++; else skipped++;
       }
       setResult({ created, skipped });
-      if (created > 0) await onImported?.();
+      if (created > 0) { await onImported?.(); showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`); }
     } catch (e) { console.error(e); setResult({ error: 'Erro na importação. Tente novamente.' }); }
     setImporting(false);
   };
@@ -3753,7 +3815,10 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={20} /></button>
         </div>
         <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>
-          Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, deadline</strong>. A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
+          Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, foto, dias, orientacao, video, link, deadline</strong>.
+          A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
+          {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot; (vazio = todos os dias);
+          texto com vírgula vai entre aspas. Fotos de referência e documentos você anexa depois, no app.
         </p>
         <div className="flex gap-2" style={{ marginBottom: 10 }}>
           <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
@@ -3792,6 +3857,21 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
 
 function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company }) {
   const [showImport, setShowImport] = useState(false);
+  const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
+
+  // Mesmo fluxo do logo em Estrutura > Lojas, acessível direto do cabeçalho.
+  const onPickHeaderLogo = async (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    e.target.value = '';
+    setHeaderLogoBusy(true);
+    try {
+      const m = await import('../../lib/sync');
+      const url = await m.uploadCompanyLogo(company.id, f);
+      await onSaveCompany?.({ logoUrl: url });
+      showToast('Logo atualizado!');
+    } catch (err) { console.error(err); alert('Não foi possível subir o logo. Tente uma imagem PNG/JPG menor.'); }
+    finally { setHeaderLogoBusy(false); }
+  };
   const [gerenciarTab, setGerenciarTab] = useState('editar'); // 'editar' | 'novo' | 'estrutura'
   const [checklistType, setChecklistType] = useState(null);
   const [sector, setSector] = useState(null);
@@ -3830,6 +3910,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
   const flashSuccess = () => {
     setNovoSuccess(true);
     setTimeout(() => setNovoSuccess(false), 4000);
+    showToast('Checklist criado! Ajuste em "Checklists".');
   };
 
   // Adotar = cópia profunda com ids novos. Nunca vínculo com o modelo-mãe:
@@ -3888,7 +3969,15 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
   const novoUnitObj = (allUnits || [UNITS.find(u => u.id === novoUnit)]).find(u => u.id === novoUnit) || unit;
   const novoSectorOptions = novoUnitObj?.sectors || unit.sectors;
 
+  // O que ainda falta para poder criar — vira dica visível sob o botão.
+  const novoMissing = [];
+  if (!novoType) novoMissing.push('escolher o tipo de checklist');
+  else if (novoType === '__custom__' && !novoCustomType.trim()) novoMissing.push('dar nome ao tipo livre');
+  if (!novoSector) novoMissing.push('escolher o setor');
+  if (novoItems.filter(i => i.text.trim()).length === 0) novoMissing.push('descrever pelo menos uma tarefa');
+
   const handleSaveNovo = () => {
+    if (novoMissing.length) return;
     const typeName = novoType === '__custom__' ? novoCustomType.trim() : (availableTypes.find(t => t.id === novoType)?.name || novoType);
     if (!typeName || !novoSector || novoItems.filter(i => i.text.trim()).length === 0) return;
     setNovoSaving(true);
@@ -3905,6 +3994,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
     };
     onSaveTemplates([...templates, newTpl]);
     setNovoSuccess(true);
+    showToast('Checklist criado! Ajuste em "Checklists".');
     setNovoName(''); setNovoType(''); setNovoCustomType('');
     setNovoSector(''); setNovoDeadline('');
     setNovoItems([{ id: uid(), text: '', critical: false, required: false, photoRequired: false, recurrence: null }]);
@@ -4179,11 +4269,16 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         ))}
       </div>
 
-      {/* Importar CSV — abre DENTRO do app (usa a sessão atual, sem logoff). */}
-      <div style={{ padding: '10px 16px 0' }}>
+      {/* Importar CSV — abre DENTRO do app (usa a sessão atual, sem logoff).
+          Ao lado, atalho fixo para subir/trocar o logo da empresa (pedido 18/07). */}
+      <div className="flex flex-wrap gap-2" style={{ padding: '10px 16px 0' }}>
         <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
           📥 Importar checklists via CSV
         </button>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: headerLogoBusy ? 'default' : 'pointer', opacity: headerLogoBusy ? 0.6 : 1 }}>
+          🖼️ {headerLogoBusy ? 'Enviando…' : (company?.logo_url ? 'Trocar logo' : 'Subir logo')}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickHeaderLogo} disabled={headerLogoBusy} style={{ display: 'none' }} />
+        </label>
       </div>
       {showImport && (
         <ImportCsvModal company={company} allUnits={allUnits}
@@ -4580,13 +4675,20 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
             </div>
           </div>
 
-          <button onClick={handleSaveNovo} disabled={novoSaving || !novoType || !novoSector || novoItems.filter(i => i.text.trim()).length === 0}
+          {/* O botão nunca é um beco sem saída: enquanto faltar algo, ele mostra
+              exatamente o que falta (antes ficava cinza sem explicação). */}
+          <button onClick={handleSaveNovo} disabled={novoSaving}
             className="w-full py-3 font-display"
             style={{ borderRadius: 8, border: 'none', fontWeight: 800, color: 'white',
-              background: (!novoType || !novoSector || novoItems.filter(i => i.text.trim()).length === 0) ? C.muted : unit.color,
-              cursor: (!novoType || !novoSector) ? 'not-allowed' : 'pointer' }}>
-            Criar checklist
+              background: novoMissing.length ? C.muted : unit.color,
+              cursor: 'pointer' }}>
+            {novoSaving ? 'Criando…' : 'Criar checklist'}
           </button>
+          {novoMissing.length > 0 && (
+            <p style={{ fontSize: 12, fontWeight: 700, color: C.critical, textAlign: 'center', lineHeight: 1.5, marginTop: -6 }}>
+              Para criar, falta: {novoMissing.join(' · ')}.
+            </p>
+          )}
         </div>
       )}
 
@@ -4641,7 +4743,9 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
 
-  const flash = msg => { setSuccess(msg); setTimeout(() => setSuccess(''), 2500); };
+  // Além do bloco inline (que some do viewport quando a página está rolada),
+  // dispara o toast fixo global — pedido do reteste de 18/07.
+  const flash = msg => { setSuccess(msg); setTimeout(() => setSuccess(''), 2500); showToast(msg); };
 
   const addType = async () => {
     if (!newTypeName.trim()) return;
@@ -9010,6 +9114,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AppInner />
+      <ToastHost />
     </ErrorBoundary>
   );
 }
