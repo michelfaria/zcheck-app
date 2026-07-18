@@ -6284,16 +6284,21 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
         input, textarea, button, select { font-family: inherit; }
       `}</style>
 
-      {/* Cabeçalho — único logo da tela: o da empresa (ou ZCheck como fallback).
-          Antes havia dois (ZCheck no header + o da empresa no corpo), que
-          apareciam idênticos quando a empresa ainda não tinha logo próprio. */}
+      {/* Cabeçalho — SEMPRE o logo do ZCheck (padrão do produto, 18/07). O logo
+          da empresa, quando existir, aparece acima do seletor de usuário. */}
       <div style={{ width: '100%', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <img src={companyLogoSrc(initialCompany)} alt={initialCompany?.name || 'ZCheck'} style={{ maxHeight: 44, maxWidth: 180, width: 'auto', objectFit: 'contain' }} />
+        <img src="/zcheck-logo.png" alt="ZCheck" style={{ maxHeight: 44, maxWidth: 180, width: 'auto', objectFit: 'contain' }} />
       </div>
 
       <div className="flex flex-col items-center" style={{ flex: 1, justifyContent: 'center', padding: '24px 24px 80px' }}>
 
         <div className="w-full" style={{ maxWidth: 320 }}>
+          {companyLogoSrc(initialCompany) !== '/zcheck-logo.png' && (
+            <div className="flex justify-center" style={{ marginBottom: 24 }}>
+              <img src={companyLogoSrc(initialCompany)} alt={initialCompany?.name || 'Logo da empresa'}
+                style={{ maxHeight: 72, maxWidth: 220, width: 'auto', objectFit: 'contain' }} />
+            </div>
+          )}
           <Eyebrow>Usuário</Eyebrow>
           <select
             value={selectedId}
@@ -8680,11 +8685,14 @@ function AppInner() {
           <div style={{ padding: '10px 14px 0' }}>
             {/* Badge = há sinal que você ainda não viu. É como sinal de meio de
                 dia chega ao gestor sem takeover (anti-fadiga). */}
-            <button onClick={openBriefing}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: R.md, border: `1.5px solid ${briefingHasSignal && !briefingSeenToday ? C.warning : C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer' }}>
+            {/* Destaque deliberado (pedido 18/07): é a porta de entrada do dia do
+                gestor — botão cheio, não mais um contorno discreto. */}
+            <button onClick={openBriefing} className="font-display"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 12px', borderRadius: R.md, border: 'none', background: C.ink, color: 'white', fontWeight: W.semibold, fontSize: T.bodySm, cursor: 'pointer', boxShadow: '0 2px 10px rgba(8,20,30,0.18)' }}>
+              <BarChart3 size={17} color="white" />
               Ver briefing do dia
               {briefingHasSignal && !briefingSeenToday && (
-                <span aria-label="Há novidades no briefing" style={{ width: 8, height: 8, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
+                <span aria-label="Há novidades no briefing" style={{ width: 9, height: 9, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
               )}
             </button>
           </div>
