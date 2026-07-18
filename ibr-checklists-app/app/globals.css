@@ -31,6 +31,23 @@
   }
 }
 
+/* Campos e botões dentro de linhas flex têm `min-width: auto` por padrão (a
+   largura do conteúdo/atributo size do input, ~180px), então NÃO encolhem e a
+   linha transborda a tela — a página inteira ficava mais larga que o viewport e
+   deslocada. Zerar o min-width deixa os controles encolherem. Vale para todas as
+   telas do app. */
+input, select, textarea, button {
+  min-width: 0;
+}
+
+/* Cinturão de segurança: nenhuma página rola na horizontal. `clip` corta o
+   excesso SEM virar contêiner de rolagem (não quebra o header sticky do app,
+   diferente de `overflow: hidden`). */
+html, body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   padding: 0;

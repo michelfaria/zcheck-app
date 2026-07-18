@@ -8618,7 +8618,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
   };
 
   const fieldRow = { display: 'flex', alignItems: 'center', gap: 8 };
-  const inputStyle = { flex: 1, fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' };
+  const inputStyle = { flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' };
   const addBtn = { width: '100%', padding: '12px', borderRadius: 10, border: `2px dashed ${C.border}`, fontWeight: 700, color: C.muted, background: 'none', cursor: 'pointer', fontSize: 14 };
   const rm = (setter) => (id) => setter(prev => prev.length > 1 ? prev.filter(x => x.id !== id) : prev);
 
