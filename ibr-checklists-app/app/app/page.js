@@ -6057,7 +6057,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour }) {
+function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -6068,6 +6068,16 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
     <header className="sticky top-0 z-10" style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
       {showDataChange && (
         <UserDataChangeModal currentUser={currentUser} onClose={() => setShowDataChange(false)} />
+      )}
+      {/* Contador de teste — DENTRO do header sticky para ficar sempre visível
+          (antes era irmão do header e sumia no scroll — pedido 18/07). */}
+      {trialDaysLeft != null && (
+        <button onClick={onOpenPlans}
+          style={{ width: '100%', border: 'none', cursor: 'pointer', background: C.ink, color: 'white',
+            fontSize: 12.5, fontWeight: 700, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <span>Teste grátis · {trialDaysLeft} {trialDaysLeft === 1 ? 'dia restante' : 'dias restantes'}</span>
+          <span style={{ textDecoration: 'underline' }}>Assinar</span>
+        </button>
       )}
       {!isOnline && (
         <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.critical, color: 'white' }}>
@@ -8033,14 +8043,16 @@ function AppInner() {
     catch (_) { setBriefingSeenToday(false); }
   }, [currentUser?.id]);
 
-  // Nudge de assinatura durante o teste: só gestão, uma vez por dia (dispensável),
-  // com um respiro após entrar para não competir com o briefing.
+  // Popup de assinatura durante o teste: só gestão, TODA entrada no app
+  // (pedido 18/07 — antes era 1×/dia), uma vez por login, com um pequeno
+  // respiro para o app terminar de montar. Direciona para a escolha de plano.
+  const nudgeShownFor = useRef(null);
   useEffect(() => {
     if (!currentUser || currentUser.role !== 'gestao' || !company) return;
     if (billingState(company).state !== 'trialing') return;
-    const key = `zc_trial_nudge_${todayStr()}`;
-    try { if (localStorage.getItem(key)) return; } catch (_) {}
-    const t = setTimeout(() => setShowNudge(true), 5000);
+    if (nudgeShownFor.current === currentUser.id) return;
+    nudgeShownFor.current = currentUser.id;
+    const t = setTimeout(() => setShowNudge(true), 1200);
     return () => clearTimeout(t);
   }, [currentUser?.id, company]);
 
@@ -8474,10 +8486,7 @@ function AppInner() {
     return <SubscribePanel mode="block" company={company} currentUser={currentUser} onLogout={doLogout} />;
   }
 
-  const dismissNudge = () => {
-    setShowNudge(false);
-    try { localStorage.setItem(`zc_trial_nudge_${todayStr()}`, '1'); } catch (_) {}
-  };
+  const dismissNudge = () => setShowNudge(false);
 
   const allowedTabs = ROLE_TABS[currentUser.role];
   const canSwitchUnit = currentUser.unitId == null;
@@ -8535,16 +8544,6 @@ function AppInner() {
         input, textarea, button { font-family: inherit; }
       `}</style>
 
-      {/* Contador de teste — só gestão, abre o painel de planos */}
-      {billing.state === 'trialing' && currentUser.role === 'gestao' && (
-        <button onClick={() => setShowPlans(true)}
-          style={{ width: '100%', border: 'none', cursor: 'pointer', background: C.ink, color: 'white',
-            fontSize: 12.5, fontWeight: 700, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <span>Teste grátis · {billing.daysLeft} {billing.daysLeft === 1 ? 'dia restante' : 'dias restantes'}</span>
-          <span style={{ textDecoration: 'underline' }}>Assinar</span>
-        </button>
-      )}
-
       {showNudge && (
         <TrialNudge daysLeft={billing.daysLeft} onDismiss={dismissNudge}
           onOpen={() => { dismissNudge(); setShowPlans(true); }} />
@@ -8566,6 +8565,8 @@ function AppInner() {
         }}
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
+        trialDaysLeft={billing.state === 'trialing' && currentUser.role === 'gestao' ? billing.daysLeft : null}
+        onOpenPlans={() => setShowPlans(true)}
         company={company}
         onStartTour={() => { setShowBriefing(false); setShowTour(true); }}
       />
