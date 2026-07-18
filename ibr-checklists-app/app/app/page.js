@@ -3662,7 +3662,136 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 
 /* ----------------------------- gerenciar view -------------------------------- */
 
-function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, company }) {
+/* ── Importar CSV — DENTRO do app (usa a sessão atual; antes era uma página
+   separada que perdia o token e caía no login ao "Voltar"). ── */
+const CSV_IMPORT_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,deadline
+checklist,Abertura,Loja 1,Salão,,,08:00
+tarefa,Abertura,Loja 1,Salão,Limpar mesas e cadeiras,nao,
+tarefa,Abertura,Loja 1,Salão,Verificar caixas,sim,
+checklist,Fechamento,Loja 1,Salão,,,18:00
+tarefa,Fechamento,Loja 1,Salão,Fechar caixas,sim,`;
+
+function parseImportCSV(text) {
+  const lines = (text || '').trim().split('\n').filter(l => l.trim());
+  if (!lines.length) return { error: 'Cole ou carregue um CSV.' };
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const missing = ['tipo', 'checklist', 'loja', 'setor'].filter(r => !headers.includes(r));
+  if (missing.length) return { error: `Colunas obrigatórias ausentes: ${missing.join(', ')}` };
+  const rows = lines.slice(1).map(line => {
+    const vals = line.split(',').map(v => v.trim());
+    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+  });
+  const checklists = []; let current = null;
+  for (const row of rows) {
+    if (!row.tipo || !row.checklist || !row.loja || !row.setor) continue;
+    if (row.tipo === 'checklist') {
+      current = { id: uid(), name: row.checklist.trim(), unitName: row.loja.trim(), sector: row.setor.trim(), deadline: row.deadline?.trim() || null, items: [] };
+      checklists.push(current);
+    } else if (row.tipo === 'tarefa' && current && row.tarefa?.trim()) {
+      current.items.push({ id: uid(), text: row.tarefa.trim(), critical: row.critico?.toLowerCase() === 'sim' });
+    }
+  }
+  if (!checklists.length) return { error: 'Nenhum checklist encontrado. Confira o formato.' };
+  return { checklists };
+}
+
+function ImportCsvModal({ company, allUnits, onClose, onImported }) {
+  const [csvText, setCsvText] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const parse = (text) => {
+    setError(''); setResult(null); setPreview(null);
+    const r = parseImportCSV(text ?? csvText);
+    if (r.error) { setError(r.error); return; }
+    setPreview(r.checklists);
+  };
+  const onFile = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const rd = new FileReader(); rd.onload = ev => { setCsvText(ev.target.result); parse(ev.target.result); }; rd.readAsText(f, 'UTF-8');
+  };
+  const baixarModelo = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([CSV_IMPORT_TEMPLATE], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'zcheck-modelo.csv'; a.click();
+  };
+  const doImport = async () => {
+    if (!preview?.length) return;
+    setImporting(true); setResult(null);
+    try {
+      const { authedSupabase } = await import('../../lib/supabase');
+      const db = authedSupabase();
+      const unitMap = Object.fromEntries((allUnits || []).map(u => [u.name.toLowerCase(), u.id]));
+      let created = 0, skipped = 0;
+      for (const tpl of preview) {
+        const unitId = unitMap[tpl.unitName.toLowerCase()];
+        if (!unitId) { skipped++; continue; }
+        const { data: existing } = await db.from('templates').select('id')
+          .eq('company_id', company.id).eq('unit_id', unitId).eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
+        if (existing?.length) { skipped++; continue; }
+        const { error } = await db.from('templates').insert({
+          id: tpl.id, company_id: company.id, unit_id: unitId, sector: tpl.sector, name: tpl.name,
+          shift: tpl.name.toLowerCase().includes('abertura') ? 'Manhã' : tpl.name.toLowerCase().includes('fechamento') ? 'Tarde' : ['Manhã', 'Tarde'],
+          deadline: tpl.deadline, items: tpl.items,
+        });
+        if (!error) created++; else skipped++;
+      }
+      setResult({ created, skipped });
+      if (created > 0) await onImported?.();
+    } catch (e) { console.error(e); setResult({ error: 'Erro na importação. Tente novamente.' }); }
+    setImporting(false);
+  };
+
+  const knownUnits = (allUnits || []).map(u => u.name).join(', ');
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
+      <div style={{ width: '100%', maxWidth: 560, background: C.bg, borderRadius: '16px 16px 0 0', maxHeight: '92vh', overflowY: 'auto', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>Importar checklists via CSV</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={20} /></button>
+        </div>
+        <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>
+          Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, deadline</strong>. A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
+        </p>
+        <div className="flex gap-2" style={{ marginBottom: 10 }}>
+          <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            Carregar arquivo <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: 'none' }} />
+          </label>
+          <button onClick={baixarModelo} style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Baixar modelo</button>
+        </div>
+        <textarea value={csvText} onChange={e => { setCsvText(e.target.value); }} onBlur={() => csvText && parse(csvText)}
+          placeholder="…ou cole o CSV aqui" rows={6}
+          style={{ width: '100%', fontSize: 13, fontFamily: 'ui-monospace, monospace', color: C.ink, background: 'white', padding: 12, border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
+        {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginBottom: 10 }}>{error}</p>}
+        {preview && !result && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{preview.length} checklist(s) a importar:</p>
+            {preview.map(p => (
+              <p key={p.id} style={{ fontSize: 12, color: C.muted }}>• {p.name} · {p.unitName} / {p.sector} · {p.items.length} itens</p>
+            ))}
+          </div>
+        )}
+        {result && (
+          <p style={{ fontSize: 13, fontWeight: 700, color: result.error ? C.critical : C.success, marginBottom: 10 }}>
+            {result.error || `Importados: ${result.created}. Ignorados (já existiam ou loja não encontrada): ${result.skipped}.`}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
+          <button onClick={doImport} disabled={!preview?.length || importing}
+            style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!preview?.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!preview?.length || importing) ? 'not-allowed' : 'pointer' }}>
+            {importing ? 'Importando…' : 'Importar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company }) {
+  const [showImport, setShowImport] = useState(false);
   const [gerenciarTab, setGerenciarTab] = useState('editar'); // 'editar' | 'novo' | 'estrutura'
   const [checklistType, setChecklistType] = useState(null);
   const [sector, setSector] = useState(null);
@@ -4050,12 +4179,16 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         ))}
       </div>
 
-      {/* Importar CSV — movido do Usuários para cá (é gestão de checklists). */}
+      {/* Importar CSV — abre DENTRO do app (usa a sessão atual, sem logoff). */}
       <div style={{ padding: '10px 16px 0' }}>
-        <a href="/importar" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, textDecoration: 'none', border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white' }}>
+        <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
           📥 Importar checklists via CSV
-        </a>
+        </button>
       </div>
+      {showImport && (
+        <ImportCsvModal company={company} allUnits={allUnits}
+          onClose={() => setShowImport(false)} onImported={onReloadTemplates} />
+      )}
 
       {/* ── ABA: EDITAR ── */}
       {gerenciarTab === 'editar' && (
@@ -8450,6 +8583,7 @@ function AppInner() {
             onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
             onSaveChecklistType={async t => { await import('../../lib/sync').then(m => m.saveChecklistType(t)); setDynamicTypes(prev => [...prev.filter(x => x.id !== t.id), t]); }}
+            onReloadTemplates={async () => { const m = await import('../../lib/sync'); const tpl = await m.fetchTemplates([]); setTemplates(tpl); }}
             onDeleteUnit={async id => { await import('../../lib/sync').then(m => m.deleteUnit(id)); setDynamicUnits(prev => prev.filter(u => u.id !== id)); if (unitId === id) setUnitId(null); }}
             onSaveCompany={async patch => {
               await import('../../lib/sync').then(m => m.saveCompany({ id: company.id, ...patch }));
