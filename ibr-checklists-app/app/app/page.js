@@ -4614,10 +4614,17 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                         <input type="checkbox" checked={!!item.critical} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
                         ⚠
                       </label>
-                      <button onClick={() => setNovoOptsOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
-                        title="Exigir foto e dias da semana"
+                      {/* Foto e dias são funcionalidades independentes (pedido 18/07):
+                          a câmera liga/desliga a exigência direto; o calendário abre só os dias. */}
+                      <button onClick={() => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, photoRequired: !i.photoRequired } : i))}
+                        title="Exigir foto na execução"
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
-                        <Camera size={15} color={item.photoRequired || (item.recurrence && item.recurrence.length) || novoOptsOpen[item.id] ? unit.color : C.mutedLight} />
+                        <Camera size={15} color={item.photoRequired ? unit.color : C.mutedLight} />
+                      </button>
+                      <button onClick={() => setNovoOptsOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
+                        title="Dias da semana"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+                        <Calendar size={15} color={(item.recurrence && item.recurrence.length) || novoOptsOpen[item.id] ? unit.color : C.mutedLight} />
                       </button>
                       <button onClick={() => setNovoGuidanceOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
                         title="Orientação: instruções, fotos, POP, vídeo"
@@ -4629,32 +4636,31 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                         <X size={14} color={C.muted} />
                       </button>
                     </div>
+                    {item.photoRequired && (
+                      <p style={{ marginTop: 4, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: unit.color }}>
+                        📷 Exigir foto na execução
+                      </p>
+                    )}
                     {novoOptsOpen[item.id] && (
                       <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}` }}>
-                        <label className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.photoRequired ? unit.color : C.muted }}>
-                          <input type="checkbox" checked={!!item.photoRequired} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, photoRequired: e.target.checked } : i))} />
-                          Exigir foto na execução
-                        </label>
-                        <div className="mt-2">
-                          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
-                            {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
-                          </p>
-                          <div className="flex gap-1">
-                            {WEEKDAY_LABELS.map((label, day) => {
-                              const rec = item.recurrence || [];
-                              const active = rec.includes(day);
-                              return (
-                                <button key={day}
-                                  onClick={() => {
-                                    const next = active ? rec.filter(d => d !== day) : [...rec, day].sort((a, b) => a - b);
-                                    setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, recurrence: next.length ? next : null } : i));
-                                  }}
-                                  style={{ width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: 800, border: `1px solid ${C.border}`, background: active ? unit.color : 'white', color: active ? C.bg : C.muted }}>
-                                  {label[0]}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
+                          {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
+                        </p>
+                        <div className="flex gap-1">
+                          {WEEKDAY_LABELS.map((label, day) => {
+                            const rec = item.recurrence || [];
+                            const active = rec.includes(day);
+                            return (
+                              <button key={day}
+                                onClick={() => {
+                                  const next = active ? rec.filter(d => d !== day) : [...rec, day].sort((a, b) => a - b);
+                                  setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, recurrence: next.length ? next : null } : i));
+                                }}
+                                style={{ width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: 800, border: `1px solid ${C.border}`, background: active ? unit.color : 'white', color: active ? C.bg : C.muted }}>
+                                {label[0]}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
