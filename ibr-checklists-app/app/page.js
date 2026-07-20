@@ -112,6 +112,7 @@ export default function LandingPage() {
             <a className="lp-nav-links" href="#por-que" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Por que ZCheck</a>
             <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
             <a className="lp-nav-links" href="#preco" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Preço</a>
+            <a className="lp-nav-links" href="/ajuda" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Ajuda</a>
             <a className="lp-nav-links" href="/entrar" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Entrar</a>
             <a href={SIGNUP} className="lp-btn lp-btn-primary" style={{ padding: '10px 20px', fontSize: T.bodySm }}>Começar grátis</a>
           </nav>
@@ -387,7 +388,7 @@ export default function LandingPage() {
           <img src="/zcheck-logo.png" alt="ZCheck" width={104} height={26} style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
           <span style={{ fontSize: T.label, color: 'rgba(255,255,255,0.7)' }}>© 2026 INGO Administração de Negócios Ltda. CNPJ 34.164.735/0001-72</span>
           <nav style={{ display: 'flex', gap: 18 }} aria-label="Links legais">
-            {[['Termos', '/termos'], ['Privacidade', '/privacidade'], ['Entrar', '/entrar'], ['Contato', WA]].map(([l, h]) => (
+            {[['Termos', '/termos'], ['Privacidade', '/privacidade'], ['Ajuda', '/ajuda'], ['Entrar', '/entrar'], ['Contato', WA]].map(([l, h]) => (
               <a key={l} href={h} style={{ fontSize: T.label, color: 'rgba(255,255,255,0.65)', textDecoration: 'none', fontWeight: W.medium }}>{l}</a>
             ))}
           </nav>
