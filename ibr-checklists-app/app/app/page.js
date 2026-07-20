@@ -850,14 +850,16 @@ function collaboratorStats(filtered) {
 // `units` vem do chamador (as unidades da empresa logada). O default UNITS
 // preserva o IBR; sem o parâmetro, toda empresa resolvia nomes de loja pela
 // tabela do IBR e caía no fallback do id cru.
-function groupStats(filtered, groupBy, units = UNITS) {
+// `types` idem: os tipos de checklist da empresa (ACTIVE_TYPES); o default
+// preserva o IBR, mas tipos personalizados só agrupam certo com o parâmetro.
+function groupStats(filtered, groupBy, units = UNITS, types = CHECKLIST_TYPE_ORDER) {
   const map = new Map();
   filtered.forEach(c => {
     let key;
     if (groupBy === 'loja') key = units.find(u => u.id === c.unitId)?.name || c.unitId;
     else if (groupBy === 'setor') key = c.sector;
     else if (groupBy === 'tipo') {
-      const ct = CHECKLIST_TYPE_ORDER.find(ct => ct.match({ name: c.templateName }));
+      const ct = types.find(ct => ct.match({ name: c.templateName }));
       key = ct ? ct.label : c.templateName;
     }
     else key = c.shift || '—';
@@ -1747,7 +1749,7 @@ const CHECKLIST_TYPE_ORDER = [
   { key: 'fechamento',   label: 'Fechamento',    match: t => t.name.toLowerCase().includes('fechamento') },
 ];
 
-function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion }) {
+function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
   const today = todayStr();
@@ -1778,8 +1780,10 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
   }
 
   // Level 2: praças for the selected checklist type
-  if (checklistType) {
-    const typeConfig = CHECKLIST_TYPE_ORDER.find(c => c.key === checklistType);
+  // Se o tipo sumiu de activeTypes (ex.: tipos dinâmicos chegaram do banco
+  // depois da seleção), cai para o nível 1 em vez de quebrar.
+  const typeConfig = checklistType ? activeTypes.find(c => c.key === checklistType) : null;
+  if (typeConfig) {
     // Get all templates for this type in visible sectors
     const typeTemplates = templates.filter(t =>
       t.unitId === unit.id &&
@@ -1837,7 +1841,7 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
     <div className="p-4 space-y-3">
       <Eyebrow>{unit.name}</Eyebrow>
       <div className="space-y-2">
-        {CHECKLIST_TYPE_ORDER.map(({ key, label, match }) => {
+        {activeTypes.map(({ key, label, match }) => {
           const list = templates.filter(t =>
             t.unitId === unit.id && match(t) && applicableItems(t, today).length > 0 &&
             sectors.includes(t.sector)
@@ -1846,7 +1850,8 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
           const total = list.length;
           const overdue = list.filter(t => templateStatus(t, completions, today) === 'overdue').length;
           if (total === 0) return null;
-          const unitLabel = unit.id === 'ibr1' ? 'praça' : 'setor';
+          const isPraca = unit.id === 'ibr1'; // praça (fem.) · setor (masc.)
+          const unitLabel = isPraca ? (total > 1 ? 'praças' : 'praça') : (total > 1 ? 'setores' : 'setor');
           return (
             <button key={key} onClick={() => setChecklistType(key)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
               <Ticket accent={unit.color}>
@@ -1854,8 +1859,8 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
                   <div style={{ minWidth: 0 }}>
                     <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{label}</p>
                     <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                      {done}/{total} {unitLabel}{total > 1 ? 's' : ''} concluída{total > 1 ? 's' : ''}
-                      {overdue > 0 && <span style={{ color: C.critical, fontWeight: 800 }}> · {overdue} atrasada{overdue > 1 ? 's' : ''}</span>}
+                      {done}/{total} {unitLabel} concluíd{isPraca ? 'a' : 'o'}{total > 1 ? 's' : ''}
+                      {overdue > 0 && <span style={{ color: C.critical, fontWeight: 800 }}> · {overdue} atrasad{isPraca ? 'a' : 'o'}{overdue > 1 ? 's' : ''}</span>}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1911,7 +1916,7 @@ function PhotoModal({ recordId, item, onClose }) {
   );
 }
 
-function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users }) {
+function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const sectorRows = useSectors(); // linhas de sectors da empresa logada
   const today = todayStr();
@@ -2330,7 +2335,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
 
           {/* Per-type breakdown */}
           <Eyebrow>Por tipo de checklist</Eyebrow>
-          {CHECKLIST_TYPE_ORDER.map(({ key, label, match }) => {
+          {activeTypes.map(({ key, label, match }) => {
             const typeTemplates = templates.filter(t =>
               t.unitId === unit.id && match(t) &&
               sectors.includes(t.sector) &&
@@ -2619,7 +2624,7 @@ function ProdRow({ entry, accent }) {
   );
 }
 
-function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits }) {
+function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [period, setPeriod] = useState('7d');
@@ -2674,7 +2679,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
     : (units.find(u => u.id === filterUnitId)?.sectors || []).map(s => ({ id: s, label: s }));
 
   const collaborators = collaboratorStats(filtered);
-  const groups = groupStats(filtered, groupBy, units);
+  const groups = groupStats(filtered, groupBy, units, activeTypes);
 
   // ── Produtividade ──────────────────────────────────────────────────────────
   // O baseline é sempre a EMPRESA inteira no período (sem filtro de loja/setor),
@@ -3855,7 +3860,7 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
   );
 }
 
-function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company }) {
+function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [showImport, setShowImport] = useState(false);
   const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
 
@@ -4133,7 +4138,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
   // Level 3: list of templates for the selected type + sector
   if (checklistType && sector) {
-    const typeConfig = CHECKLIST_TYPE_ORDER.find(c => c.key === checklistType);
+    const typeConfig = activeTypes.find(c => c.key === checklistType);
     const list = templates
       .filter(t => t.unitId === unit.id && t.sector === sector && typeConfig.match(t))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -4188,7 +4193,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
   // Level 2: sectors — grouped same as Executar (Salão then Cozinha for IBR1)
   if (checklistType) {
-    const typeConfig = CHECKLIST_TYPE_ORDER.find(c => c.key === checklistType);
+    const typeConfig = activeTypes.find(c => c.key === checklistType);
     const isIbr1 = unit.id === 'ibr1';
     return (
       <div className="p-4 space-y-3">
@@ -4302,7 +4307,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         <div className="p-4 space-y-3">
           <Eyebrow>Gerenciar — {unit.name}</Eyebrow>
           <div className="space-y-2">
-            {CHECKLIST_TYPE_ORDER.map(({ key, label, match }) => {
+            {activeTypes.map(({ key, label, match }) => {
               const total = templates.filter(t => t.unitId === unit.id && match(t)).length;
               return (
                 <button key={key} onClick={() => { setChecklistType(key); setSector(null); }} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
@@ -8699,18 +8704,18 @@ function AppInner() {
           </div>
         )}
         {activeTab === 'executar' && (
-          <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} />
+          <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
-        {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} />}
+        {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />}
         {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} />}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} />
+          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
             closures={closures} onSaveClosures={saveClosures} canSeeAllUnits={canSwitchUnit}
-            checklistTypes={dynamicTypes} allUnits={ACTIVE_UNITS} company={company}
+            checklistTypes={dynamicTypes} activeTypes={ACTIVE_TYPES} allUnits={ACTIVE_UNITS} company={company}
             onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
             onSaveChecklistType={async t => { await import('../../lib/sync').then(m => m.saveChecklistType(t)); setDynamicTypes(prev => [...prev.filter(x => x.id !== t.id), t]); }}
