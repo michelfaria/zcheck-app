@@ -28,6 +28,25 @@ const BATCH_SIZE = 100;   // eventos por insert
 let session = {};
 let flushTimer = null;
 
+// Identificador de sessão de navegação: um por aba/visita (sessionStorage),
+// gerado no cliente. Permite reconstruir jornadas (funil, abandono) no /admin
+// sem depender de login — o app_opened de antes do PIN já carrega o mesmo id.
+const SESSION_ID_KEY = 'zc_session_id';
+function getSessionId() {
+  if (typeof window === 'undefined') return null;
+  try {
+    let id = sessionStorage.getItem(SESSION_ID_KEY);
+    if (!id) {
+      id = (crypto?.randomUUID?.() ||
+        `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+      sessionStorage.setItem(SESSION_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null; // sessionStorage indisponível (modo privado antigo) — segue sem
+  }
+}
+
 export function setTrackSession(user = {}) {
   session = {
     userId: user.id ?? user.userId ?? null,
@@ -104,6 +123,7 @@ export async function track(eventType, props = {}) {
       role: props.role ?? session.role ?? null,
       device: detectDevice(),
       action_source: props.source ?? null,
+      session_id: getSessionId(),
       metadata: props.metadata ?? {},
     };
     const q = await queueGet();

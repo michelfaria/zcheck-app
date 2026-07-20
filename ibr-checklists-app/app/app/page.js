@@ -1466,6 +1466,31 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const [reopenReason, setReopenReason] = useState('');
   const collabSessionTracked = useRef(false);
 
+  // Instrumentação do funil: início na montagem; abandono se desmontar sem
+  // submit (voltar/cancelar). Fechar a aba não desmonta — esse abandono fica
+  // implícito no /admin como started sem completed na mesma sessão.
+  const submittedRef = useRef(false);
+  const progressRef = useRef({ done: 0, total: items.length, startedAt: Date.now() });
+  useEffect(() => {
+    track('checklist_started', {
+      source: 'checklist', checklistId: template.id, unitId: unit.id,
+      metadata: { template_name: template.name, sector: template.sector, items: items.length },
+    });
+    return () => {
+      if (submittedRef.current) return;
+      const p = progressRef.current;
+      track('checklist_abandoned', {
+        source: 'checklist', checklistId: template.id, unitId: unit.id,
+        metadata: {
+          template_name: template.name, sector: template.sector,
+          done: p.done, total: p.total,
+          seconds: Math.round((Date.now() - p.startedAt) / 1000),
+        },
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Estado efetivo de conclusão: local OU compartilhado (por um colega em tempo real).
   const effDone = id => itemStates[id]?.done || !!liveByItem[id]?.done;
 
@@ -1487,6 +1512,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const doneCount = items.filter(i => effDone(i.id)).length;
   const total = items.length;
   const pendingCritical = items.filter(i => i.critical && !effDone(i.id));
+  progressRef.current.done = doneCount; // snapshot p/ o evento de abandono
 
   const isLocked = idx => {
     for (let j = 0; j < idx; j++) {
@@ -1514,6 +1540,12 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     const state = itemStates[item.id];
     if (!state.done && item.photoRequired && !state.photo) return;
     const nextDone = !state.done;
+    if (nextDone) {
+      track('task_checked', {
+        source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
+        metadata: { critical: !!item.critical, position: idx + 1, of: items.length },
+      });
+    }
     setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: nextDone } }));
     // Compartilha no estado ao vivo (fire-and-forget; degrada sem a tabela).
     setLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, done: nextDone, operatorUserId: currentUser.id, operatorName: currentUser.name });
@@ -1540,6 +1572,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   };
 
   const submit = async () => {
+    submittedRef.current = true; // desmontagem após concluir não é abandono
     const recordId = uid();
     const record = {
       id: recordId,
@@ -1572,7 +1605,13 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     for (const i of items) {
       const photo = itemStates[i.id].photo;
       if (photo) {
-        try { await uploadPhoto(recordId, i.id, photo); } catch (e) { console.error(e); }
+        try {
+          await uploadPhoto(recordId, i.id, photo);
+          track('photo_uploaded', {
+            source: 'checklist', checklistId: template.id, taskId: i.id, unitId: unit.id,
+            metadata: { required: !!i.photoRequired },
+          });
+        } catch (e) { console.error(e); }
       }
     }
 
@@ -6136,12 +6175,18 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
         </div>
         <div className="flex items-center gap-3">
+          {/* Central de Ajuda — visível para todos os papéis */}
+          <a href="/ajuda" title="Central de Ajuda"
+            className="flex items-center gap-1"
+            style={{ color: C.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, textDecoration: 'none' }}>
+            <HelpCircle size={15} /> Ajuda
+          </a>
           {/* Tour guiado sob demanda — quem pulou no 1º acesso pode voltar quando quiser */}
           {onStartTour && MANAGER_ROLES.includes(currentUser.role) && (
             <button onClick={onStartTour} title="Tour guiado pelas funcionalidades"
               className="flex items-center gap-1"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
-              <HelpCircle size={15} /> Tour
+              <PlayCircle size={15} /> Tour
             </button>
           )}
           {currentUser.role === 'gestao' && (
@@ -6366,6 +6411,12 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
               Verificar status de solicitação
             </a>
           </div>
+          <div style={{ marginTop: 12 }}>
+            <a href="/ajuda"
+              style={{ fontSize: 12, fontWeight: 700, color: '#6B8299', textDecoration: 'underline' }}>
+              Central de Ajuda
+            </a>
+          </div>
         </div>
 
         <InstallPrompt />
@@ -6399,7 +6450,10 @@ function InstallPrompt() {
       setInstallEvent(e);
     };
     window.addEventListener('beforeinstallprompt', handler);
-    window.addEventListener('appinstalled', () => setInstalled(true));
+    window.addEventListener('appinstalled', () => {
+      setInstalled(true);
+      track('pwa_installed', { source: 'app' });
+    });
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
@@ -7970,6 +8024,16 @@ function AppInner() {
   const [dynamicUnits, setDynamicUnits] = useState([]);
   const [dynamicSectors, setDynamicSectors] = useState([]);
   const [dynamicTypes, setDynamicTypes] = useState([]);
+
+  // Instrumentação: uma abertura de app por visita, antes mesmo do login.
+  // O tenant ainda não está resolvido aqui — o hostname (subdomínio) identifica
+  // a empresa no /admin; o session_id liga esta abertura ao login que vier.
+  useEffect(() => {
+    track('app_opened', {
+      source: 'app',
+      metadata: { host: typeof window !== 'undefined' ? window.location.hostname : null },
+    });
+  }, []);
 
   // Active UNITS — dynamic when loaded from DB, fallback to hardcoded for IBR
   const ACTIVE_UNITS = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
