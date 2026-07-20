@@ -1,51 +1,45 @@
 'use client';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-
-// Subdomínios legados. A slug do IBR no banco é 'ibr', mas o subdomínio em uso
-// (e já instalado como PWA / nos favoritos da equipe) é 'ilhabelarepublic'.
-// Sem este apelido, resolver pela slug mandaria o IBR para outra origem.
-const SUBDOMAIN_ALIAS = {
-  ibr: 'ilhabelarepublic',
-};
-
-// Códigos legados que o usuário pode digitar. O mapa fixo antigo aceitava tanto
-// 'ibr' quanto 'ilhabelarepublic' para o IBR; como a slug no banco é só 'ibr',
-// resolver direto pela slug faria quem digita o código antigo (que é o próprio
-// subdomínio deles) receber "não encontrado".
-const CODE_ALIAS = {
-  ilhabelarepublic: 'ibr',
-};
+import { track, flushEvents } from '../../lib/track';
 
 export default function EntrarPage() {
   const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Resolve a empresa pelo BANCO. Antes havia um mapa fixo que só conhecia o
-  // IBR, então nenhuma empresa criada pelo cadastro self-service conseguia
-  // entrar por aqui — o código dela sempre dava "não encontrado".
+  // Resolve a empresa 100% pelo BANCO: primeiro `company_codes` (códigos
+  // alternativos, geridos no ZCheck Core), depois a slug de `companies`.
+  // O subdomínio de destino vem de companies.subdomain (fallback: slug) —
+  // os mapas fixos que viviam aqui migraram para essas tabelas em 19/07.
   async function handleEntrar(e) {
     e.preventDefault();
     const typed = codigo.trim().toLowerCase().replace(/\s+/g, '');
     if (!typed) { setErro('Digite o código da sua empresa.'); return; }
-    const code = CODE_ALIAS[typed] || typed;
 
     setErro(''); setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('slug')
-        .eq('slug', code)
-        .eq('active', true)
+      const { data: codeRow } = await supabase
+        .from('company_codes')
+        .select('company_id')
+        .eq('code', typed)
         .maybeSingle();
+
+      let query = supabase.from('companies').select('id, slug, subdomain').eq('active', true);
+      query = codeRow ? query.eq('id', codeRow.company_id) : query.eq('slug', typed);
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
       if (!data) {
+        track('company_code_entered', { source: 'entrar', metadata: { code: typed, found: false } });
         setErro('Código não encontrado. Verifique e tente novamente.');
         setLoading(false);
         return;
       }
-      const sub = SUBDOMAIN_ALIAS[data.slug] || data.slug;
+      // Drena a fila ANTES do redirect: o subdomínio é outra origem, com outro
+      // IndexedDB — sem o flush aqui, este evento nunca chegaria ao Supabase.
+      await track('company_code_entered', { companyId: data.id, source: 'entrar', metadata: { code: typed, found: true } });
+      await flushEvents();
+      const sub = data.subdomain || data.slug;
       window.location.href = `https://${sub}.zcheckapp.com/app`;
     } catch {
       setErro('Não foi possível verificar agora. Tente novamente.');

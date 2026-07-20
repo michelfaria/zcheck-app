@@ -1,8 +1,34 @@
 import { NextResponse } from 'next/server';
+import { verifyAdminTokenEdge, ADMIN_COOKIE } from './lib/adminEdgeAuth';
 
-export function middleware(request) {
+// Rotas do ZCheck Core que ficam FORA do portão de sessão:
+//  - /admin/login e /api/admin/login: é onde a sessão nasce;
+//  - /api/admin/logout: sair deve funcionar mesmo com token expirado;
+//  - /api/admin/provision: autoriza por segredo próprio (x-provision-secret) e
+//    é chamada pelo fluxo de onboarding — exigir cookie aqui quebraria cadastro;
+//  - /api/admin/cron/*: chamadas do Vercel Cron, sem cookie — autorizam por
+//    CRON_SECRET dentro da própria rota.
+const ADMIN_PUBLIC = new Set([
+  '/admin/login', '/api/admin/login', '/api/admin/logout', '/api/admin/provision',
+  '/api/admin/cron/alerts', '/api/admin/cron/briefing',
+]);
+
+export async function middleware(request) {
   const hostname = request.headers.get('host') || '';
   const pathname = request.nextUrl.pathname;
+
+  // ── Portão do ZCheck Core (/admin) ─────────────────────────────────────────
+  if ((pathname === '/admin' || pathname.startsWith('/admin/') || pathname.startsWith('/api/admin/'))
+      && !ADMIN_PUBLIC.has(pathname)) {
+    const token = request.cookies.get(ADMIN_COOKIE)?.value;
+    const claims = await verifyAdminTokenEdge(token, process.env.SUPABASE_JWT_SECRET);
+    if (!claims) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+      }
+      return NextResponse.redirect(new URL('/admin/login', request.url));
+    }
+  }
 
   // Se é subdomínio de tenant (não www, não raiz)
   if (hostname.endsWith('.zcheckapp.com')) {

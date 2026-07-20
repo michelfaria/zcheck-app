@@ -56,5 +56,17 @@ export async function POST(request) {
     return json({ ok: false, reason: 'suspended' }, 403);
   }
 
+  // Empresa desativada no ZCheck Core: nenhum usuário dela loga, mesmo com o
+  // PIN certo e o subdomínio nos favoritos. O /entrar já filtra active, mas o
+  // portão de verdade é aqui — sem token não há RLS que deixe passar.
+  const companyId = data.user?.companyId || data.user?.company_id;
+  if (companyId) {
+    const { data: co } = await supabase
+      .from('companies').select('active').eq('id', companyId).maybeSingle();
+    if (co && co.active === false) {
+      return json({ ok: false, reason: 'company_inactive' }, 403);
+    }
+  }
+
   return json({ ...data, token: mintSessionToken(data.user, { secret, issuer: SUPABASE_URL }) }, 200);
 }

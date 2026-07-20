@@ -17,6 +17,38 @@ function sender() {
   };
 }
 
+// E-mail simples de texto (follow-up do time de gestão). Mesmo contrato do
+// OTP: retorna { ok } ou { ok: false, reason }, nunca lança.
+export async function sendPlainEmail(to, subject, bodyText) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) return { ok: false, reason: 'not_configured' };
+
+  const paragraphs = String(bodyText || '').split('\n').filter(Boolean)
+    .map(p => `<p style="font-size:15px;line-height:1.6;margin:0 0 12px">${p}</p>`).join('');
+  const html = `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#102A3A">
+      ${paragraphs}
+      <p style="font-size:12px;color:#94A3B8;margin:20px 0 0">ZCheck · Faça bem feito. Todo dia. · <a href="https://zcheckapp.com" style="color:#063C5C">zcheckapp.com</a></p>
+    </div>`;
+
+  try {
+    const res = await fetch(BREVO_URL, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ sender: sender(), to: [{ email: to }], subject, htmlContent: html }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error('Brevo recusou o follow-up:', res.status, body);
+      return { ok: false, reason: 'send_failed' };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error('sendPlainEmail falhou:', e.message);
+    return { ok: false, reason: 'send_failed' };
+  }
+}
+
 // Retorna { ok: true } ou { ok: false, reason }. Não lança — o chamador decide
 // o status HTTP. 'not_configured' distingue falta de chave de falha de rede.
 export async function sendOtpEmail(email, code) {
