@@ -26,6 +26,7 @@ export const C = {
 
   // Texto
   ink: '#063C5C',         // primário    — 11.00:1 sobre bg
+  inkHover: '#0A4A70',    // hover de superfícies ink (botões) — mais claro que ink, branco em cima segue AA
   muted: '#5B6B78',       // secundário  —  5.21:1 sobre bg
   mutedLight: '#627382',  // terciário   —  4.63:1 sobre bg
   pending: '#5B6B78',     // neutro; historicamente igual a muted

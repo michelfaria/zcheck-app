@@ -1,12 +1,12 @@
 import {
-  CheckSquare, Bell, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
+  CheckSquare, Bell, Camera, WifiOff, Wifi, EyeOff, MessagesSquare, RotateCcw,
   AlertTriangle, Clock, Check, Eye, MapPin, Target, TrendingUp, Award,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 import BackToTop from '../components/BackToTop';
 import PriceCalculator from '../components/PriceCalculator';
 import { LIBRARY_VERTICALS } from '../lib/library';
-import { PRICE_BANDS, TRIAL_DAYS } from '../lib/plans';
+import { TRIAL_DAYS } from '../lib/plans';
 
 // Landing pública. Consome os mesmos tokens do app (lib/tokens.js). O CTA é o
 // cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 14 dias
@@ -73,9 +73,18 @@ function BriefingExample() {
 // com os tokens do site — sem screenshot real e sem imagem de banco. Sempre
 // rotulados como exemplo ilustrativo, como o briefing do hero.
 function AppShowcase() {
-  const statCard = { background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px', flex: 1, minWidth: 0 };
-  const checkRow = (done) => ({ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: done ? '#F4FAF6' : 'white' });
-  const checkDot = (done) => ({ flexShrink: 0, width: 18, height: 18, borderRadius: R.pill, display: 'flex', alignItems: 'center', justifyContent: 'center', background: done ? C.success : 'white', border: done ? 'none' : `1.5px solid ${C.borderStrong}` });
+  const statCard = { background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '8px 12px', flex: 1, minWidth: 0 };
+  const checkRow = (done) => ({ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: done ? '#F4FAF6' : 'white' });
+  const checkDot = (done) => ({ flexShrink: 0, width: 17, height: 17, borderRadius: R.pill, display: 'flex', alignItems: 'center', justifyContent: 'center', background: done ? C.success : 'white', border: done ? 'none' : `1.5px solid ${C.borderStrong}` });
+  const lojaRow = (nome, pct, cor) => (
+    <div key={nome} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '7px 11px' }}>
+      <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.ink, width: 44, flexShrink: 0 }}>{nome}</p>
+      <div style={{ flex: 1, height: 5, background: C.border, borderRadius: R.pill, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: cor }} aria-hidden />
+      </div>
+      <p style={{ fontSize: T.label, fontWeight: W.bold, color: cor, width: 34, textAlign: 'right', flexShrink: 0 }}>{pct}%</p>
+    </div>
+  );
   return (
     <div style={{ marginTop: 64 }} aria-label="Exemplo ilustrativo do app no notebook e no celular">
       {/* Rótulo alinhado ao notebook (esquerda): o celular sobreposto ocupa a
@@ -86,76 +95,104 @@ function AppShowcase() {
         </p>
       </div>
       <div className="lp-showcase">
-        {/* Notebook — visão da gestão */}
+        {/* Notebook: moldura escura (lid) com webcam, tela 16:10, deck
+            trapezoidal com scoop e sombra de chão — spec da revisão de design.
+            A gestão vê a REDE (multi-loja); o checklist individual é do celular. */}
         <div className="lp-showcase-laptop">
-          <div style={{ background: C.ink, borderRadius: `${R.lg}px ${R.lg}px 0 0`, padding: '9px 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#E8695A' }} aria-hidden />
-            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#E5B23C' }} aria-hidden />
-            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#57A464' }} aria-hidden />
-            <span style={{ marginLeft: 10, fontSize: 11, color: 'rgba(255,255,255,0.65)', background: 'rgba(255,255,255,0.1)', borderRadius: R.pill, padding: '3px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              suaempresa.zcheckapp.com/app
-            </span>
-          </div>
-          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: `0 0 ${R.lg}px ${R.lg}px`, padding: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-              <p style={{ fontSize: T.body, fontWeight: W.bold, color: C.ink }}>Briefing do dia</p>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>3 lojas · hoje</p>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-              <div style={statCard}>
-                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Execução ontem</p>
-                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.success }}>92%</p>
+          <div className="lap-lid">
+            <div className="lap-screen">
+              <div style={{ background: C.ink, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ width: 8, height: 8, borderRadius: R.pill, background: '#E8695A' }} aria-hidden />
+                <span style={{ width: 8, height: 8, borderRadius: R.pill, background: '#E5B23C' }} aria-hidden />
+                <span style={{ width: 8, height: 8, borderRadius: R.pill, background: '#57A464' }} aria-hidden />
+                <span style={{ marginLeft: 8, fontSize: 10.5, color: 'rgba(255,255,255,0.65)', background: 'rgba(255,255,255,0.1)', borderRadius: R.pill, padding: '2px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  suaempresa.zcheckapp.com/app
+                </span>
               </div>
-              <div style={statCard}>
-                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Pendências</p>
-                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.warning }}>3</p>
-              </div>
-              <div style={statCard}>
-                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Críticos</p>
-                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.critical }}>1</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.critical}`, borderRadius: R.sm, padding: '9px 11px' }}>
-                <AlertTriangle size={13} color={C.critical} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
-                <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.5 }}>Loja 2: “câmara fria” pendente 2× esta semana. Priorize hoje.</p>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.warning}`, borderRadius: R.sm, padding: '9px 11px' }}>
-                <Clock size={13} color={C.warning} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
-                <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.5 }}>“Fechamento — Caixa” atrasado na Loja 1.</p>
-              </div>
-            </div>
-          </div>
-          <div className="lp-laptop-base" style={{ height: 10, background: '#D7DEE4', borderRadius: '0 0 12px 12px', margin: '0 -26px', boxShadow: '0 6px 16px rgba(8,20,30,0.12)' }} aria-hidden />
-        </div>
-
-        {/* Celular — execução da equipe */}
-        <div className="lp-showcase-phone">
-          <div style={{ background: 'white', border: `1.5px solid ${C.borderStrong}`, borderRadius: 26, padding: 10, boxShadow: '0 18px 40px rgba(8,20,30,0.18)' }}>
-            <div style={{ width: 64, height: 5, borderRadius: R.pill, background: C.border, margin: '2px auto 10px' }} aria-hidden />
-            <div style={{ background: C.bg, borderRadius: 18, padding: 12 }}>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>Loja 1 · 07:42</p>
-              <p style={{ fontSize: T.bodySm, fontWeight: W.bold, color: C.ink, marginTop: 2 }}>Abertura — Cozinha</p>
-              <div style={{ height: 5, background: C.border, borderRadius: R.pill, margin: '10px 0 4px', overflow: 'hidden' }}>
-                <div style={{ width: '75%', height: '100%', background: C.success }} aria-hidden />
-              </div>
-              <p style={{ fontSize: T.label, color: C.muted, marginBottom: 10 }}>6 de 8 itens</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={checkRow(true)}>
-                  <span style={checkDot(true)}><Check size={11} color="white" aria-hidden /></span>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.ink }}>Temperatura da câmara fria</p>
-                    <p style={{ fontSize: 10, fontWeight: W.semibold, color: C.success, display: 'flex', alignItems: 'center', gap: 3 }}><Camera size={10} aria-hidden /> Foto anexada</p>
+              <div style={{ flex: 1, minHeight: 0, padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingRight: 56 }}>
+                  <p style={{ fontSize: T.body, fontWeight: W.bold, color: C.ink }}>Briefing do dia</p>
+                  <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>3 lojas · hoje</p>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={statCard}>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Execução ontem</p>
+                    <p style={{ fontSize: 21, fontWeight: W.bold, color: C.success }}>92%</p>
+                  </div>
+                  <div style={statCard}>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Pendências</p>
+                    <p style={{ fontSize: 21, fontWeight: W.bold, color: C.warning }}>3</p>
+                  </div>
+                  <div style={statCard}>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Críticos</p>
+                    <p style={{ fontSize: 21, fontWeight: W.bold, color: C.critical }}>1</p>
                   </div>
                 </div>
-                <div style={checkRow(false)}>
-                  <span style={checkDot(false)} />
-                  <p style={{ fontSize: T.label, fontWeight: W.medium, color: C.muted }}>Validade dos insumos abertos</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {lojaRow('Loja 1', 96, C.success)}
+                  {lojaRow('Loja 2', 78, C.warning)}
+                  {lojaRow('Loja 3', 91, C.success)}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.critical}`, borderRadius: R.sm, padding: '8px 11px' }}>
+                  <AlertTriangle size={13} color={C.critical} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
+                  <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.45 }}>Loja 2: “câmara fria” pendente 2× esta semana — priorize hoje.</p>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.warning}`, borderRadius: R.sm, padding: '8px 11px' }}>
+                  <Clock size={13} color={C.warning} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
+                  <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.45 }}>“Fechamento — Caixa” atrasado na Loja 1.</p>
                 </div>
               </div>
-              <div style={{ marginTop: 12, background: C.ink, color: 'white', borderRadius: R.sm, padding: '10px 0', textAlign: 'center', fontSize: T.label, fontWeight: W.bold }}>
-                Concluir checklist
+            </div>
+          </div>
+          <div className="lap-deck" aria-hidden />
+        </div>
+
+        {/* Celular: frame escuro fino com botões laterais, tela 9:19,5 com ilha
+            de câmera, status bar e home indicator. */}
+        <div className="lp-showcase-phone">
+          <div className="phone-frame">
+            <span className="phone-vol" style={{ top: 92 }} aria-hidden />
+            <span className="phone-vol" style={{ top: 130 }} aria-hidden />
+            <div className="phone-screen">
+              <span className="phone-island" aria-hidden />
+              <div style={{ height: 27, padding: '0 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: W.semibold, color: C.ink }}>9:41</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Wifi size={10} color={C.ink} aria-hidden />
+                  <span style={{ width: 16, height: 8, border: `1px solid ${C.borderStrong}`, borderRadius: 2, padding: 1, display: 'inline-flex' }} aria-hidden>
+                    <span style={{ width: '70%', height: '100%', background: C.ink, borderRadius: 1 }} />
+                  </span>
+                </span>
               </div>
+              <div style={{ flex: 1, minHeight: 0, padding: '5px 10px 0', display: 'flex', flexDirection: 'column' }}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>Loja 1 · 07:42</p>
+                <p style={{ fontSize: T.bodySm, fontWeight: W.bold, color: C.ink, marginTop: 1 }}>Abertura — Cozinha</p>
+                <div style={{ height: 5, background: C.border, borderRadius: R.pill, margin: '8px 0 4px', overflow: 'hidden' }}>
+                  <div style={{ width: '75%', height: '100%', background: C.success }} aria-hidden />
+                </div>
+                <p style={{ fontSize: T.label, color: C.muted, marginBottom: 8 }}>6 de 8 itens</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={checkRow(true)}>
+                    <span style={checkDot(true)}><Check size={10} color="white" aria-hidden /></span>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.ink }}>Temperatura da câmara fria</p>
+                      <p style={{ fontSize: 10, fontWeight: W.semibold, color: C.success, display: 'flex', alignItems: 'center', gap: 3 }}><Camera size={10} aria-hidden /> Foto anexada</p>
+                    </div>
+                  </div>
+                  <div style={checkRow(true)}>
+                    <span style={checkDot(true)}><Check size={10} color="white" aria-hidden /></span>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.ink }}>Bancadas higienizadas</p>
+                  </div>
+                  <div style={checkRow(false)}>
+                    <span style={checkDot(false)} />
+                    <p style={{ fontSize: T.label, fontWeight: W.medium, color: C.muted }}>Validade dos insumos abertos</p>
+                  </div>
+                </div>
+                <div style={{ marginTop: 'auto', marginBottom: 10, background: C.ink, color: 'white', borderRadius: R.sm, padding: '10px 0', textAlign: 'center', fontSize: T.label, fontWeight: W.bold }}>
+                  Concluir checklist
+                </div>
+              </div>
+              <div style={{ width: 70, height: 4, borderRadius: R.pill, background: 'rgba(6,60,92,0.30)', margin: '0 auto 5px', flexShrink: 0 }} aria-hidden />
             </div>
           </div>
         </div>
@@ -187,7 +224,9 @@ export default function LandingPage() {
         html { scroll-behavior: smooth; }
         .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; border-radius: ${R.md}px; font-weight: ${W.semibold}; cursor: pointer; }
         .lp-btn-primary { background: ${C.ink}; color: #fff; padding: 14px 28px; font-size: ${T.body}px; border: none; }
-        .lp-btn-primary:hover { background: #0a4a70; }
+        .lp-btn-primary:hover { background: ${C.inkHover}; }
+        .lp-nav-links { transition: color .15s; }
+        .lp-nav-links:hover { color: ${C.ink}; }
         .lp-btn-ghost { background: transparent; color: ${C.ink}; padding: 14px 24px; font-size: ${T.body}px; border: 1.5px solid ${C.borderStrong}; }
         .lp-container { max-width: 1120px; margin: 0 auto; padding-left: 40px; padding-right: 40px; }
         .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
@@ -200,15 +239,43 @@ export default function LandingPage() {
         details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
         details.lp-faq summary::-webkit-details-marker { display: none; }
         section[id] { scroll-margin-top: 68px; } /* altura exata do header sticky */
-        /* Vitrine notebook + celular: sobrepostos no desktop, empilhados no mobile. */
+        /* Vitrine notebook + celular — hardware em CSS (spec da revisão de design):
+           proporções reais (tela 16:10 / celular 9:19,5), bezel escuro, deck
+           trapezoidal e sombras em camadas com luz vinda de cima. */
         .lp-showcase { position: relative; max-width: 860px; margin: 0 auto; padding: 0 26px; }
-        .lp-showcase-laptop { max-width: 640px; }
-        .lp-showcase-phone { position: absolute; right: 26px; bottom: -24px; width: 224px; }
+        .lp-showcase-laptop { max-width: 640px; position: relative; }
+        .lp-showcase-laptop::after { content: ''; position: absolute; left: 8%; right: 8%; bottom: -22px; height: 18px;
+          background: radial-gradient(50% 100% at 50% 0%, rgba(8,20,30,0.18), transparent 70%); filter: blur(6px); z-index: -1; }
+        .lap-lid { position: relative; background: linear-gradient(180deg, #1B2A38 0%, #0C1926 55%, #0A1622 100%);
+          border-radius: 18px 18px 0 0; padding: 14px 12px 12px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 24px 48px -20px rgba(8,20,30,0.35); }
+        .lap-lid::before { content: ''; position: absolute; top: 5px; left: 50%; transform: translateX(-50%);
+          width: 4px; height: 4px; border-radius: 999px; background: #223441; box-shadow: 0 0 0 1.5px #0A1622; }
+        .lap-screen { aspect-ratio: 16 / 10; border-radius: 4px; overflow: hidden; background: ${C.bg};
+          display: flex; flex-direction: column; }
+        .lap-deck { position: relative; height: 16px; margin: 0 -34px;
+          background: linear-gradient(180deg, #E9EEF3 0%, #D4DCE3 55%, #B9C4CE 100%);
+          border-top: 1px solid #F4F7FA; border-radius: 2px 2px 12px 12px;
+          clip-path: polygon(0 0, 100% 0, 98.5% 100%, 1.5% 100%);
+          box-shadow: 0 12px 24px -8px rgba(8,20,30,0.28); }
+        .lap-deck::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+          width: 104px; height: 7px; background: radial-gradient(ellipse at 50% 0%, #AEBAC5, #CBD4DC 70%);
+          border-radius: 0 0 10px 10px; }
+        .lp-showcase-phone { position: absolute; right: 10px; bottom: -30px; width: 192px; }
+        .phone-frame { position: relative; background: #0D1B27; border-radius: 34px; padding: 8px;
+          box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.07), 0 2px 8px rgba(8,20,30,0.22), 0 28px 56px -12px rgba(8,20,30,0.35); }
+        .phone-frame::before { content: ''; position: absolute; right: -2.5px; top: 108px; width: 3px; height: 52px;
+          background: #0D1B27; border-radius: 0 3px 3px 0; }
+        .phone-vol { position: absolute; left: -2.5px; width: 3px; height: 30px; background: #0D1B27; border-radius: 3px 0 0 3px; }
+        .phone-screen { position: relative; aspect-ratio: 9 / 19.5; border-radius: 26px; overflow: hidden;
+          background: ${C.bg}; display: flex; flex-direction: column; }
+        .phone-island { position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+          width: 58px; height: 17px; border-radius: 999px; background: #0A121C; }
         @media (max-width: 820px) {
           .lp-showcase { padding: 0; }
           .lp-showcase-laptop { max-width: none; }
-          .lp-laptop-base { margin: 0; } /* sem margem negativa: no mobile não há padding a compensar */
-          .lp-showcase-phone { position: static; width: 246px; margin: 20px auto 0; }
+          .lap-deck { margin: 0; } /* sem margem negativa: no mobile não há padding a compensar */
+          .lp-showcase-phone { position: static; width: 232px; margin: 26px auto 0; }
         }
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
@@ -224,7 +291,7 @@ export default function LandingPage() {
           <a href="/" aria-label="ZCheck — página inicial" style={{ display: 'flex', alignItems: 'center' }}>
             <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32} style={{ height: 32, width: 'auto' }} />
           </a>
-          <nav style={{ display: 'flex', alignItems: 'center', gap: 22 }} aria-label="Navegação principal">
+          <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }} aria-label="Navegação principal">
             <a className="lp-nav-links" href="#por-que" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Por que ZCheck</a>
             <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
             <a className="lp-nav-links" href="#preco" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Preço</a>
@@ -260,12 +327,12 @@ export default function LandingPage() {
 
       {/* 1.5 · MANIFESTO — transparência como premissa */}
       <section style={{ padding: '56px 0', borderBottom: `1px solid ${C.border}` }}>
-        <div className="lp-container" style={{ maxWidth: 760 }}>
+        <div className="lp-container" style={{ maxWidth: 640 }}>
           <Eyebrow color={C.success}>Nossa premissa</Eyebrow>
           <h2 style={{ fontSize: 'clamp(22px, 2.8vw, 30px)', fontWeight: W.bold, lineHeight: 1.25, marginBottom: 16 }}>
             Transparência não é um recurso. É o nosso ponto de partida.
           </h2>
-          <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.8 }}>
+          <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.8 }}>
             No mercado de software operacional, preço é segredo e proposta é reunião:
             &ldquo;fale com um consultor&rdquo;. O ZCheck nasceu do outro lado. Nosso preço é
             público, a conta se calcula em 10 segundos, não há fidelidade escondida
@@ -291,7 +358,9 @@ export default function LandingPage() {
               { Icon: RotateCcw, title: 'Retrabalho sem dono', text: 'Sem evidência, a mesma tarefa é refeita — ou ninguém a faz. E a gestão só enxerga o resultado no fim do mês.' },
             ].map(({ Icon, title, text }) => (
               <div key={title} style={{ border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
-                <Icon size={22} color={C.ink} aria-hidden style={{ marginBottom: 14 }} />
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: R.md, background: C.bg, marginBottom: 14 }}>
+                  <Icon size={18} color={C.ink} aria-hidden />
+                </span>
                 <h3 style={{ fontSize: T.bodyLg, fontWeight: W.semibold, marginBottom: 8 }}>{title}</h3>
                 <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.65 }}>{text}</p>
               </div>
@@ -300,14 +369,19 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 3 · OS CINCO PILARES */}
-      <section id="por-que" style={{ background: C.ink, color: 'white', padding: '72px 0' }}>
-        <div className="lp-container">
-          <div style={{ maxWidth: 620, marginBottom: 40 }}>
+      {/* 3 · OS CINCO PILARES — título fixo à esquerda, lista à direita: em
+          desktop a seção usa a largura toda em vez de deixar 300px vazios. */}
+      <section id="por-que" style={{ background: C.ink, color: 'white', padding: '96px 0' }}>
+        <div className="lp-container lp-grid-2" style={{ alignItems: 'flex-start', gap: 48 }}>
+          <div>
             <Eyebrow color={greenOnDark}>Por que ZCheck</Eyebrow>
-            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
+            <h2 style={{ fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: W.bold, lineHeight: 1.18, marginBottom: 16 }}>
               Cinco coisas que um checklist comum não te dá.
             </h2>
+            <p style={{ fontSize: T.body, opacity: 0.75, lineHeight: 1.7, maxWidth: 420 }}>
+              Checklist que só registra vira papel digital. O ZCheck transforma a
+              execução em visibilidade, prioridade e cultura — todo dia.
+            </p>
           </div>
           <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
             {PILLARS.map(({ Icon, title, text }) => (
@@ -317,7 +391,7 @@ export default function LandingPage() {
                 </span>
                 <div>
                   <p style={{ fontSize: T.bodyLg, fontWeight: W.semibold, marginBottom: 4 }}>{title}</p>
-                  <p style={{ fontSize: T.bodySm, opacity: 0.78, lineHeight: 1.65, maxWidth: 640 }}>{text}</p>
+                  <p style={{ fontSize: T.bodySm, opacity: 0.78, lineHeight: 1.65 }}>{text}</p>
                 </div>
               </li>
             ))}
@@ -382,7 +456,7 @@ export default function LandingPage() {
       </section>
 
       {/* 6 · RECURSOS */}
-      <section style={{ padding: '72px 0' }}>
+      <section style={{ padding: '64px 0' }}>
         <div className="lp-container">
           <h2 style={srOnly}>Recursos</h2>
           <div className="lp-grid-4">
@@ -393,7 +467,9 @@ export default function LandingPage() {
               { Icon: WifiOff, title: 'Funciona offline', text: 'Instala como app no celular. Sem sinal, registra local e sincroniza depois.' },
             ].map(({ Icon, title, text }) => (
               <div key={title} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
-                <Icon size={20} color={C.success} aria-hidden style={{ marginBottom: 12 }} />
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: R.md, background: 'rgba(21,128,61,0.08)', marginBottom: 12 }}>
+                  <Icon size={18} color={C.success} aria-hidden />
+                </span>
                 <h3 style={{ fontSize: T.bodySm, fontWeight: W.semibold, marginBottom: 6, lineHeight: 1.4 }}>{title}</h3>
                 <p style={{ fontSize: T.bodySm, color: C.muted, lineHeight: 1.6 }}>{text}</p>
               </div>
@@ -403,13 +479,13 @@ export default function LandingPage() {
       </section>
 
       {/* 7 · PARA QUEM */}
-      <section id="para-quem" style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '72px 0' }}>
+      <section id="para-quem" style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '64px 0' }}>
         <div className="lp-container" style={{ textAlign: 'center' }}>
           <Eyebrow>Para quem é</Eyebrow>
           <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, marginBottom: 28 }}>
             Operação física, várias frentes, pouco tempo.
           </h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 640, margin: '0 auto 16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 900, margin: '0 auto 16px' }}>
             {LIBRARY_VERTICALS.map(v => (
               <span key={v.id} style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: R.pill, padding: '10px 20px', background: 'white' }}>
                 {v.label}
@@ -424,11 +500,11 @@ export default function LandingPage() {
       </section>
 
       {/* 8 · PREÇO — calculadora + faixas + compromissos + contraste */}
-      <section id="preco" style={{ padding: '72px 0' }}>
+      <section id="preco" style={{ padding: '96px 0' }}>
         <div className="lp-container">
           <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 36px' }}>
             <Eyebrow>Preço</Eyebrow>
-            <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: W.bold, lineHeight: 1.18, marginBottom: 12 }}>
               Arraste, calcule, decida. Sem reunião comercial.
             </h2>
             <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.7 }}>
@@ -437,25 +513,9 @@ export default function LandingPage() {
             </p>
           </div>
 
+          {/* A calculadora também renderiza a tabela de faixas (completa e
+              pública, inclusive 21+) para destacar a faixa ativa da conta. */}
           <PriceCalculator />
-
-          {/* Tabela de faixas — completa e pública, inclusive 21+. Não existe
-              "sob consulta": rede grande já sabe o preço sem falar com ninguém. */}
-          <div className="lp-grid-5" style={{ marginTop: 36 }}>
-            {PRICE_BANDS.map(b => (
-              <div key={b.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
-                <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.muted, marginBottom: 6 }}>
-                  {b.max === Infinity ? `${b.min}+ lojas` : b.min === b.max ? `${b.min} loja` : `${b.min}–${b.max} lojas`}
-                </p>
-                <p style={{ fontSize: 28, fontWeight: W.bold, letterSpacing: '-0.02em', color: C.ink }}>
-                  R$ {b.perUnit}<span style={{ fontSize: T.caption, fontWeight: W.medium, color: C.muted }}> /loja/mês</span>
-                </p>
-                <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
-                  R$ {b.perUnitAnnual}/loja/mês no anual
-                </p>
-              </div>
-            ))}
-          </div>
           <p style={{ textAlign: 'center', fontSize: T.bodySm, color: C.muted, marginTop: 18 }}>
             A tabela é essa — para qualquer tamanho de rede. Sem cotação, sem reunião, sem preço escondido.
           </p>
@@ -501,7 +561,7 @@ export default function LandingPage() {
       </section>
 
       {/* 9 · ECO + CTA — a transparência do preço e a da operação são a mesma promessa */}
-      <section style={{ background: C.ink, color: 'white', padding: '72px 0', textAlign: 'center' }}>
+      <section style={{ background: C.ink, color: 'white', padding: '96px 0', textAlign: 'center' }}>
         <div className="lp-container" style={{ maxWidth: 660 }}>
           <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
             O briefing diário mostra sua operação sem filtro — o mesmo princípio do
@@ -525,8 +585,10 @@ export default function LandingPage() {
       {/* 10 · FAQ */}
       <section style={{ padding: '72px 0' }}>
         <div className="lp-container" style={{ maxWidth: 680 }}>
-          <h2 style={srOnly}>Perguntas frequentes</h2>
-          <Eyebrow>Perguntas frequentes</Eyebrow>
+          {/* h2 visível (P9 da revisão): a seção era a única sem título de verdade. */}
+          <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 24 }}>
+            Perguntas frequentes
+          </h2>
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
               ['Minha equipe vai usar?', 'Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
