@@ -1,9 +1,13 @@
-const CACHE_NAME = 'ibr-checklists-v2';
+const CACHE_NAME = 'ibr-checklists-v3';
 
-// Install: cache the app shell
+// Install: cache the app shell. '/app' entra individualmente — é a rota real
+// do app nos subdomínios; sem ela, uma abertura offline após reload não tinha
+// shell para servir. addAll falha em bloco, por isso o add é tolerante.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(['/']))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(['/', '/app'].map((u) => cache.add(u)))
+    )
   );
   self.skipWaiting();
 });
@@ -34,7 +38,11 @@ self.addEventListener('fetch', (event) => {
       } catch {
         const cached = await cache.match(request);
         if (cached) return cached;
-        if (request.mode === 'navigate') return cache.match('/');
+        if (request.mode === 'navigate') {
+          // Navegação offline sem match exato: serve o shell do app antes de
+          // cair na raiz (que nos subdomínios é redirect para /app).
+          return (await cache.match('/app')) || cache.match('/');
+        }
         return new Response('Offline', { status: 503 });
       }
     })

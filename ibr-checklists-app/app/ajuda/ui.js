@@ -194,7 +194,7 @@ export function FeedbackWidget({ category, slug }) {
       )}
       {voted === 'down' && (
         <p style={{ fontSize: 13, color: C.muted, marginTop: 12 }}>
-          Que pena! <a href="/ajuda/assistente" style={{ color: C.ink, fontWeight: 600 }}>Fale com o assistente</a> — ele pode ajudar com a sua dúvida.
+          Que pena! <a href="/ajuda/assistente" style={{ color: C.ink, fontWeight: 600 }}>Fale com o Zeca</a> — ele pode ajudar com a sua dúvida.
         </p>
       )}
     </div>

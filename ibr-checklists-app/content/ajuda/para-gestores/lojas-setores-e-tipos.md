@@ -16,11 +16,12 @@ A aba **Gerenciar → Estrutura** é onde você desenha a espinha dorsal da oper
 ## Setores
 
 - Cada loja tem seus setores (Salão, Cozinha, Caixa…). Os checklists são sempre ligados a um setor.
-- Cada colaborador pode ser vinculado a um setor no cadastro — a informação aparece na aprovação de acesso e nos relatórios.
+- Colaborador (ou líder) vinculado a um setor vê **apenas os checklists daquele setor** — menos ruído, mais foco. O vínculo é feito na aprovação do cadastro ou editando o usuário na aba Usuários.
 
 ## Tipos de checklist
 
-- Os tipos são **Abertura**, **Intermediário** e **Fechamento** — eles organizam a aba Executar e os agrupamentos dos relatórios.
+- Os tipos padrão são **Abertura**, **Intermediário** e **Fechamento**, e você pode criar outros (Vistoria, Conferência, Produção…) aqui na Estrutura ou direto no + Novo (tipo livre).
+- O tipo organiza a aba Executar e os agrupamentos dos relatórios.
 
 ## Logo da empresa
 

@@ -16,9 +16,9 @@ Se o dia foi marcado como folga pela gestão, a aba Executar avisa: "está fecha
 
 Itens podem ser configurados para **dias específicos** (ex.: só seg/qua/sex). Um checklist cujos itens não valem hoje **não aparece na lista de hoje** — é o comportamento esperado.
 
-## 3. Loja ou setor errados no seu cadastro
+## 3. Você está vendo outro setor
 
-Confira com a gestão se o seu cadastro aponta a **loja** (e o setor) em que você trabalha de verdade.
+Quem é vinculado a um setor vê **só os checklists do próprio setor**. Confirme com a gestão se o seu cadastro aponta a loja e o setor certos.
 
 ## 4. Ele está em outro tipo
 

@@ -811,7 +811,13 @@ export async function completeActionPlan(planId, userId) {
 
 // ── Multi-tenant: Company, Units, Sectors, Checklist Types ─────────────────
 
+// Metadados de tenant (empresa, lojas, setores, tipos) com fallback offline.
+// Sem estes caches, uma abertura sem internet montava o app com empresa nula e
+// lojas vazias — mesmo com a sessão restaurada e os checklists no aparelho.
+// Chaves com o companyId embutido (setRaw), porque estas buscas rodam antes de
+// setCacheScope no mount.
 export async function fetchCompany(slug, id) {
+  const cacheKey = `zc_company::${id || slug}`;
   try {
     let query = db().from('companies').select('*').eq('active', true);
     if (id) query = query.eq('id', id);
@@ -819,10 +825,15 @@ export async function fetchCompany(slug, id) {
     else return null;
     const { data, error } = await query.single();
     if (error) throw error;
+    if (data) {
+      // Grava sob as duas chaves: o mount busca por slug, o pós-login por id.
+      await cache.setRaw(`zc_company::${data.slug}`, data);
+      await cache.setRaw(`zc_company::${data.id}`, data);
+    }
     return data;
   } catch (e) {
-    console.warn('[Supabase] fetchCompany failed:', e.message);
-    return null;
+    console.warn('[Supabase] fetchCompany failed, trying cache:', e.message);
+    return await cache.getRaw(cacheKey);
   }
 }
 
@@ -835,10 +846,11 @@ export async function fetchUnits(companyId) {
       .eq('active', true)
       .order('sort_order');
     if (error) throw error;
+    await cache.setRaw(`zc_units::${companyId}`, data || []);
     return data || [];
   } catch (e) {
-    console.warn('[Supabase] fetchUnits failed:', e.message);
-    return [];
+    console.warn('[Supabase] fetchUnits failed, trying cache:', e.message);
+    return (await cache.getRaw(`zc_units::${companyId}`)) || [];
   }
 }
 
@@ -850,10 +862,11 @@ export async function fetchSectors(companyId) {
       .eq('company_id', companyId)
       .order('sort_order');
     if (error) throw error;
+    await cache.setRaw(`zc_sectors::${companyId}`, data || []);
     return data || [];
   } catch (e) {
-    console.warn('[Supabase] fetchSectors failed:', e.message);
-    return [];
+    console.warn('[Supabase] fetchSectors failed, trying cache:', e.message);
+    return (await cache.getRaw(`zc_sectors::${companyId}`)) || [];
   }
 }
 
@@ -865,10 +878,11 @@ export async function fetchChecklistTypes(companyId) {
       .eq('company_id', companyId)
       .order('sort_order');
     if (error) throw error;
+    await cache.setRaw(`zc_types::${companyId}`, data || []);
     return data || [];
   } catch (e) {
-    console.warn('[Supabase] fetchChecklistTypes failed:', e.message);
-    return [];
+    console.warn('[Supabase] fetchChecklistTypes failed, trying cache:', e.message);
+    return (await cache.getRaw(`zc_types::${companyId}`)) || [];
   }
 }
 

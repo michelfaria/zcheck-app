@@ -14,7 +14,7 @@ Toque em **Gerenciar → + Novo**. Há três caminhos:
 
 1. **Escolher um modelo pronto** — o mais rápido: modelos prontos por segmento, com itens já pensados para cada setor. Escolha, veja o preview, aponte loja e setor e pronto.
 2. **Duplicar um checklist existente** — ideal para replicar um checklist que já funciona em outra loja ou setor.
-3. **Criar do zero** — defina nome, tipo (Abertura, Intermediário ou Fechamento), loja, setor, prazo (opcional) e adicione os itens um a um.
+3. **Criar do zero** — defina nome, tipo (Abertura, Intermediário, Fechamento ou um tipo livre seu), loja, setor, prazo (opcional) e adicione os itens um a um.
 
 ## Configurar os itens
 

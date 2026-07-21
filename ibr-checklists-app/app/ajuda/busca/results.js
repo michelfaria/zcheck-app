@@ -76,7 +76,7 @@ export function BuscaResults() {
         <div style={{ marginTop: 20, padding: '20px 16px', background: 'white', border: `1px solid ${C.border}`, borderRadius: 12, textAlign: 'center' }}>
           <p style={{ fontSize: 14, color: C.muted }}>
             Tente outras palavras — ou{' '}
-            <Link href="/ajuda/assistente" style={{ color: C.ink, fontWeight: 600 }}>pergunte ao assistente</Link>.
+            <Link href="/ajuda/assistente" style={{ color: C.ink, fontWeight: 600 }}>pergunte ao Zeca</Link>.
           </p>
         </div>
       )}

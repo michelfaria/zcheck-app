@@ -15,7 +15,7 @@ const SUGGESTIONS = [
 
 const WELCOME = {
   role: 'assistant',
-  content: 'Olá! Sou o assistente do ZCheck. Posso ajudar com dúvidas sobre acesso, checklists, fotos, relatórios e muito mais. O que você precisa?',
+  content: 'Oi! Eu sou o Zeca, o assistente do ZCheck. Me diga o que você precisa — acesso, checklists, fotos, relatórios — e eu vou direto ao ponto.',
 };
 
 export function Chat() {
@@ -24,6 +24,11 @@ export function Chat() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
+  // Chave anônima da conversa — agrupa as trocas no log do Zeca (sem identificar ninguém).
+  const sessionKeyRef = useRef(null);
+  if (!sessionKeyRef.current && typeof crypto !== 'undefined') {
+    sessionKeyRef.current = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -46,11 +51,11 @@ export function Chat() {
       const res = await fetch('/api/ajuda/assistente', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: payload }),
+        body: JSON.stringify({ messages: payload, sessionKey: sessionKeyRef.current }),
       });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.ok && data.reply) {
-        setMessages(m => [...m, { role: 'assistant', content: data.reply }]);
+        setMessages(m => [...m, { role: 'assistant', content: data.reply, chatId: data.chatId || null }]);
       } else if (res.status === 429) {
         setError('Muitas mensagens em pouco tempo. Aguarde um minuto e tente de novo.');
       } else {
@@ -78,17 +83,29 @@ export function Chat() {
       : renderBold(p, i));
   };
 
+  // 👍👎 por resposta do Zeca → alimenta a retrospectiva semanal dele.
+  const voteReply = (idx, helpful) => {
+    const msg = messages[idx];
+    if (!msg?.chatId || msg.fb) return;
+    setMessages(m => m.map((x, i) => i === idx ? { ...x, fb: helpful ? 'up' : 'down' } : x));
+    fetch('/api/ajuda/assistente/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: msg.chatId, helpful }),
+    }).catch(() => {});
+  };
+
   const showSuggestions = messages.length === 1;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px 0', display: 'flex', flexDirection: 'column' }}>
-      <Breadcrumb items={[{ label: 'Ajuda', href: '/ajuda' }, { label: 'Assistente' }]} />
+      <Breadcrumb items={[{ label: 'Ajuda', href: '/ajuda' }, { label: 'Zeca' }]} />
 
       <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 12, marginTop: 16, display: 'flex', flexDirection: 'column', minHeight: '60vh' }}>
         {/* Mensagens */}
         <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
           {messages.map((m, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
               <div style={{
                 maxWidth: '85%', padding: '10px 14px', fontSize: 14.5, lineHeight: 1.6, whiteSpace: 'pre-wrap',
                 borderRadius: m.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
@@ -97,6 +114,22 @@ export function Chat() {
               }}>
                 {renderContent(m.content)}
               </div>
+              {m.role === 'assistant' && m.chatId && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 4, marginLeft: 4 }}>
+                  {m.fb ? (
+                    <span style={{ fontSize: 11, color: C.mutedLight }}>
+                      {m.fb === 'up' ? 'Valeu pelo feedback!' : 'Anotado — vou melhorar.'}
+                    </span>
+                  ) : (
+                    <>
+                      <button onClick={() => voteReply(i, true)} aria-label="Resposta ajudou"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, opacity: 0.6 }}>👍</button>
+                      <button onClick={() => voteReply(i, false)} aria-label="Resposta não ajudou"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, opacity: 0.6 }}>👎</button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {sending && (
@@ -145,7 +178,7 @@ export function Chat() {
       </div>
 
       <p style={{ fontSize: 12, color: C.mutedLight, textAlign: 'center', marginTop: 12, lineHeight: 1.6 }}>
-        O assistente responde com base nos artigos da Central de Ajuda e pode cometer erros.
+        O Zeca é um assistente de IA: responde com base nos artigos da Central de Ajuda e pode cometer erros.
         Ele não acessa dados da sua conta. Para isso, fale com a gestão da sua empresa ou veja{' '}
         <Link href="/ajuda/conta-e-acesso" style={{ color: C.muted, fontWeight: 600 }}>Conta e acesso</Link>.
       </p>

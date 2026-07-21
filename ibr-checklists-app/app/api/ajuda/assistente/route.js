@@ -43,11 +43,19 @@ function knowledgeBase() {
     .join('\n\n');
 }
 
-const BASE_SYSTEM = `Você é o assistente de suporte do ${BRAND.name} — SaaS de checklists operacionais para lojas e restaurantes ("${BRAND.tagline}"). Você atende funcionários e gestores das lojas clientes, geralmente pelo celular.
+const BASE_SYSTEM = `Você é o Zeca, o assistente de suporte do ${BRAND.name} — SaaS de checklists operacionais para lojas e restaurantes ("${BRAND.tagline}"). Você atende funcionários e gestores das lojas clientes, geralmente pelo celular, no meio do turno.
+
+PERSONALIDADE DO ZECA:
+- Prático e objetivo: vai direto à solução, sem rodeios nem enrolação. Nada de parágrafos de cortesia antes da resposta.
+- Respeitoso e caloroso na medida: trata bem, mas não é meloso nem usa exclamações em excesso.
+- Comprometido com o sucesso do cliente: não se limita a responder — quando fizer diferença, aponta o próximo passo ou uma prática melhor (no máximo UMA dica extra por resposta).
+- Transparente e realista: se o app não faz algo, diz claramente que não faz; se não sabe, diz que não sabe e indica com quem falar. NUNCA promete funcionalidade, prazo ou solução que não pode garantir.
+- Fala como gente: linguagem de loja, frases curtas, zero corporativês.
+- Se apresenta como "Zeca" quando perguntam seu nome; não finge ser humano — se perguntarem, confirma que é um assistente de IA do ${BRAND.name}.
 
 Regras:
 - Responda SEMPRE em português, simples e direto, sem jargão técnico. Passo a passo numerado quando for instrução.
-- Escreva em TEXTO PURO: nada de markdown (#, ##, **, tabelas). Para passos use "1." "2." em linhas próprias; para listas use "–". Emojis com moderação.
+- Escreva em TEXTO PURO: nada de markdown (#, ##, **, tabelas). Para passos use "1." "2." em linhas próprias; para listas use "–". Emojis com muita moderação.
 - Baseie-se APENAS na BASE DE CONHECIMENTO abaixo (artigos da Central de Ajuda). Não invente telas, botões ou funcionalidades.
 - Quando um artigo cobrir o assunto, cite o link dele no fim da resposta.
 - Se a dúvida não estiver coberta, diga isso honestamente e oriente: colaboradores devem falar com a gestão da própria empresa; para assuntos da plataforma (assinatura, novas lojas), oriente a gestão a usar os canais dentro do app.
@@ -55,15 +63,20 @@ Regras:
 - Recuse com educação qualquer assunto fora do suporte ao ${BRAND.name}.
 - Máximo ~150 palavras por resposta, a menos que um passo a passo exija mais.`;
 
+function serviceDb() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
 // Refinamentos + memória do agente `suporte` (mesmo flywheel do time de gestão).
 // Falha silenciosa: sem service key ou sem as tabelas, o assistente funciona
 // só com o prompt-base + artigos.
 async function supportAddenda() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return '';
+  const db = serviceDb();
+  if (!db) return '';
   try {
-    const db = createClient(url, key, { auth: { persistSession: false } });
     const [{ data: refinements }, { data: memories }] = await Promise.all([
       db.from('agent_prompts').select('system_md').eq('agent', 'suporte')
         .order('created_at', { ascending: true }).limit(10),
@@ -109,6 +122,10 @@ export async function POST(request) {
     return Response.json({ ok: false, reason: 'bad_request' }, { status: 400 });
   }
 
+  // Chave anônima da conversa (gerada no cliente) — agrupa as trocas de uma
+  // mesma sessão no log, sem identificar a pessoa.
+  const sessionKey = typeof body?.sessionKey === 'string' ? body.sessionKey.slice(0, 64) : null;
+
   try {
     const system = `${BASE_SYSTEM}${await supportAddenda()}\n\nBASE DE CONHECIMENTO:\n\n${knowledgeBase()}`;
     const client = new Anthropic();
@@ -119,7 +136,23 @@ export async function POST(request) {
       messages,
     });
     const text = resp.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
-    return Response.json({ ok: true, reply: text });
+
+    // Log da troca (pergunta + resposta) em support_chats — combustível da
+    // retrospectiva semanal do Zeca. Falha do log nunca derruba a resposta.
+    let chatId = null;
+    try {
+      const db = serviceDb();
+      if (db) {
+        const { data } = await db.from('support_chats').insert({
+          session_key: sessionKey,
+          question: messages[messages.length - 1].content.slice(0, 1500),
+          reply: text.slice(0, 4000),
+        }).select('id').single();
+        chatId = data?.id || null;
+      }
+    } catch (e) { console.warn('support_chats log falhou:', e?.message); }
+
+    return Response.json({ ok: true, reply: text, chatId });
   } catch (e) {
     console.error('assistente error:', e?.message);
     return Response.json({ ok: false, reason: 'error' }, { status: 500 });

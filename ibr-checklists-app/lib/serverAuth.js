@@ -16,8 +16,12 @@ function signHS256(payload, secret) {
   return `${signingInput}.${b64url(signature)}`;
 }
 
-// Um turno de trabalho. Não há refresh: expirou, o usuário digita o PIN de novo.
-export const SESSION_TTL_SECONDS = 8 * 60 * 60;
+// 7 dias: cobre a loja que abre com a internet fora do ar — a sessão do último
+// login continua válida no aparelho (offline-first, revisão 21/07). O contrapeso
+// do TTL longo é o /api/auth/refresh: sempre que o app abre online ele revalida
+// suspensão/empresa ativa e troca por um token novo. Suspensão demora no máximo
+// até a próxima abertura online do aparelho para fazer efeito.
+export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const b64urlDecode = (str) =>
   Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
