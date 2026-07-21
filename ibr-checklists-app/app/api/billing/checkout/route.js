@@ -1,4 +1,4 @@
-import { getTier } from '../../../../lib/plans';
+import { priceForUnits, MAX_SELF_SERVICE_UNITS } from '../../../../lib/plans';
 import { createPreapproval, mpConfigured } from '../../../../lib/mercadopago';
 import { authCompany, serviceClient, siteUrl, json } from '../../../../lib/billingServer';
 
@@ -18,8 +18,16 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, reason: 'bad_request' }, 400); }
 
-  const tier = getTier(body?.plan_tier);
-  if (!tier) return json({ ok: false, reason: 'invalid_tier' }, 400);
+  // Contrato novo (21/07/2026): a gestão informa QUANTAS lojas e o ciclo.
+  // O preço vem de lib/plans.js (faixas por unidade); acima do teto não há
+  // checkout automático — é venda assistida com piso público.
+  const units = Math.floor(Number(body?.units));
+  const cycle = body?.cycle === 'annual' ? 'annual' : 'monthly';
+  if (!Number.isFinite(units) || units < 1 || units > MAX_SELF_SERVICE_UNITS) {
+    return json({ ok: false, reason: 'invalid_units' }, 400);
+  }
+  const price = priceForUnits(units, cycle);
+  if (!price) return json({ ok: false, reason: 'invalid_units' }, 400);
 
   const supabase = serviceClient();
   if (!supabase) return json({ ok: false, reason: 'server_misconfigured' }, 500);
@@ -33,11 +41,12 @@ export async function POST(request) {
   if (!payerEmail) return json({ ok: false, reason: 'no_payer_email' }, 400);
 
   const pre = await createPreapproval({
-    amount: tier.price,
-    reason: `ZCheck — ${tier.label}`,
+    amount: price.chargeAmount,
+    reason: `ZCheck — ${units} ${units === 1 ? 'loja' : 'lojas'} (${cycle === 'annual' ? 'anual' : 'mensal'})`,
     payerEmail,
     companyId: auth.companyId,
     backUrl: `${siteUrl(request)}/app`,
+    frequencyMonths: cycle === 'annual' ? 12 : 1,
   });
   if (!pre.ok || !pre.initPoint) {
     console.error('createPreapproval falhou:', pre.status, JSON.stringify(pre.body)?.slice(0, 300));

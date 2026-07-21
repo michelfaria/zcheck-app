@@ -139,7 +139,7 @@ export default function PrivacidadePage() {
 
         <Section title="9. Cookies e Tecnologias Similares">
           <P>O Aplicativo utiliza armazenamento local (IndexedDB) exclusivamente para funcionamento offline. Não utilizamos cookies de rastreamento ou publicidade.</P>
-          <P>O Cloudflare Turnstile analisa comportamento para distinguir humanos de bots, sem armazenamento de dados pessoais pelo IBR.</P>
+          <P>O Cloudflare Turnstile analisa comportamento para distinguir humanos de bots, sem armazenamento de dados pessoais pelo ZCheck.</P>
         </Section>
 
         <Section title="10. Contato — Encarregado de Dados (DPO)">

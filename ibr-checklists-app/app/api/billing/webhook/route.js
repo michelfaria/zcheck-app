@@ -63,9 +63,11 @@ export async function POST(request) {
       status = pre.status; // authorized | paused | cancelled | pending
       const amount = pre?.auto_recurring?.transaction_amount;
       const tier = getTierByPrice(amount);
+      // Fallback do período: respeita o ciclo da assinatura (1 mês ou 12).
+      const freqMonths = Number(pre?.auto_recurring?.frequency) || 1;
       const periodEnd = pre.next_payment_date
         ? new Date(pre.next_payment_date).toISOString()
-        : new Date(Date.now() + MONTH_MS).toISOString();
+        : new Date(Date.now() + freqMonths * MONTH_MS).toISOString();
 
       if (companyId) {
         if (status === 'authorized') {
@@ -97,9 +99,21 @@ export async function POST(request) {
 
       if (companyId) {
         if (status === 'approved') {
+          // O período estendido depende do ciclo (mensal ou anual). A fonte de
+          // verdade é a preapproval no MP: next_payment_date > frequency.
+          let periodEnd = null;
+          if (preapprovalId) {
+            const rp = await getPreapproval(preapprovalId);
+            if (rp.ok) {
+              const months = Number(rp.body?.auto_recurring?.frequency) || 1;
+              periodEnd = rp.body?.next_payment_date
+                ? new Date(rp.body.next_payment_date).toISOString()
+                : new Date(Date.now() + months * MONTH_MS).toISOString();
+            }
+          }
           await supabase.from('companies').update({
             subscription_status: 'active',
-            current_period_end: new Date(Date.now() + MONTH_MS).toISOString(),
+            current_period_end: periodEnd || new Date(Date.now() + MONTH_MS).toISOString(),
           }).eq('id', companyId);
         } else if (status === 'rejected') {
           await supabase.from('companies').update({ subscription_status: 'past_due' }).eq('id', companyId);

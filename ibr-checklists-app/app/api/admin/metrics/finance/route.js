@@ -1,5 +1,5 @@
 import { adminGuard, jsonNoStore } from '../../../../../lib/adminApi';
-import { TIERS, tierForUnits, billingState } from '../../../../../lib/plans';
+import { priceForUnits, monthlyValueFor, PRICE_BANDS, billingState } from '../../../../../lib/plans';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,8 +40,7 @@ export async function GET(request) {
   const rows = companies.data.map(c => {
     const h = healthById.get(c.id) || {};
     const b = billingState(c, now);
-    const tier = c.plan_tier ? TIERS[c.plan_tier] : null;
-    const monthly = b.state === 'active' && tier ? tier.price : 0; // cortesia/custom → 0
+    const monthly = b.state === 'active' ? monthlyValueFor(c) : 0; // cortesia/custom → 0
     mrr += monthly;
 
     // Projeção: só trials em andamento contam.
@@ -49,9 +48,10 @@ export async function GET(request) {
     if (b.state === 'trialing') {
       const use7 = h.completions_7d || 0;
       const p = use7 >= 10 ? CONVERSION.high : use7 >= 1 ? CONVERSION.some : CONVERSION.none;
-      const targetTier = tierForUnits(Math.max(1, h.units || 1)) || TIERS.scale;
-      projection = { probability: p, tier: targetTier.id, value: targetTier.price };
-      projectedAdd += p * targetTier.price;
+      // Acima do teto self-service projeta pelo topo da tabela (piso é negociado).
+      const target = priceForUnits(Math.min(20, Math.max(1, h.units || 1)));
+      projection = { probability: p, tier: target.band.id, value: target.monthlyTotal };
+      projectedAdd += p * target.monthlyTotal;
     }
 
     return {
@@ -117,6 +117,6 @@ export async function GET(request) {
       (b.monthly - a.monthly) ||
       (b.state === 'trialing') - (a.state === 'trialing') ||
       (b.completions_30d - a.completions_30d)),
-    tiers: Object.values(TIERS),
+    tiers: PRICE_BANDS,
   });
 }

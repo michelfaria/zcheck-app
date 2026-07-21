@@ -20,7 +20,8 @@ function authHeaders() {
 }
 
 // Cria a assinatura. Retorna { ok, id, initPoint } ou { ok:false, status, body }.
-export async function createPreapproval({ amount, reason, payerEmail, companyId, backUrl }) {
+// frequencyMonths: 1 (mensal, padrão) ou 12 (anual — cobrança única por ano).
+export async function createPreapproval({ amount, reason, payerEmail, companyId, backUrl, frequencyMonths = 1 }) {
   const res = await fetch(`${API}/preapproval`, {
     method: 'POST',
     headers: authHeaders(),
@@ -31,7 +32,7 @@ export async function createPreapproval({ amount, reason, payerEmail, companyId,
       back_url: backUrl,
       status: 'pending',
       auto_recurring: {
-        frequency: 1,
+        frequency: frequencyMonths,
         frequency_type: 'months',
         transaction_amount: amount,
         currency_id: 'BRL',

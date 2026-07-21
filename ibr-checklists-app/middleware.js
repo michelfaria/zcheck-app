@@ -41,6 +41,14 @@ export async function middleware(request) {
     }
   }
 
+  // No domínio principal não existe tenant: /app cairia no fallback de
+  // desenvolvimento (uma empresa arbitrária). Quem chega ali é cliente sem o
+  // subdomínio da empresa — o caminho certo é a página de código.
+  const isApex = hostname === 'zcheckapp.com' || hostname === 'www.zcheckapp.com';
+  if (isApex && (pathname === '/app' || pathname.startsWith('/app/'))) {
+    return NextResponse.redirect(new URL('/entrar', request.url));
+  }
+
   // localhost em dev também redireciona
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     if (pathname === '/') {

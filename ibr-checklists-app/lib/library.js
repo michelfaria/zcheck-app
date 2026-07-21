@@ -15,18 +15,25 @@
  * com o campo "setor" do waitlist.
  */
 
+// Taxonomia oficial de setores (21/07/2026) — é a MESMA em landing, waitlist e
+// onboarding. Food Service agrupa os antigos restaurante/café/padaria; cada
+// modelo guarda o sub-segmento em `segmento` (só exibição). `hint` diz o que o
+// setor abrange. Setores ainda sem modelos existem de propósito: aparecem como
+// "em breve" e medem demanda (template_adopted + campo setor do waitlist).
 export const LIBRARY_VERTICALS = [
-  { id: 'restaurante', label: 'Restaurante' },
-  { id: 'cafe', label: 'Café' },
+  { id: 'food-service', label: 'Food Service',
+    hint: 'Bar, restaurante, café, padaria, hamburgueria, pizzaria, lanchonete' },
   { id: 'hotel', label: 'Hotel / Pousada' },
+  { id: 'eventos', label: 'Eventos' },
   { id: 'varejo', label: 'Varejo' },
-  { id: 'padaria', label: 'Padaria' },
+  { id: 'academia', label: 'Academia' },
+  { id: 'petshop', label: 'Pet Shop' },
 ];
 
 export const LIBRARY_TEMPLATES = [
   // ── Restaurante ────────────────────────────────────────────────────────────
   {
-    id: 'rest-cozinha-abertura', vertical: 'restaurante', momento: 'Abertura', area: 'Cozinha',
+    id: 'rest-cozinha-abertura', vertical: 'food-service', segmento: 'Restaurante', momento: 'Abertura', area: 'Cozinha',
     descricao: 'Segurança alimentar e preparo da cozinha antes do primeiro pedido.',
     deadline: '10:00',
     items: [
@@ -43,7 +50,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-salao-abertura', vertical: 'restaurante', momento: 'Abertura', area: 'Salão',
+    id: 'rest-salao-abertura', vertical: 'food-service', segmento: 'Restaurante', momento: 'Abertura', area: 'Salão',
     descricao: 'Salão pronto para receber o primeiro cliente.',
     deadline: '11:00',
     items: [
@@ -58,7 +65,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-cozinha-fechamento', vertical: 'restaurante', momento: 'Fechamento', area: 'Cozinha',
+    id: 'rest-cozinha-fechamento', vertical: 'food-service', segmento: 'Restaurante', momento: 'Fechamento', area: 'Cozinha',
     descricao: 'Fechar a cozinha sem risco sanitário nem desperdício.',
     items: [
       { text: 'Armazenar e etiquetar sobras aproveitáveis (nome + data)', critical: true },
@@ -72,7 +79,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-caixa-fechamento', vertical: 'restaurante', momento: 'Fechamento', area: 'Caixa',
+    id: 'rest-caixa-fechamento', vertical: 'food-service', segmento: 'Restaurante', momento: 'Fechamento', area: 'Caixa',
     descricao: 'Caixa fechado batendo, loja segura.',
     items: [
       { text: 'Conferir fechamento do caixa contra o relatório do sistema', critical: true },
@@ -86,7 +93,7 @@ export const LIBRARY_TEMPLATES = [
   },
 
   {
-    id: 'rest-bar-abertura', vertical: 'restaurante', momento: 'Abertura', area: 'Bar',
+    id: 'rest-bar-abertura', vertical: 'food-service', segmento: 'Restaurante', momento: 'Abertura', area: 'Bar',
     descricao: 'Bar abastecido e pronto antes da primeira comanda.',
     deadline: '11:00',
     items: [
@@ -101,7 +108,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-cozinha-intermediario', vertical: 'restaurante', momento: 'Intermediário', area: 'Cozinha',
+    id: 'rest-cozinha-intermediario', vertical: 'food-service', segmento: 'Restaurante', momento: 'Intermediário', area: 'Cozinha',
     descricao: 'Virada de turno da linha sem quebra de padrão nem estoque furado.',
     items: [
       { text: 'Passar pendências do turno para quem chega (caderno de virada)', critical: true },
@@ -114,7 +121,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-salao-fechamento', vertical: 'restaurante', momento: 'Fechamento', area: 'Salão',
+    id: 'rest-salao-fechamento', vertical: 'food-service', segmento: 'Restaurante', momento: 'Fechamento', area: 'Salão',
     descricao: 'Salão fechado limpo e montado para abrir rápido amanhã.',
     items: [
       { text: 'Recolher e higienizar condimentos e itens de mesa' },
@@ -127,7 +134,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'rest-recebimento-intermediario', vertical: 'restaurante', momento: 'Intermediário', area: 'Recebimento',
+    id: 'rest-recebimento-intermediario', vertical: 'food-service', segmento: 'Restaurante', momento: 'Intermediário', area: 'Recebimento',
     descricao: 'Mercadoria entra conferida — peso, validade e temperatura.',
     items: [
       { text: 'Conferir nota fiscal contra o pedido (item a item)', critical: true },
@@ -142,7 +149,7 @@ export const LIBRARY_TEMPLATES = [
 
   // ── Café ───────────────────────────────────────────────────────────────────
   {
-    id: 'cafe-abertura', vertical: 'cafe', momento: 'Abertura', area: 'Bar',
+    id: 'cafe-abertura', vertical: 'food-service', segmento: 'Café', momento: 'Abertura', area: 'Bar',
     descricao: 'Bar de café calibrado e pronto para o primeiro cliente.',
     deadline: '08:00',
     items: [
@@ -157,7 +164,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'cafe-fechamento', vertical: 'cafe', momento: 'Fechamento', area: 'Bar',
+    id: 'cafe-fechamento', vertical: 'food-service', segmento: 'Café', momento: 'Fechamento', area: 'Bar',
     descricao: 'Máquina preservada e vitrine sem sobras vencendo.',
     items: [
       { text: 'Backflush na máquina de espresso com detergente próprio', critical: true },
@@ -171,7 +178,7 @@ export const LIBRARY_TEMPLATES = [
   },
 
   {
-    id: 'cafe-salao-abertura', vertical: 'cafe', momento: 'Abertura', area: 'Salão',
+    id: 'cafe-salao-abertura', vertical: 'food-service', segmento: 'Café', momento: 'Abertura', area: 'Salão',
     descricao: 'Ambiente acolhedor pronto antes do primeiro cliente sentar.',
     deadline: '08:00',
     items: [
@@ -185,7 +192,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'cafe-turno-intermediario', vertical: 'cafe', momento: 'Intermediário', area: 'Bar',
+    id: 'cafe-turno-intermediario', vertical: 'food-service', segmento: 'Café', momento: 'Intermediário', area: 'Bar',
     descricao: 'Troca de turno sem fila crescer nem padrão cair.',
     items: [
       { text: 'Passar pendências e ocorrências para o próximo turno', critical: true },
@@ -341,7 +348,7 @@ export const LIBRARY_TEMPLATES = [
 
   // ── Padaria ────────────────────────────────────────────────────────────────
   {
-    id: 'padaria-producao-abertura', vertical: 'padaria', momento: 'Abertura', area: 'Produção',
+    id: 'padaria-producao-abertura', vertical: 'food-service', segmento: 'Padaria', momento: 'Abertura', area: 'Produção',
     descricao: 'Produção da madrugada organizada e forno pronto.',
     deadline: '06:00',
     items: [
@@ -355,7 +362,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'padaria-atendimento-abertura', vertical: 'padaria', momento: 'Abertura', area: 'Atendimento',
+    id: 'padaria-atendimento-abertura', vertical: 'food-service', segmento: 'Padaria', momento: 'Abertura', area: 'Atendimento',
     descricao: 'Balcão e vitrines prontos para o pico da manhã.',
     deadline: '06:30',
     items: [
@@ -369,7 +376,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'padaria-producao-fechamento', vertical: 'padaria', momento: 'Fechamento', area: 'Produção',
+    id: 'padaria-producao-fechamento', vertical: 'food-service', segmento: 'Padaria', momento: 'Fechamento', area: 'Produção',
     descricao: 'Produção fechada limpa e com a madrugada seguinte programada.',
     items: [
       { text: 'Programar produção da madrugada (quantidades por item)', critical: true },
@@ -382,7 +389,7 @@ export const LIBRARY_TEMPLATES = [
     ],
   },
   {
-    id: 'padaria-fechamento', vertical: 'padaria', momento: 'Fechamento', area: 'Atendimento',
+    id: 'padaria-fechamento', vertical: 'food-service', segmento: 'Padaria', momento: 'Fechamento', area: 'Atendimento',
     descricao: 'Fechar sem sobra estragando e com balcão pronto para amanhã.',
     items: [
       { text: 'Recolher vitrines: separar doação, reaproveitamento e descarte', critical: true },

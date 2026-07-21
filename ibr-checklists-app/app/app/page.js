@@ -35,8 +35,8 @@ import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from 
 
 import { C, R, W, T } from '../../lib/tokens';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
-import { billingState, TIER_LIST, CUSTOM_TIER } from '../../lib/plans';
-import { getSessionToken } from '../../lib/supabase';
+import { billingState, priceForUnits, MAX_SELF_SERVICE_UNITS } from '../../lib/plans';
+import { getSessionToken, setSessionToken, persistSession, loadPersistedSession } from '../../lib/supabase';
 const LOGO_DATA_URI = 'data:image/png;base64,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';
 const LOGO_LOGIN_URI = 'data:image/png;base64,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';
 
@@ -1773,13 +1773,22 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
 /* ------------------------------ executar view ------------------------------ */
 
 // Fixed display order for the three checklist types
-// Returns the list of sectors visible to a user based on their sectorId
-// (IBR1 only — other units see all sectors)
-function visibleSectors(unit, sectorId) {
-  if (!sectorId || unit.id !== 'ibr1') return unit.sectors;
-  if (sectorId === 'salao') return unit.sectors.filter(s => s === 'Salão');
-  if (sectorId === 'cozinha') return unit.sectors.filter(s => s === 'Cozinha');
-  return unit.sectors;
+// Returns the list of sectors visible to a user based on their sectorId.
+// Dois formatos convivem: os grupos legados do IBR1 ('salao'/'cozinha') e, para
+// as demais empresas, o id da linha na tabela `sectors` (resolvido por nome via
+// sectorRows). Antes o filtro só existia para o IBR1 — colaborador de qualquer
+// outra empresa via todos os setores mesmo vinculado a um (corrigido 20/07).
+function visibleSectors(unit, sectorId, sectorRows) {
+  if (!sectorId) return unit.sectors;
+  if (sectorId === 'salao' || sectorId === 'cozinha') {
+    if (unit.id !== 'ibr1') return unit.sectors;
+    const name = sectorId === 'salao' ? 'Salão' : 'Cozinha';
+    return unit.sectors.filter(s => s === name);
+  }
+  const row = (sectorRows || []).find(s => s.id === sectorId);
+  if (!row) return unit.sectors; // id desconhecido: nunca esconder a loja inteira
+  const filtered = unit.sectors.filter(s => s === row.name);
+  return filtered.length ? filtered : unit.sectors;
 }
 
 const CHECKLIST_TYPE_ORDER = [
@@ -1792,7 +1801,8 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
   const today = todayStr();
-  const sectors = visibleSectors(unit, currentUser?.sectorId);
+  const sectorRows = useSectors();
+  const sectors = visibleSectors(unit, currentUser?.sectorId, sectorRows);
 
   if (activeTemplate) {
     return (
@@ -1978,7 +1988,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
   };
 
   const canSwitchSectors = hasMultipleSectors && ['gestao', 'gerencia', 'lideranca'].includes(currentUser?.role);
-  const sectors = currentUser?.sectorId ? visibleSectors(unit, currentUser.sectorId) : getSectorList(activeSectorGroup);
+  const sectors = currentUser?.sectorId ? visibleSectors(unit, currentUser.sectorId, sectorRows) : getSectorList(activeSectorGroup);
 
   const shiftDate = (delta) => {
     const d = new Date(`${viewDate}T00:00:00`);
@@ -4030,6 +4040,14 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
     if (novoMissing.length) return;
     const typeName = novoType === '__custom__' ? novoCustomType.trim() : (availableTypes.find(t => t.id === novoType)?.name || novoType);
     if (!typeName || !novoSector || novoItems.filter(i => i.text.trim()).length === 0) return;
+    // Tipo livre: registra também em checklist_types. Sem isso o ACTIVE_TYPES
+    // nunca conhece o tipo e o checklist não aparece na aba Executar (bug 20/07).
+    if (novoType === '__custom__') {
+      const exists = (checklistTypes || []).some(t => (t.name || '').trim().toLowerCase() === typeName.toLowerCase());
+      if (!exists) {
+        onSaveChecklistType?.({ id: uid(), companyId: company?.id || 'ibr', name: typeName, sortOrder: (checklistTypes?.length || 0) + 1 });
+      }
+    }
     setNovoSaving(true);
     const cleanItems = novoItems.filter(i => i.text.trim()).map(i => ({ ...i, text: i.text.trim() }));
     const praça = novoName.trim();
@@ -4436,6 +4454,12 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
               ))}
             </div>
           </div>
+          {libVertical && LIBRARY_TEMPLATES.every(t => t.vertical !== libVertical) && (
+            <p style={{ fontSize: T.caption, color: C.muted, lineHeight: 1.6 }}>
+              Ainda não há modelos prontos para este setor — a biblioteca cresce com a
+              demanda. Enquanto isso, crie do zero em &ldquo;Outras formas de criar&rdquo;.
+            </p>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {LIBRARY_TEMPLATES.filter(t => !libVertical || t.vertical === libVertical).map(t => {
               const crit = t.items.filter(i => i.critical).length;
@@ -4444,7 +4468,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                   style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 14, cursor: 'pointer' }}>
                   <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{t.area} — {t.momento}</p>
                   <p style={{ fontSize: T.label, color: C.muted, marginTop: 2 }}>
-                    {LIBRARY_VERTICALS.find(v => v.id === t.vertical)?.label} · {t.items.length} itens{crit ? ` · ${crit} críticos` : ''}
+                    {LIBRARY_VERTICALS.find(v => v.id === t.vertical)?.label}{t.segmento ? ` · ${t.segmento}` : ''} · {t.items.length} itens{crit ? ` · ${crit} críticos` : ''}
                   </p>
                   <p style={{ fontSize: T.caption, color: C.muted, marginTop: 6, lineHeight: 1.45 }}>{t.descricao}</p>
                 </button>
@@ -4988,14 +5012,24 @@ function UserEditor({ user, onSave, onCancel }) {
 
   const needsUnit = role === 'colaborador' || role === 'lideranca' || role === 'gerencia';
   const unitObj = units.find(u => u.id === unitId);
-  const showSectorPicker = needsUnit && unitId === 'ibr1' && (role === 'colaborador' || role === 'lideranca');
-  const sectorGroups = showSectorPicker
+  // Seletor de setor: IBR1 mantém os grupos legados; as demais empresas listam
+  // as linhas da tabela `sectors` da loja escolhida (antes o picker era IBR1-only
+  // e o vínculo de setor ficava inacessível fora da aprovação de cadastro).
+  const sectorRows = useSectors();
+  const canPickSector = needsUnit && (role === 'colaborador' || role === 'lideranca');
+  const sectorGroups = !canPickSector ? [] : unitId === 'ibr1'
     ? [
         { id: null, label: 'Todos os setores', desc: 'Vê checklists de toda a loja' },
         { id: 'salao', label: 'Salão', desc: 'Salão interno, Jardim, Bar e Caixa' },
         { id: 'cozinha', label: 'Cozinha', desc: 'Brunch, Produção, Pizza e Bowls' },
       ]
-    : [];
+    : [
+        { id: null, label: 'Todos os setores', desc: 'Vê checklists de toda a loja' },
+        ...sectorRows
+          .filter(s => (s.unit_id || s.unitId) === unitId)
+          .map(s => ({ id: s.id, label: s.name, desc: `Vê apenas os checklists de ${s.name}` })),
+      ];
+  const showSectorPicker = sectorGroups.length > 1;
 
   const save = () => {
     if (!name.trim()) { setError('Informe o nome.'); return; }
@@ -5066,7 +5100,7 @@ function UserEditor({ user, onSave, onCancel }) {
 
       {showSectorPicker && (
         <>
-          <Eyebrow>Setor (IBR1)</Eyebrow>
+          <Eyebrow>Setor</Eyebrow>
           <div className="space-y-2 mt-2 mb-3">
             {sectorGroups.map(sg => (
               <button key={String(sg.id)} onClick={() => setSectorId(sg.id)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
@@ -6305,8 +6339,11 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
       const { validatePin } = await import('../../lib/sync');
       const result = await validatePin(selected.id, value);
       if (result.ok && result.token) {
-        const { setSessionToken } = await import('../../lib/supabase');
+        const { setSessionToken, persistSession } = await import('../../lib/supabase');
         setSessionToken(result.token);
+        // Guarda a sessão no aparelho: reload (ou o sistema matando a aba do
+        // PWA) não pode exigir novo PIN — offline isso trancaria o usuário.
+        persistSession(result.token, result.user);
         onLogin(result.user);
       } else if (result.reason === 'suspended') {
         // A rota recusa o token para suspensos; a checagem não é mais do cliente.
@@ -6556,7 +6593,7 @@ function InstallPrompt() {
 // branco sem exigir migração no provisionamento.
 const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
-const VERTICAL_EMOJI = { restaurante: '🍽️', cafe: '☕', hotel: '🏨', varejo: '🛍️', padaria: '🥐' };
+const VERTICAL_EMOJI = { 'food-service': '🍽️', hotel: '🏨', eventos: '🎪', varejo: '🛍️', academia: '🏋️', petshop: '🐾' };
 
 // Deduz o segmento comparando os setores da empresa com as áreas da biblioteca.
 function guessVertical(units) {
@@ -6659,15 +6696,19 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                 {LIBRARY_VERTICALS.map(v => {
                   const active = vertical === v.id;
                   const count = LIBRARY_TEMPLATES.filter(t => t.vertical === v.id).length;
+                  const empty = count === 0; // setor na taxonomia, modelos ainda em curadoria
                   return (
-                    <button key={v.id} onClick={() => setVertical(v.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                    <button key={v.id} onClick={() => !empty && setVertical(v.id)} disabled={empty}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: empty ? 'default' : 'pointer', textAlign: 'left',
+                        opacity: empty ? 0.55 : 1,
                         background: active ? `${accent}12` : 'white',
                         border: `1.5px solid ${active ? accent : C.border}` }}>
                       <span style={{ fontSize: 22 }}>{VERTICAL_EMOJI[v.id] || '📋'}</span>
                       <span style={{ flex: 1 }}>
                         <span style={{ display: 'block', fontSize: 14, fontWeight: 800, color: C.ink }}>{v.label}</span>
-                        <span style={{ display: 'block', fontSize: 11.5, color: C.muted }}>{count} checklists prontos</span>
+                        <span style={{ display: 'block', fontSize: 11.5, color: C.muted }}>
+                          {empty ? 'Modelos em breve — comece do zero' : `${count} checklists prontos${v.hint ? ` · ${v.hint}` : ''}`}
+                        </span>
                       </span>
                       {active && <CheckCircle2 size={18} color={accent} />}
                     </button>
@@ -8025,6 +8066,120 @@ function AppInner() {
   const [dynamicSectors, setDynamicSectors] = useState([]);
   const [dynamicTypes, setDynamicTypes] = useState([]);
 
+  // ── Sessão ────────────────────────────────────────────────────────────────
+  // Abre a sessão no app. Serve tanto ao login por PIN (LoginScreen) quanto à
+  // restauração da sessão persistida no mount — o caminho que mantém o app
+  // usável offline depois de um reload (ver loadPersistedSession).
+  const handleLogin = (u, { restored = false } = {}) => {
+    setCacheScope(u.companyId || u.company_id || null);
+    setCurrentUser(u);
+    setUnitId(u.unitId || null);
+    setTab(ROLE_TABS[u.role][0]);
+
+    // Instrumentação: abre a sessão de tracking e registra o login.
+    setTrackSession(u);
+    track('login', { source: restored ? 'restore' : 'login', metadata: { role: u.role, restored } });
+
+    // O mount já buscou estes metadados a partir do slug do subdomínio.
+    // Só refaz a busca se ela não deu resultado — o caso em que o slug do
+    // host difere do companies.id do usuário.
+    const needsTenantData = !company || dynamicUnits.length === 0;
+    if (needsTenantData && (u.companyId || u.company_id)) {
+      const cid = u.companyId || u.company_id;
+      Promise.all([
+        fetchCompany(null, cid),
+        fetchUnits(cid),
+        fetchSectors(cid),
+        fetchChecklistTypes(cid),
+      ]).then(([co, units, sectors, types]) => {
+        if (co) setCompany(co);
+        if (units.length) {
+          setDynamicUnits(units.map(u => ({
+            id: u.id, name: u.name, color: u.color,
+            sectors: sectors.filter(s => s.unit_id === u.id).map(s => s.name),
+          })));
+        }
+        setDynamicSectors(sectors);
+        setDynamicTypes(types);
+      });
+    }
+    // Check first access — show welcome screen for colaborador and lideranca
+    if (u.role === 'colaborador' || u.role === 'lideranca') {
+      const key = `ibr_welcomed_${u.id}`;
+      try {
+        const already = localStorage.getItem(key);
+        if (!already) {
+          setShowWelcome(true);
+          localStorage.setItem(key, '1');
+        }
+      } catch(_) {}
+    }
+    // Request push permission directly — OS shows its own native prompt
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      setTimeout(() => requestPushPermission(u).then(sub => setPushEnabled(!!sub)), 1000);
+    }
+    // Track presence
+    import('../../lib/supabase').then(({ supabase }) => {
+      const ch = supabase.channel('presence:users', { config: { presence: { key: u.id } } });
+      ch.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await ch.track({ user_id: u.id, online_at: new Date().toISOString() });
+        }
+      });
+    }).catch(() => {});
+  };
+
+  const doLogout = async () => {
+    clearTrackSession();
+    // Revoga a credencial (memória + cópia persistida): sem isto o token e o
+    // socket de realtime continuam autenticados como quem acabou de sair.
+    await setSessionToken(null);
+    setCurrentUser(null);
+  };
+
+  // Restaura a sessão persistida no mount. É o que permite abrir o app sem
+  // internet: o PIN só é exigido quando não há sessão válida no aparelho.
+  useEffect(() => {
+    const sess = loadPersistedSession();
+    if (!sess) return;
+    setSessionToken(sess.token);
+    handleLogin(sess.user, { restored: true });
+  }, []);
+
+  // Revalidação online: troca o token por um novo via /api/auth/refresh toda
+  // vez que o app abre (ou a conexão volta) com sessão ativa. É o contrapeso
+  // do TTL de 7 dias — suspensão e empresa desativada derrubam a sessão na
+  // primeira abertura conectada. Erros de rede mantêm o token atual.
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    const refresh = async () => {
+      const token = getSessionToken();
+      if (!token || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+      try {
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled) return;
+        if (res.status === 401 || res.status === 403) {
+          // Sessão inválida, suspensa ou empresa desativada: encerra de fato.
+          await doLogout();
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.ok && data.token) {
+          await setSessionToken(data.token);
+          persistSession(data.token, data.user || currentUser);
+        }
+      } catch (_) { /* offline ou erro transitório: segue com o token atual */ }
+    };
+    refresh();
+    const onOnline = () => refresh();
+    window.addEventListener('online', onOnline);
+    return () => { cancelled = true; window.removeEventListener('online', onOnline); };
+  }, [currentUser?.id]);
+
   // Instrumentação: uma abertura de app por visita, antes mesmo do login.
   // O tenant ainda não está resolvido aqui — o hostname (subdomínio) identifica
   // a empresa no /admin; o session_id liga esta abertura ao login que vier.
@@ -8038,13 +8193,23 @@ function AppInner() {
   // Active UNITS — dynamic when loaded from DB, fallback to hardcoded for IBR
   const ACTIVE_UNITS = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
 
-  // Active checklist types — dynamic when loaded, fallback to hardcoded
+  // Active checklist types — dynamic when loaded, fallback to hardcoded.
+  // Os tipos-padrão que NÃO existem no banco entram no fim: empresa antiga (IBR,
+  // sem typeRows) que criar um tipo livre não pode perder Abertura/Intermediário/
+  // Fechamento do Executar — antes o fallback era tudo-ou-nada (corrigido 20/07).
   const ACTIVE_TYPES = dynamicTypes.length > 0
-    ? dynamicTypes.map(t => ({
-        key: t.id,
-        label: t.name,
-        match: tpl => tpl.name.toLowerCase().includes(t.name.toLowerCase()),
-      }))
+    ? [
+        ...dynamicTypes.map(t => ({
+          key: t.id,
+          label: t.name,
+          match: tpl => tpl.name.toLowerCase().includes(t.name.toLowerCase()),
+        })),
+        ...CHECKLIST_TYPE_ORDER.filter(std => {
+          const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const root = std.key === 'intermediario' ? 'intermedi' : norm(std.label);
+          return !dynamicTypes.some(d => norm(d.name).includes(root));
+        }),
+      ]
     : CHECKLIST_TYPE_ORDER;
 
   // ── Onboarding guiado (Fase 2) ─────────────────────────────────────────────
@@ -8473,64 +8638,7 @@ function AppInner() {
           <LoginScreen
         company={company}
         users={users}
-        onLogin={u => {
-          setCacheScope(u.companyId || u.company_id || null);
-          setCurrentUser(u);
-          setUnitId(u.unitId || null);
-          setTab(ROLE_TABS[u.role][0]);
-
-          // Instrumentação: abre a sessão de tracking e registra o login.
-          setTrackSession(u);
-          track('login', { source: 'login', metadata: { role: u.role } });
-
-          // O mount já buscou estes metadados a partir do slug do subdomínio.
-          // Só refaz a busca se ela não deu resultado — o caso em que o slug do
-          // host difere do companies.id do usuário.
-          const needsTenantData = !company || dynamicUnits.length === 0;
-          if (needsTenantData && (u.companyId || u.company_id)) {
-            const cid = u.companyId || u.company_id;
-            Promise.all([
-              fetchCompany(null, cid),
-              fetchUnits(cid),
-              fetchSectors(cid),
-              fetchChecklistTypes(cid),
-            ]).then(([co, units, sectors, types]) => {
-              if (co) setCompany(co);
-              if (units.length) {
-                setDynamicUnits(units.map(u => ({
-                  id: u.id, name: u.name, color: u.color,
-                  sectors: sectors.filter(s => s.unit_id === u.id).map(s => s.name),
-                })));
-              }
-              setDynamicSectors(sectors);
-              setDynamicTypes(types);
-            });
-          }
-          // Check first access — show welcome screen for colaborador and lideranca
-          if (u.role === 'colaborador' || u.role === 'lideranca') {
-            const key = `ibr_welcomed_${u.id}`;
-            try {
-              const already = localStorage.getItem(key);
-              if (!already) {
-                setShowWelcome(true);
-                localStorage.setItem(key, '1');
-              }
-            } catch(_) {}
-          }
-          // Request push permission directly — OS shows its own native prompt
-          if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-            setTimeout(() => requestPushPermission(u).then(sub => setPushEnabled(!!sub)), 1000);
-          }
-          // Track presence
-          import('../../lib/supabase').then(({ supabase }) => {
-            const ch = supabase.channel('presence:users', { config: { presence: { key: u.id } } });
-            ch.subscribe(async (status) => {
-              if (status === 'SUBSCRIBED') {
-                await ch.track({ user_id: u.id, online_at: new Date().toISOString() });
-              }
-            });
-          }).catch(() => {});
-        }}
+        onLogin={handleLogin}
           />
         </div>
       </>
@@ -8545,12 +8653,6 @@ function AppInner() {
   // Teste vencido / assinatura encerrada: bloqueia o app (os dados seguem
   // intactos). O RLS já nega escrita no banco; isto é o bloqueio visível.
   const billing = billingState(company);
-  const doLogout = async () => {
-    clearTrackSession();
-    const { setSessionToken } = await import('../../lib/supabase');
-    await setSessionToken(null);
-    setCurrentUser(null);
-  };
   if (billing.state === 'expired') {
     return <SubscribePanel mode="block" company={company} currentUser={currentUser} onLogout={doLogout} />;
   }
@@ -8624,14 +8726,7 @@ function AppInner() {
       <Header
         unit={unit} onSelectUnit={setUnitId} allUnits={ACTIVE_UNITS}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
-        onLogout={async () => {
-          clearTrackSession();
-          // Revoga a credencial: sem isto o token e o socket de realtime
-          // continuam autenticados como o usuário que acabou de sair.
-          const { setSessionToken } = await import('../../lib/supabase');
-          await setSessionToken(null);
-          setCurrentUser(null);
-        }}
+        onLogout={doLogout}
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
         trialDaysLeft={billing.state === 'trialing' && currentUser.role === 'gestao' ? billing.daysLeft : null}
@@ -8811,31 +8906,40 @@ const checkoutError = (reason) => ({
   no_payer_email: 'Não encontramos o e-mail do cadastro. Fale com o suporte.',
   forbidden: 'Só a conta de gestão pode assinar.',
   unauthorized: 'Sessão expirada. Entre novamente.',
-  invalid_tier: 'Plano inválido.',
+  invalid_units: 'Número de lojas inválido.',
   server_misconfigured: 'Pagamento indisponível no momento.',
   mp_error: 'Não foi possível iniciar o pagamento. Tente de novo.',
 }[reason] || 'Não foi possível iniciar o pagamento. Tente de novo.');
 
 // Painel de assinatura. mode='block' toma a tela quando o teste vence;
 // mode='modal' abre por cima do app (a partir do banner/nudge).
+// Preço por loja com desconto progressivo (lib/plans.js): a gestão escolhe
+// quantas lojas e o ciclo; o valor aparece na hora — a mesma conta pública
+// da landing, sem surpresa no checkout.
 function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogout }) {
-  const [loading, setLoading] = useState('');
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [units, setUnits] = useState(1);
+  const [cycle, setCycle] = useState('monthly');
   const isGestao = currentUser?.role === 'gestao';
 
-  const subscribe = async (tierId) => {
-    setErr(''); setLoading(tierId);
+  const price = priceForUnits(units, cycle);
+  const annual = cycle === 'annual';
+  const brl = (n) => `R$ ${n.toLocaleString('pt-BR')}`;
+
+  const subscribe = async () => {
+    setErr(''); setLoading(true);
     try {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getSessionToken() || ''}` },
-        body: JSON.stringify({ plan_tier: tierId }),
+        body: JSON.stringify({ units, cycle }),
       });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.ok && body.init_point) { window.location.href = body.init_point; return; }
       setErr(checkoutError(body?.reason));
     } catch { setErr('Erro de conexão. Tente novamente.'); }
-    setLoading('');
+    setLoading(false);
   };
 
   const isBlock = mode === 'block';
@@ -8873,31 +8977,61 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
 
         {isGestao ? (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {TIER_LIST.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '14px 16px' }}>
-                  <div>
-                    <p style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>{t.label}</p>
-                    <p style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginTop: 2 }}>
-                      R${t.price}<span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>/mês</span>
-                    </p>
-                  </div>
-                  <button onClick={() => subscribe(t.id)} disabled={!!loading}
-                    style={{ padding: '10px 20px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 14,
-                      color: 'white', background: loading === t.id ? C.muted : C.ink, cursor: loading ? 'not-allowed' : 'pointer' }}>
-                    {loading === t.id ? '...' : 'Assinar'}
-                  </button>
-                </div>
+            {/* Ciclo */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }} role="group" aria-label="Ciclo de cobrança">
+              {[['monthly', 'Mensal'], ['annual', 'Anual · 2 meses grátis']].map(([id, label]) => (
+                <button key={id} type="button" onClick={() => setCycle(id)} aria-pressed={cycle === id}
+                  style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    border: `1.5px solid ${cycle === id ? C.ink : C.border}`,
+                    background: cycle === id ? C.ink : 'white', color: cycle === id ? 'white' : C.muted }}>
+                  {label}
+                </button>
               ))}
             </div>
-            <a href={CUSTOM_TIER.whatsapp} target="_blank" rel="noreferrer"
-              style={{ display: 'block', textAlign: 'center', marginTop: 12, fontSize: 12, fontWeight: 700, color: C.ink }}>
-              {CUSTOM_TIER.label}? Fale com a gente →
-            </a>
+
+            {/* Quantidade de lojas */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Quantas lojas?</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button type="button" aria-label="Menos uma loja" disabled={units <= 1}
+                  onClick={() => setUnits(u => Math.max(1, u - 1))}
+                  style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
+                    fontSize: 18, fontWeight: 800, color: units <= 1 ? C.border : C.ink, cursor: units <= 1 ? 'default' : 'pointer' }}>−</button>
+                <span style={{ fontSize: 18, fontWeight: 800, color: C.ink, minWidth: 26, textAlign: 'center' }}>{units}</span>
+                <button type="button" aria-label="Mais uma loja" disabled={units >= MAX_SELF_SERVICE_UNITS}
+                  onClick={() => setUnits(u => Math.min(MAX_SELF_SERVICE_UNITS, u + 1))}
+                  style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
+                    fontSize: 18, fontWeight: 800, color: units >= MAX_SELF_SERVICE_UNITS ? C.border : C.ink,
+                    cursor: units >= MAX_SELF_SERVICE_UNITS ? 'default' : 'pointer' }}>+</button>
+              </div>
+            </div>
+
+            {/* Conta transparente + assinar */}
+            {price && (
+              <div aria-live="polite" style={{ textAlign: 'center', marginBottom: 14 }}>
+                <p style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>
+                  {brl(annual ? price.annualMonthlyEq : price.monthlyTotal)}<span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>/mês</span>
+                </p>
+                <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                  {units} {units === 1 ? 'loja' : 'lojas'} × {brl(annual ? price.perUnitAnnual : price.perUnit)}
+                  {annual && <> · cobrança anual de {brl(price.annualTotal)} (economia de {brl(price.annualSavings)})</>}
+                </p>
+                {annual && (
+                  <p style={{ fontSize: 11.5, fontWeight: 700, color: C.success, marginTop: 6 }}>
+                    ✓ Implantação assistida incluída — nossa equipe configura com você.
+                  </p>
+                )}
+              </div>
+            )}
+            <button onClick={subscribe} disabled={loading}
+              style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 15,
+                color: 'white', background: loading ? C.muted : C.ink, cursor: loading ? 'not-allowed' : 'pointer' }}>
+              {loading ? 'Abrindo pagamento...' : 'Assinar'}
+            </button>
             {err && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, textAlign: 'center', marginTop: 12 }}>{err}</p>}
             <p style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 16 }}>
-              Cancele quando quiser, sem multa ou fidelidade.
+              Cancele quando quiser, sem multa ou fidelidade no mensal.
             </p>
           </>
         ) : (

@@ -3,14 +3,19 @@ import {
   AlertTriangle, Clock, Check, Eye, MapPin, Target, TrendingUp, Award,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
+import BackToTop from '../components/BackToTop';
+import PriceCalculator from '../components/PriceCalculator';
 import { LIBRARY_VERTICALS } from '../lib/library';
-import { TIER_LIST, CUSTOM_TIER } from '../lib/plans';
+import { PRICE_BANDS, TRIAL_DAYS } from '../lib/plans';
 
 // Landing pública. Consome os mesmos tokens do app (lib/tokens.js). O CTA é o
-// cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 7 dias
+// cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 14 dias
 // e assina — o fluxo existe (signup + trial + Mercado Pago). Os preços vêm de
-// lib/plans.js (fonte única). O hero mostra um EXEMPLO ILUSTRATIVO do briefing,
-// rotulado — nunca dados falsos apresentados como reais.
+// lib/plans.js (fonte única): faixas por loja com desconto progressivo, e a
+// TRANSPARÊNCIA (preço público + calculadora, sem reunião comercial) é a
+// premissa de posicionamento — o mercado esconde preço; o ZCheck publica.
+// O hero mostra um EXEMPLO ILUSTRATIVO do briefing, rotulado — nunca dados
+// falsos apresentados como reais.
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
 const SIGNUP = '/comecar';
@@ -80,8 +85,11 @@ const PILLARS = [
 
 export default function LandingPage() {
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: C.ink, background: 'white', overflowX: 'hidden' }}>
+    // overflow-x: clip (não hidden): hidden quebra o position:sticky do header —
+    // o Chrome trata o ancestral como scroll container e o header deixa de grudar.
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: C.ink, background: 'white', overflowX: 'clip' }}>
       <style>{`
+        html { scroll-behavior: smooth; }
         .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; border-radius: ${R.md}px; font-weight: ${W.semibold}; cursor: pointer; }
         .lp-btn-primary { background: ${C.ink}; color: #fff; padding: 14px 28px; font-size: ${T.body}px; border: none; }
         .lp-btn-primary:hover { background: #0a4a70; }
@@ -90,15 +98,16 @@ export default function LandingPage() {
         .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
         .lp-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
         .lp-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .lp-grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
         details.lp-faq summary { cursor: pointer; font-size: ${T.body}px; font-weight: ${W.semibold}; color: ${C.ink}; padding: 16px 0; list-style: none; display: flex; justify-content: space-between; align-items: center; }
         details.lp-faq summary::after { content: '+'; font-size: 20px; color: ${C.muted}; }
         details.lp-faq[open] summary::after { content: '–'; }
         details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
         details.lp-faq summary::-webkit-details-marker { display: none; }
-        section[id] { scroll-margin-top: 84px; }
+        section[id] { scroll-margin-top: 68px; } /* altura exata do header sticky */
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
-          .lp-grid-2, .lp-grid-3, .lp-grid-4 { grid-template-columns: 1fr; }
+          .lp-grid-2, .lp-grid-3, .lp-grid-4, .lp-grid-5 { grid-template-columns: 1fr; }
           .lp-nav-links { display: none; }
           .lp-hero-ctas { flex-direction: column; align-items: stretch; }
         }
@@ -136,10 +145,27 @@ export default function LandingPage() {
               <a href="#como-funciona" className="lp-btn lp-btn-ghost">Ver como funciona</a>
             </div>
             <p style={{ fontSize: T.caption, color: C.muted }}>
-              7 dias grátis · sem cartão para começar · cancele quando quiser
+              {TRIAL_DAYS} dias grátis · sem cartão para começar · cancele quando quiser
             </p>
           </div>
           <BriefingExample />
+        </div>
+      </section>
+
+      {/* 1.5 · MANIFESTO — transparência como premissa */}
+      <section style={{ padding: '56px 0', borderBottom: `1px solid ${C.border}` }}>
+        <div className="lp-container" style={{ maxWidth: 760 }}>
+          <Eyebrow color={C.success}>Nossa premissa</Eyebrow>
+          <h2 style={{ fontSize: 'clamp(22px, 2.8vw, 30px)', fontWeight: W.bold, lineHeight: 1.25, marginBottom: 16 }}>
+            Transparência não é um recurso. É o nosso ponto de partida.
+          </h2>
+          <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.8 }}>
+            No mercado de software operacional, preço é segredo e proposta é reunião:
+            &ldquo;fale com um consultor&rdquo;. O ZCheck nasceu do outro lado. Nosso preço é
+            público, a conta se calcula em 10 segundos, não há fidelidade escondida
+            nem taxa surpresa. Uma empresa que vende visibilidade da operação dos
+            outros precisa começar sendo visível na própria conta.
+          </p>
         </div>
       </section>
 
@@ -204,7 +230,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-grid-3">
             {[
-              ['Crie sua conta e adote um modelo', 'Em minutos: escolha seu segmento e a biblioteca traz os checklists prontos — restaurante, café, hotel, varejo, padaria. Ajuste ao seu jeito.'],
+              ['Crie sua conta e adote um modelo', 'Em minutos: escolha seu setor e a biblioteca traz os checklists prontos — food service (de bar a pizzaria), hotel e varejo, com mais setores a caminho. Ajuste ao seu jeito.'],
               ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só o que é do seu turno e setor. Foto onde importa, e funciona sem internet.'],
               ['Você recebe o briefing e age', 'O que caiu, o que atrasou, o que priorizar. E o que você marcar para tratar volta até ser resolvido.'],
             ].map(([t, d], i) => (
@@ -283,79 +309,109 @@ export default function LandingPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: T.caption, color: C.muted }}>
+          <p style={{ fontSize: T.caption, color: C.muted, maxWidth: 560, margin: '0 auto' }}>
+            Food Service cobre bar, restaurante, café, padaria, hamburgueria, pizzaria e lanchonete.
             Outro setor? A biblioteca de modelos cresce com a demanda — comece do zero e monte o seu.
           </p>
         </div>
       </section>
 
-      {/* 8 · PREÇO */}
+      {/* 8 · PREÇO — calculadora + faixas + compromissos + contraste */}
       <section id="preco" style={{ padding: '72px 0' }}>
         <div className="lp-container">
-          <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 44px' }}>
+          <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 36px' }}>
             <Eyebrow>Preço</Eyebrow>
             <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2, marginBottom: 12 }}>
-              Simples, por unidade. Sem surpresa.
+              Arraste, calcule, decida. Sem reunião comercial.
             </h2>
             <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.7 }}>
-              7 dias grátis para testar, sem cartão. Depois, escolha o plano que cabe na sua operação — quanto mais unidades, menor o custo por loja.
+              {TRIAL_DAYS} dias grátis para testar, sem cartão. O preço é por loja, e cai
+              conforme você cresce — todas as suas lojas pagam o preço da faixa atingida.
             </p>
           </div>
-          <div className="lp-grid-3">
-            {TIER_LIST.map((t, i) => {
-              const featured = i === 1; // "até 3 unidades" — o melhor custo/benefício de entrada
-              return (
-                <div key={t.id} style={{
-                  background: featured ? C.ink : 'white', color: featured ? 'white' : C.ink,
-                  border: `1.5px solid ${featured ? C.ink : C.border}`, borderRadius: R.lg, padding: 28,
-                  display: 'flex', flexDirection: 'column', gap: 6,
-                }}>
-                  <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: featured ? 0.85 : 1, color: featured ? 'white' : C.muted }}>{t.label}</p>
-                  <p style={{ fontSize: 34, fontWeight: W.bold, letterSpacing: '-0.02em' }}>
-                    R${t.price}<span style={{ fontSize: T.bodySm, fontWeight: W.medium, color: featured ? 'rgba(255,255,255,0.7)' : C.muted }}>/mês</span>
-                  </p>
-                  <p style={{ fontSize: T.caption, color: featured ? 'rgba(255,255,255,0.7)' : C.muted, marginBottom: 14 }}>
-                    R${(t.price / t.unitLimit).toFixed(0).replace('.', ',')} por unidade/mês
-                  </p>
-                  <a href={SIGNUP} className="lp-btn" style={{
-                    background: featured ? C.success : C.ink, color: 'white', padding: '12px 20px', fontSize: T.body, marginTop: 'auto',
-                  }}>
-                    Começar grátis
-                  </a>
-                </div>
-              );
-            })}
+
+          <PriceCalculator />
+
+          {/* Tabela de faixas — completa e pública, inclusive 21+. Não existe
+              "sob consulta": rede grande já sabe o preço sem falar com ninguém. */}
+          <div className="lp-grid-5" style={{ marginTop: 36 }}>
+            {PRICE_BANDS.map(b => (
+              <div key={b.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
+                <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.muted, marginBottom: 6 }}>
+                  {b.max === Infinity ? `${b.min}+ lojas` : b.min === b.max ? `${b.min} loja` : `${b.min}–${b.max} lojas`}
+                </p>
+                <p style={{ fontSize: 28, fontWeight: W.bold, letterSpacing: '-0.02em', color: C.ink }}>
+                  R$ {b.perUnit}<span style={{ fontSize: T.caption, fontWeight: W.medium, color: C.muted }}> /loja/mês</span>
+                </p>
+                <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+                  R$ {b.perUnitAnnual}/loja/mês no anual
+                </p>
+              </div>
+            ))}
           </div>
-          <p style={{ textAlign: 'center', fontSize: T.bodySm, color: C.muted, marginTop: 20 }}>
-            {CUSTOM_TIER.label}?{' '}
-            <a href={CUSTOM_TIER.whatsapp} target="_blank" rel="noreferrer" style={{ color: C.ink, fontWeight: W.semibold, textDecoration: 'none' }}>
-              Fale com a gente para condições especiais →
-            </a>
+          <p style={{ textAlign: 'center', fontSize: T.bodySm, color: C.muted, marginTop: 18 }}>
+            A tabela é essa — para qualquer tamanho de rede. Sem cotação, sem reunião, sem preço escondido.
           </p>
-          <p style={{ textAlign: 'center', fontSize: T.caption, color: C.muted, marginTop: 8 }}>
-            Cancele quando quiser, sem multa ou período mínimo de fidelidade.
-          </p>
+
+          {/* Compromissos públicos */}
+          <div style={{ maxWidth: 680, margin: '48px auto 0', border: `1.5px solid ${C.border}`, borderRadius: R.lg, padding: 28 }}>
+            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16 }}>Compromissos públicos</h3>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                'Preço público, desde o primeiro dia. Sem cotação, sem consultor, sem taxa escondida.',
+                'Sem taxa de implantação — e no plano anual, você ganha implantação assistida, desde 1 loja.',
+                'Sem custo por usuário — usuários ilimitados em cada loja.',
+                'Cancelamento em 2 cliques, sem multa, sem fidelidade no plano mensal.',
+              ].map(item => (
+                <li key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Check size={16} color={C.success} aria-hidden style={{ flexShrink: 0, marginTop: 3 }} />
+                  <span style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6 }}>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Como o mercado faz × como o ZCheck faz */}
+          <div style={{ maxWidth: 680, margin: '32px auto 0' }}>
+            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16, textAlign: 'center' }}>
+              Como o mercado faz · Como o ZCheck faz
+            </h3>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
+              {[
+                ['“Peça uma cotação.”', 'Arraste o slider.'],
+                ['“Fale com um consultor.”', 'Comece o teste agora.'],
+                ['“Fidelidade de 12 meses.”', 'Cancele quando quiser.'],
+                ['Taxa de implantação na letra miúda.', 'Sem taxa. Está escrito aqui em cima.'],
+              ].map(([mercado, zcheck], i) => (
+                <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
+                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.muted, background: C.bg }}>{mercado}</p>
+                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.ink, fontWeight: W.semibold }}>{zcheck}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* 9 · PROVA + CTA */}
+      {/* 9 · ECO + CTA — a transparência do preço e a da operação são a mesma promessa */}
       <section style={{ background: C.ink, color: 'white', padding: '72px 0', textAlign: 'center' }}>
         <div className="lp-container" style={{ maxWidth: 660 }}>
           <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
-            Em operação diária nas lojas da Ilhabela Republic — nosso piloto fundador.
+            O briefing diário mostra sua operação sem filtro — o mesmo princípio do
+            nosso preço: você vê tudo, todos os dias.
           </p>
           <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: W.bold, marginBottom: 14 }}>
             Comece hoje. Configure em minutos.
           </h2>
           <p style={{ fontSize: T.body, opacity: 0.8, lineHeight: 1.7, marginBottom: 32 }}>
-            Crie sua conta, escolha um modelo do seu setor e comece o teste de 7 dias.
+            Crie sua conta, escolha um modelo do seu setor e comece o teste de {TRIAL_DAYS} dias.
             Se fizer sentido, você assina — e cancela quando quiser.
           </p>
           {/* C.success (não successBright) com texto branco: 5.02:1, passa AA. */}
           <a href={SIGNUP} className="lp-btn" style={{ background: C.success, color: 'white', padding: '15px 34px', fontSize: T.bodyLg, fontWeight: W.semibold }}>
             Criar minha conta
           </a>
-          <p style={{ fontSize: T.caption, opacity: 0.6, marginTop: 14 }}>7 dias grátis · sem cartão para começar.</p>
+          <p style={{ fontSize: T.caption, opacity: 0.6, marginTop: 14 }}>{TRIAL_DAYS} dias grátis · sem cartão para começar.</p>
         </div>
       </section>
 
@@ -366,8 +422,13 @@ export default function LandingPage() {
           <Eyebrow>Perguntas frequentes</Eyebrow>
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
-              ['Minha equipe vai usar?', 'Foi o teste do nosso piloto. Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
-              ['Quanto custa?', '7 dias grátis, sem cartão. Depois, a partir de R$97/mês por unidade, com custo por loja menor conforme você cresce. Cancele quando quiser, sem multa.'],
+              ['Minha equipe vai usar?', 'Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
+              ['Quanto custa?', `${TRIAL_DAYS} dias grátis, sem cartão. Depois, de R$ 97 a R$ 45 por loja/mês, conforme o número de lojas — a tabela inteira está pública na seção de preços, com calculadora, para qualquer tamanho de rede. Cancele quando quiser, sem multa.`],
+              ['Por que o preço por loja diminui?', 'Porque o nosso custo por loja também diminui quando a operação é padronizada em rede — e a gente repassa isso em vez de guardar como margem de negociação. O desconto é automático e vale para todas as lojas, não só para as novas.'],
+              ['O que acontece se eu abrir ou fechar uma loja no meio do mês?', 'A cobrança acompanha as unidades ativas, com pró-rata: loja que entra paga proporcional aos dias do mês, loja que sai deixa de contar na fatura seguinte. Sem multa, sem carência.'],
+              ['Vocês aumentam o preço depois?', 'A tabela é pública, e mudanças também serão. Se o preço mudar, quem já é cliente mantém o valor antigo por 12 meses.'],
+              ['Existe contrato de fidelidade?', 'Não no plano mensal: cancele quando quiser, em 2 cliques, sem multa. O plano anual é pago antecipado (12 meses pelo preço de 10) e vale pelo período contratado.'],
+              ['O que é a implantação assistida?', 'Nossa equipe configura a operação com você: lojas, setores e checklists montados juntos, migração do que hoje está em planilha e treinamento dos gerentes no primeiro acesso. Está incluída no plano anual, para qualquer número de lojas — de 1 para cima. No plano mensal, a implantação é self-service: modelos prontos por setor e onboarding guiado dentro do app, também sem custo.'],
               ['Precisa instalar alguma coisa?', 'Não. O ZCheck roda no navegador e pode ser adicionado à tela inicial do celular como um app (PWA). Sem loja de aplicativos, sem atualização manual.'],
               ['Funciona sem internet?', 'Sim. A execução registra tudo localmente e sincroniza quando a conexão volta — feito para estoque, câmara fria e subsolo.'],
               ['Quanto tempo até começar a usar?', 'Minutos. Você cria a conta, escolhe um modelo do seu setor e já começa o teste — sem esperar aprovação da nossa equipe.'],
@@ -394,6 +455,8 @@ export default function LandingPage() {
           </nav>
         </div>
       </footer>
+
+      <BackToTop />
     </div>
   );
 }

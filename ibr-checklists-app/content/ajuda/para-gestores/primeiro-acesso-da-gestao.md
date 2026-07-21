@@ -14,11 +14,11 @@ No primeiro login, o app apresenta um **tour guiado** com as principais funciona
 
 ## 2. Crie os primeiros checklists pela biblioteca
 
-Empresa nova começa sem checklists — e a forma mais rápida de resolver é usar os **modelos prontos por segmento** (restaurante, café, hotel, varejo, padaria):
+Empresa nova começa sem checklists — e a forma mais rápida de resolver é usar os **modelos prontos por setor** — Food Service (bar, restaurante, café, padaria, hamburgueria, pizzaria, lanchonete), Hotel / Pousada e Varejo, com mais setores a caminho:
 
 1. Abra a aba **Gerenciar** e toque em **+ Novo**.
 2. Toque em **Escolher um modelo pronto**.
-3. Selecione o segmento e o modelo, veja o preview dos itens.
+3. Selecione o setor e o modelo, veja o preview dos itens.
 4. Escolha a **loja** e o **setor** de destino e confirme.
 5. Repita para os demais setores. Depois ajuste os itens em **Gerenciar → Checklists** para a realidade da sua operação.
 

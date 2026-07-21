@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { spDaysAgo } from './adminApi';
-import { TIERS, billingState } from './plans';
+import { monthlyValueFor, billingState } from './plans';
 import { sendPlainEmail } from './email';
 
 // ============================================================================
@@ -170,7 +170,7 @@ export async function goalsWithCurrent(db) {
   const [{ data: goals }, { data: health }, { data: companies }] = await Promise.all([
     db.from('agent_goals').select('*').eq('status', 'active').order('created_at'),
     db.from('admin_company_health').select('company_id, completions_7d, last_activity'),
-    db.from('companies').select('id, plan_tier, subscription_status, trial_ends_at'),
+    db.from('companies').select('id, plan_tier, unit_limit, subscription_status, trial_ends_at'),
   ]);
   if (!goals?.length) return [];
 
@@ -178,7 +178,8 @@ export async function goalsWithCurrent(db) {
   let mrr = 0, paying = 0, trials = 0;
   for (const c of companies || []) {
     const b = billingState(c, now);
-    if (b.state === 'active' && c.plan_tier && TIERS[c.plan_tier]) { mrr += TIERS[c.plan_tier].price; paying += 1; }
+    const value = monthlyValueFor(c);
+    if (b.state === 'active' && value > 0) { mrr += value; paying += 1; }
     if (b.state === 'trialing') trials += 1;
   }
   const checklists7d = (health || []).reduce((s, h) => s + (h.completions_7d || 0), 0);
@@ -200,7 +201,7 @@ export async function buildSnapshot(db) {
   const since14 = spDaysAgo(14);
   const [companies, health, units, daily, eventsDaily, userComp, failed, alerts, ranking] =
     await Promise.all([
-      db.from('companies').select('id, name, slug, active, plan_tier, subscription_status, trial_ends_at, current_period_end, onboarded_at, contact_email, contact_whatsapp'),
+      db.from('companies').select('id, name, slug, active, plan_tier, unit_limit, subscription_status, trial_ends_at, current_period_end, onboarded_at, contact_email, contact_whatsapp'),
       db.from('admin_company_health').select('*'),
       db.from('admin_unit_health').select('*'),
       db.from('admin_completions_daily').select('*').gte('day', since14).limit(3000),
@@ -218,8 +219,7 @@ export async function buildSnapshot(db) {
   const empresas = (companies.data || []).map(c => {
     const h = healthById.get(c.id) || {};
     const b = billingState(c, now);
-    const tier = c.plan_tier ? TIERS[c.plan_tier] : null;
-    if (b.state === 'active' && tier) mrr += tier.price;
+    if (b.state === 'active') mrr += monthlyValueFor(c);
     return {
       id: c.id, nome: c.name, ativa: c.active, estado_billing: b.state,
       tier: c.plan_tier, trial_dias_restantes: b.state === 'trialing' ? b.daysLeft : null,
