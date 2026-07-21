@@ -102,7 +102,7 @@ export default function EntrarPage() {
 
       {/* Footer */}
       <footer style={{ padding: '20px 40px', textAlign: 'center' }}>
-        <span style={{ fontSize: 12, color: '#94A3B8' }}>© 2026 ZCheck · INGO Administração de Negócios Ltda.</span>
+        <span style={{ fontSize: 12, color: '#94A3B8' }}>© 2026 ZCheck. Todos os direitos reservados. CNPJ 34.164.735/0001-72</span>
       </footer>
     </div>
   );
