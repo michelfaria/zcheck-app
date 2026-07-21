@@ -69,6 +69,101 @@ function BriefingExample() {
   );
 }
 
+// Mockups de uso do app (notebook = gestão, celular = execução), em CSS puro
+// com os tokens do site — sem screenshot real e sem imagem de banco. Sempre
+// rotulados como exemplo ilustrativo, como o briefing do hero.
+function AppShowcase() {
+  const statCard = { background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px', flex: 1, minWidth: 0 };
+  const checkRow = (done) => ({ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: done ? '#F4FAF6' : 'white' });
+  const checkDot = (done) => ({ flexShrink: 0, width: 18, height: 18, borderRadius: R.pill, display: 'flex', alignItems: 'center', justifyContent: 'center', background: done ? C.success : 'white', border: done ? 'none' : `1.5px solid ${C.borderStrong}` });
+  return (
+    <div style={{ marginTop: 64 }} aria-label="Exemplo ilustrativo do app no notebook e no celular">
+      {/* Rótulo alinhado ao notebook (esquerda): o celular sobreposto ocupa a
+          direita e não pode cobrir o texto. */}
+      <div className="lp-showcase" style={{ marginBottom: 12 }}>
+        <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, maxWidth: 560 }}>
+          Exemplo ilustrativo — a gestão no notebook, a equipe no celular
+        </p>
+      </div>
+      <div className="lp-showcase">
+        {/* Notebook — visão da gestão */}
+        <div className="lp-showcase-laptop">
+          <div style={{ background: C.ink, borderRadius: `${R.lg}px ${R.lg}px 0 0`, padding: '9px 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#E8695A' }} aria-hidden />
+            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#E5B23C' }} aria-hidden />
+            <span style={{ width: 9, height: 9, borderRadius: R.pill, background: '#57A464' }} aria-hidden />
+            <span style={{ marginLeft: 10, fontSize: 11, color: 'rgba(255,255,255,0.65)', background: 'rgba(255,255,255,0.1)', borderRadius: R.pill, padding: '3px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              suaempresa.zcheckapp.com/app
+            </span>
+          </div>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: `0 0 ${R.lg}px ${R.lg}px`, padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+              <p style={{ fontSize: T.body, fontWeight: W.bold, color: C.ink }}>Briefing do dia</p>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>3 lojas · hoje</p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={statCard}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Execução ontem</p>
+                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.success }}>92%</p>
+              </div>
+              <div style={statCard}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Pendências</p>
+                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.warning }}>3</p>
+              </div>
+              <div style={statCard}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>Críticos</p>
+                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.critical }}>1</p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.critical}`, borderRadius: R.sm, padding: '9px 11px' }}>
+                <AlertTriangle size={13} color={C.critical} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.5 }}>Loja 2: “câmara fria” pendente 2× esta semana. Priorize hoje.</p>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.warning}`, borderRadius: R.sm, padding: '9px 11px' }}>
+                <Clock size={13} color={C.warning} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                <p style={{ fontSize: T.label, color: C.ink, lineHeight: 1.5 }}>“Fechamento — Caixa” atrasado na Loja 1.</p>
+              </div>
+            </div>
+          </div>
+          <div className="lp-laptop-base" style={{ height: 10, background: '#D7DEE4', borderRadius: '0 0 12px 12px', margin: '0 -26px', boxShadow: '0 6px 16px rgba(8,20,30,0.12)' }} aria-hidden />
+        </div>
+
+        {/* Celular — execução da equipe */}
+        <div className="lp-showcase-phone">
+          <div style={{ background: 'white', border: `1.5px solid ${C.borderStrong}`, borderRadius: 26, padding: 10, boxShadow: '0 18px 40px rgba(8,20,30,0.18)' }}>
+            <div style={{ width: 64, height: 5, borderRadius: R.pill, background: C.border, margin: '2px auto 10px' }} aria-hidden />
+            <div style={{ background: C.bg, borderRadius: 18, padding: 12 }}>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>Loja 1 · 07:42</p>
+              <p style={{ fontSize: T.bodySm, fontWeight: W.bold, color: C.ink, marginTop: 2 }}>Abertura — Cozinha</p>
+              <div style={{ height: 5, background: C.border, borderRadius: R.pill, margin: '10px 0 4px', overflow: 'hidden' }}>
+                <div style={{ width: '75%', height: '100%', background: C.success }} aria-hidden />
+              </div>
+              <p style={{ fontSize: T.label, color: C.muted, marginBottom: 10 }}>6 de 8 itens</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={checkRow(true)}>
+                  <span style={checkDot(true)}><Check size={11} color="white" aria-hidden /></span>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.ink }}>Temperatura da câmara fria</p>
+                    <p style={{ fontSize: 10, fontWeight: W.semibold, color: C.success, display: 'flex', alignItems: 'center', gap: 3 }}><Camera size={10} aria-hidden /> Foto anexada</p>
+                  </div>
+                </div>
+                <div style={checkRow(false)}>
+                  <span style={checkDot(false)} />
+                  <p style={{ fontSize: T.label, fontWeight: W.medium, color: C.muted }}>Validade dos insumos abertos</p>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, background: C.ink, color: 'white', borderRadius: R.sm, padding: '10px 0', textAlign: 'center', fontSize: T.label, fontWeight: W.bold }}>
+                Concluir checklist
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Os cinco pilares — a narrativa de posicionamento.
 const PILLARS = [
   { Icon: Eye, title: 'Você enxerga a operação inteira',
@@ -105,6 +200,16 @@ export default function LandingPage() {
         details.lp-faq p { font-size: ${T.bodySm}px; color: ${C.muted}; line-height: 1.7; padding-bottom: 16px; }
         details.lp-faq summary::-webkit-details-marker { display: none; }
         section[id] { scroll-margin-top: 68px; } /* altura exata do header sticky */
+        /* Vitrine notebook + celular: sobrepostos no desktop, empilhados no mobile. */
+        .lp-showcase { position: relative; max-width: 860px; margin: 0 auto; padding: 0 26px; }
+        .lp-showcase-laptop { max-width: 640px; }
+        .lp-showcase-phone { position: absolute; right: 26px; bottom: -24px; width: 224px; }
+        @media (max-width: 820px) {
+          .lp-showcase { padding: 0; }
+          .lp-showcase-laptop { max-width: none; }
+          .lp-laptop-base { margin: 0; } /* sem margem negativa: no mobile não há padding a compensar */
+          .lp-showcase-phone { position: static; width: 246px; margin: 20px auto 0; }
+        }
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
           .lp-grid-2, .lp-grid-3, .lp-grid-4, .lp-grid-5 { grid-template-columns: 1fr; }
@@ -240,6 +345,7 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+          <AppShowcase />
         </div>
       </section>
 
