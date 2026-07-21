@@ -221,7 +221,9 @@ export default function LandingPage() {
       {/* HEADER */}
       <header style={{ background: 'white', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, zIndex: 100 }}>
         <div className="lp-container" style={{ height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32} style={{ height: 32, width: 'auto' }} />
+          <a href="/" aria-label="ZCheck — página inicial" style={{ display: 'flex', alignItems: 'center' }}>
+            <img src="/zcheck-logo.png" alt="ZCheck" width={128} height={32} style={{ height: 32, width: 'auto' }} />
+          </a>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 22 }} aria-label="Navegação principal">
             <a className="lp-nav-links" href="#por-que" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Por que ZCheck</a>
             <a className="lp-nav-links" href="#como-funciona" style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.muted, textDecoration: 'none' }}>Como funciona</a>
@@ -552,7 +554,7 @@ export default function LandingPage() {
       <footer style={{ background: C.ink, padding: '28px 0' }}>
         <div className="lp-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
           <img src="/zcheck-logo.png" alt="ZCheck" width={104} height={26} style={{ height: 26, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
-          <span style={{ fontSize: T.label, color: 'rgba(255,255,255,0.7)' }}>© 2026 INGO Administração de Negócios Ltda. CNPJ 34.164.735/0001-72</span>
+          <span style={{ fontSize: T.label, color: 'rgba(255,255,255,0.7)' }}>© 2026 ZCheck. Todos os direitos reservados. CNPJ 34.164.735/0001-72</span>
           <nav style={{ display: 'flex', gap: 18 }} aria-label="Links legais">
             {[['Termos', '/termos'], ['Privacidade', '/privacidade'], ['Ajuda', '/ajuda'], ['Entrar', '/entrar'], ['Contato', WA]].map(([l, h]) => (
               <a key={l} href={h} style={{ fontSize: T.label, color: 'rgba(255,255,255,0.65)', textDecoration: 'none', fontWeight: W.medium }}>{l}</a>
