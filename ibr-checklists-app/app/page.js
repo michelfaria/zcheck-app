@@ -1,12 +1,12 @@
 import {
   CheckSquare, Bell, Camera, WifiOff, Wifi, EyeOff, MessagesSquare, RotateCcw,
   AlertTriangle, Clock, Check, Eye, MapPin, Target, TrendingUp, Award,
+  Trash2, ShieldCheck, Store, Pill, Dumbbell, BedDouble, Stethoscope,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 import BackToTop from '../components/BackToTop';
 import PriceCalculator from '../components/PriceCalculator';
-import { LIBRARY_VERTICALS } from '../lib/library';
-import { TRIAL_DAYS } from '../lib/plans';
+import { TRIAL_DAYS, PRICE_PER_UNIT } from '../lib/plans';
 
 // Landing pública. Consome os mesmos tokens do app (lib/tokens.js). O CTA é o
 // cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 14 dias
@@ -200,6 +200,18 @@ function AppShowcase() {
     </div>
   );
 }
+
+// Segmentos secundários da faixa "Feito para o seu negócio" (o público
+// principal — bares, restaurantes, lanchonetes e padarias — é o alvo da
+// headline de preço). `href` fica reservado para as futuras landings por
+// segmento; enquanto null, o card não é link.
+const SEGMENTS = [
+  { id: 'franquias', Icon: Store,       nome: 'Franquias',         frase: 'Padrão de marca auditável em todas as unidades.', href: null },
+  { id: 'farmacias', Icon: Pill,        nome: 'Farmácias',         frase: 'Autoinspeção e registros da Anvisa, sem papel.',  href: null },
+  { id: 'academias', Icon: Dumbbell,    nome: 'Academias',         frase: 'Equipamentos revisados e limpeza em dia.',        href: null },
+  { id: 'hoteis',    Icon: BedDouble,   nome: 'Hotéis e Pousadas', frase: 'Governança conferida quarto a quarto.',           href: null },
+  { id: 'clinicas',  Icon: Stethoscope, nome: 'Clínicas',          frase: 'Biossegurança documentada com foto e hora.',      href: null },
+];
 
 // Os cinco pilares — a narrativa de posicionamento.
 const PILLARS = [
@@ -478,85 +490,98 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 7 · PARA QUEM */}
-      <section id="para-quem" style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '64px 0' }}>
-        <div className="lp-container" style={{ textAlign: 'center' }}>
-          <Eyebrow>Para quem é</Eyebrow>
-          <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, marginBottom: 28 }}>
-            Operação física, várias frentes, pouco tempo.
-          </h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 900, margin: '0 auto 16px' }}>
-            {LIBRARY_VERTICALS.map(v => (
-              <span key={v.id} style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: R.pill, padding: '10px 20px', background: 'white' }}>
-                {v.label}
-              </span>
-            ))}
-          </div>
-          <p style={{ fontSize: T.caption, color: C.muted, maxWidth: 560, margin: '0 auto' }}>
-            Food Service cobre bar, restaurante, café, padaria, hamburgueria, pizzaria e lanchonete.
-            Outro setor? A biblioteca de modelos cresce com a demanda — comece do zero e monte o seu.
-          </p>
-        </div>
-      </section>
-
-      {/* 8 · PREÇO — calculadora + faixas + compromissos + contraste */}
+      {/* 8 · PREÇO — preço único por loja: anual (R$ 97, herói) e mensal
+          (R$ 127, âncora). Sucinto e visual: card + linha dinâmica + os 3
+          ralos de dinheiro do food service + FAQ curto. */}
       <section id="preco" style={{ padding: '96px 0' }}>
         <div className="lp-container">
-          <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 36px' }}>
+          <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 32px' }}>
             <Eyebrow>Preço</Eyebrow>
-            <h2 style={{ fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: W.bold, lineHeight: 1.18, marginBottom: 12 }}>
-              Arraste, calcule, decida. Sem reunião comercial.
+            <h2 style={{ fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: W.bold, lineHeight: 1.18, marginBottom: 10 }}>
+              Seu restaurante no padrão, com ou sem você na loja.
             </h2>
-            <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.7 }}>
-              {TRIAL_DAYS} dias grátis para testar, sem cartão. O preço é por loja, e cai
-              conforme você cresce — todas as suas lojas pagam o preço da faixa atingida.
+            <p style={{ fontSize: T.body, color: C.muted }}>
+              Um preço único por loja. Sem pacote, sem surpresa.
             </p>
           </div>
 
-          {/* A calculadora também renderiza a tabela de faixas (completa e
-              pública, inclusive 21+) para destacar a faixa ativa da conta. */}
           <PriceCalculator />
-          <p style={{ textAlign: 'center', fontSize: T.bodySm, color: C.muted, marginTop: 18 }}>
-            A tabela é essa — para qualquer tamanho de rede. Sem cotação, sem reunião, sem preço escondido.
-          </p>
 
-          {/* Compromissos públicos */}
-          <div style={{ maxWidth: 680, margin: '48px auto 0', border: `1.5px solid ${C.border}`, borderRadius: R.lg, padding: 28 }}>
-            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16 }}>Compromissos públicos</h3>
-            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* O ZCheck se paga — os 3 ralos */}
+          <div style={{ maxWidth: 860, margin: '56px auto 0' }}>
+            <p style={{ textAlign: 'center', fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, marginBottom: 20 }}>
+              O ZCheck se paga
+            </p>
+            <div className="lp-grid-3">
               {[
-                'Preço público, desde o primeiro dia. Sem cotação, sem consultor, sem taxa escondida.',
-                'Sem taxa de implantação — e no plano anual, você ganha implantação assistida, desde 1 loja.',
-                'Sem custo por usuário — usuários ilimitados em cada loja.',
-                'Cancelamento em 2 cliques, sem multa, sem fidelidade no plano mensal.',
-              ].map(item => (
-                <li key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <Check size={16} color={C.success} aria-hidden style={{ flexShrink: 0, marginTop: 3 }} />
-                  <span style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6 }}>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Como o mercado faz × como o ZCheck faz */}
-          <div style={{ maxWidth: 680, margin: '32px auto 0' }}>
-            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16, textAlign: 'center' }}>
-              Como o mercado faz · Como o ZCheck faz
-            </h3>
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
-              {[
-                ['“Peça uma cotação.”', 'Arraste o slider.'],
-                ['“Fale com um consultor.”', 'Comece o teste agora.'],
-                ['“Fidelidade de 12 meses.”', 'Cancele quando quiser.'],
-                ['Taxa de implantação na letra miúda.', 'Sem taxa. Está escrito aqui em cima.'],
-              ].map(([mercado, zcheck], i) => (
-                <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
-                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.muted, background: C.bg }}>{mercado}</p>
-                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.ink, fontWeight: W.semibold }}>{zcheck}</p>
+                { Icon: Trash2, t: 'Menos perdas', d: 'Validade, temperatura e porcionamento sob controle.' },
+                { Icon: ShieldCheck, t: 'Vigilância sem susto', d: 'A RDC 216 exige registros — foto, hora e responsável.' },
+                { Icon: RotateCcw, t: 'Padrão entre turnos', d: 'Briefing diário sem depender do WhatsApp.' },
+              ].map(({ Icon, t, d }) => (
+                <div key={t} style={{ textAlign: 'center', padding: '8px 12px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: R.md, background: C.bg, marginBottom: 10 }}>
+                    <Icon size={20} color={C.ink} aria-hidden />
+                  </span>
+                  <p style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink }}>{t}</p>
+                  <p style={{ fontSize: T.bodySm, color: C.muted, marginTop: 4, lineHeight: 1.55 }}>{d}</p>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* CTA */}
+          <div style={{ textAlign: 'center', marginTop: 48 }}>
+            <a href={SIGNUP} className="lp-btn lp-btn-primary" style={{ padding: '15px 32px', fontSize: T.bodyLg }}>
+              Teste grátis por {TRIAL_DAYS} dias — sem cartão de crédito
+            </a>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 12 }}>
+              Anual: 12 meses no cartão · Mensal: sem fidelidade, cancele quando quiser.
+            </p>
+          </div>
+
+          {/* FAQ enxuto do preço */}
+          <div style={{ maxWidth: 620, margin: '48px auto 0', borderTop: `1px solid ${C.border}` }}>
+            {[
+              ['O que conta como loja/unidade?', 'Cada ponto de operação com equipe própria — loja de rua, praça de alimentação, quiosque ou dark kitchen.'],
+              ['Como funciona a cobrança do anual?', `R$ ${PRICE_PER_UNIT.annual} por loja, todo mês no cartão de crédito, por 12 meses.`],
+              ['Funciona sem internet?', 'Sim — a equipe registra offline e tudo sincroniza quando a conexão volta.'],
+              ['Serve para quem tem 1 loja só?', `Sim. O preço é por loja: 1 loja = R$ ${PRICE_PER_UNIT.annual}/mês no anual.`],
+            ].map(([q, a]) => (
+              <details key={q} className="lp-faq" style={{ borderBottom: `1px solid ${C.border}` }}>
+                <summary>{q}</summary>
+                <p>{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 8.5 · SEGMENTOS — "feito para o seu negócio"; mesmo preço em todos.
+          `href` de cada card fica reservado para as futuras landings por
+          segmento (config no array SEGMENTS). */}
+      <section id="para-quem" style={{ background: C.bg, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: '64px 0' }}>
+        <div className="lp-container">
+          <h2 style={{ textAlign: 'center', fontSize: 'clamp(22px, 2.6vw, 28px)', fontWeight: W.bold, marginBottom: 28 }}>
+            Feito para o seu negócio
+          </h2>
+          <div className="lp-grid-5">
+            {SEGMENTS.map(({ id, Icon, nome, frase, href }) => {
+              const Tag = href ? 'a' : 'div';
+              return (
+                <Tag key={id} id={`seg-${id}`} {...(href ? { href } : {})}
+                  style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 20, textDecoration: 'none', display: 'block' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: R.md, background: C.bg, marginBottom: 10 }}>
+                    <Icon size={18} color={C.ink} aria-hidden />
+                  </span>
+                  <p style={{ fontSize: T.bodySm, fontWeight: W.bold, color: C.ink, marginBottom: 4 }}>{nome}</p>
+                  <p style={{ fontSize: T.caption, color: C.muted, lineHeight: 1.5 }}>{frase}</p>
+                </Tag>
+              );
+            })}
+          </div>
+          <p style={{ textAlign: 'center', fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 24 }}>
+            Qualquer segmento. Qualquer tamanho. R$ {PRICE_PER_UNIT.annual} por unidade/mês no plano anual.
+          </p>
         </div>
       </section>
 
@@ -592,11 +617,10 @@ export default function LandingPage() {
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
               ['Minha equipe vai usar?', 'Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
-              ['Quanto custa?', `${TRIAL_DAYS} dias grátis, sem cartão. Depois, de R$ 97 a R$ 45 por loja/mês, conforme o número de lojas — a tabela inteira está pública na seção de preços, com calculadora, para qualquer tamanho de rede. Cancele quando quiser, sem multa.`],
-              ['Por que o preço por loja diminui?', 'Porque o nosso custo por loja também diminui quando a operação é padronizada em rede — e a gente repassa isso em vez de guardar como margem de negociação. O desconto é automático e vale para todas as lojas, não só para as novas.'],
-              ['O que acontece se eu abrir ou fechar uma loja no meio do mês?', 'A cobrança acompanha as unidades ativas, com pró-rata: loja que entra paga proporcional aos dias do mês, loja que sai deixa de contar na fatura seguinte. Sem multa, sem carência.'],
-              ['Vocês aumentam o preço depois?', 'A tabela é pública, e mudanças também serão. Se o preço mudar, quem já é cliente mantém o valor antigo por 12 meses.'],
-              ['Existe contrato de fidelidade?', 'Não no plano mensal: cancele quando quiser, em 2 cliques, sem multa. O plano anual é pago antecipado (12 meses pelo preço de 10) e vale pelo período contratado.'],
+              ['Quanto custa?', `${TRIAL_DAYS} dias grátis, sem cartão. Depois, R$ ${PRICE_PER_UNIT.annual} por loja/mês no plano anual (12 meses no cartão) ou R$ ${PRICE_PER_UNIT.monthly} no mensal, sem fidelidade. Preço único, público, igual para qualquer segmento.`],
+              ['O que acontece se eu abrir ou fechar uma loja no meio do mês?', 'A cobrança acompanha as unidades ativas, com pró-rata: loja que entra paga proporcional aos dias do mês, loja que sai deixa de contar na fatura seguinte.'],
+              ['Vocês aumentam o preço depois?', 'O preço é público, e mudanças também serão. Se mudar, quem já é cliente mantém o valor antigo por 12 meses.'],
+              ['Existe contrato de fidelidade?', `Não no plano mensal: cancele quando quiser, em 2 cliques, sem multa. O plano anual é um compromisso de 12 meses, cobrado mês a mês no cartão — em troca de 24% de desconto (R$ ${PRICE_PER_UNIT.annual} em vez de R$ ${PRICE_PER_UNIT.monthly} por loja).`],
               ['O que é a implantação assistida?', 'Nossa equipe configura a operação com você: lojas, setores e checklists montados juntos, migração do que hoje está em planilha e treinamento dos gerentes no primeiro acesso. Está incluída no plano anual, para qualquer número de lojas — de 1 para cima. No plano mensal, a implantação é self-service: modelos prontos por setor e onboarding guiado dentro do app, também sem custo.'],
               ['Precisa instalar alguma coisa?', 'Não. O ZCheck roda no navegador e pode ser adicionado à tela inicial do celular como um app (PWA). Sem loja de aplicativos, sem atualização manual.'],
               ['Funciona sem internet?', 'Sim. A execução registra tudo localmente e sincroniza quando a conexão volta — feito para estoque, câmara fria e subsolo.'],

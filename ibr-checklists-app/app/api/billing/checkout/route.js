@@ -18,11 +18,11 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, reason: 'bad_request' }, 400); }
 
-  // Contrato novo (21/07/2026): a gestão informa QUANTAS lojas e o ciclo.
-  // O preço vem de lib/plans.js (faixas por unidade); acima do teto não há
-  // checkout automático — é venda assistida com piso público.
+  // Preço único por loja (21/07/2026): a gestão informa QUANTAS lojas e o
+  // plano. Anual (R$97/loja) e mensal (R$127/loja) são AMBOS cobrados
+  // mensalmente no cartão — o anual é compromisso de 12 meses com desconto.
   const units = Math.floor(Number(body?.units));
-  const cycle = body?.cycle === 'annual' ? 'annual' : 'monthly';
+  const cycle = body?.cycle === 'monthly' ? 'monthly' : 'annual';
   if (!Number.isFinite(units) || units < 1 || units > MAX_SELF_SERVICE_UNITS) {
     return json({ ok: false, reason: 'invalid_units' }, 400);
   }
@@ -41,12 +41,12 @@ export async function POST(request) {
   if (!payerEmail) return json({ ok: false, reason: 'no_payer_email' }, 400);
 
   const pre = await createPreapproval({
-    amount: price.chargeAmount,
-    reason: `ZCheck — ${units} ${units === 1 ? 'loja' : 'lojas'} (${cycle === 'annual' ? 'anual' : 'mensal'})`,
+    amount: price.monthlyCharge,
+    reason: `ZCheck — ${units} ${units === 1 ? 'loja' : 'lojas'} · plano ${cycle === 'annual' ? 'anual (12 meses)' : 'mensal'}`,
     payerEmail,
     companyId: auth.companyId,
     backUrl: `${siteUrl(request)}/app`,
-    frequencyMonths: cycle === 'annual' ? 12 : 1,
+    frequencyMonths: 1, // nos dois planos a cobrança é mensal
   });
   if (!pre.ok || !pre.initPoint) {
     console.error('createPreapproval falhou:', pre.status, JSON.stringify(pre.body)?.slice(0, 300));

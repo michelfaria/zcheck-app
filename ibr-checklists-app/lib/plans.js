@@ -1,110 +1,76 @@
 // Fonte única dos planos de assinatura e do estado de billing de uma empresa.
 // Puro (sem segredos, sem node) — importável tanto no cliente quanto no servidor.
 //
-// Modelo (desde 21/07/2026): preço POR LOJA com desconto progressivo — todas as
-// lojas pagam o preço da faixa atingida. Ciclo mensal ou anual (anual = paga 10
-// meses, leva 12). NÃO existe "sob consulta": a última faixa (21+) é pública e
-// vale para qualquer tamanho de rede — decisão de 21/07, transparência total.
-// A tabela anterior (97/197/297 por tier fixo) vive em LEGACY_TIERS só para
-// reconhecer assinaturas antigas no webhook.
+// Modelo (21/07/2026, pré-lançamento — sem clientes nem legado a preservar):
+// PREÇO ÚNICO POR LOJA, sem pacotes e sem "sob consulta".
+//   · Anual:  R$ 97/loja/mês — cobrança MENSAL recorrente no cartão,
+//     compromisso de 12 meses. É a oferta principal (herói).
+//   · Mensal: R$ 127/loja/mês — sem fidelidade, cancele quando quiser.
+// Nos dois planos a cobrança no MP é mensal (frequency 1); o que muda é o
+// preço por loja e o compromisso. Selo do anual: −24% ((127−97)/127 ≈ 23,6%).
 
 export const TRIAL_DAYS = 14;
 
-// Faixas de preço por unidade ativa. `perUnit` é o preço mensal por loja;
-// `perUnitAnnual` é o equivalente mensal no ciclo anual (total anual ÷ 12,
-// já com os 2 meses grátis — valores fixados na tabela pública).
-export const PRICE_BANDS = [
-  { id: 'faixa-1-2',    min: 1,  max: 2,        perUnit: 97, perUnitAnnual: 81 },
-  { id: 'faixa-3-5',    min: 3,  max: 5,        perUnit: 79, perUnitAnnual: 66 },
-  { id: 'faixa-6-10',   min: 6,  max: 10,       perUnit: 64, perUnitAnnual: 53 },
-  { id: 'faixa-11-20',  min: 11, max: 20,       perUnit: 52, perUnitAnnual: 43 },
-  { id: 'faixa-21-mais', min: 21, max: Infinity, perUnit: 45, perUnitAnnual: 38 },
-];
+export const PRICE_PER_UNIT = {
+  annual: 97,   // por loja/mês, 12 meses no cartão
+  monthly: 127, // por loja/mês, sem fidelidade
+};
 
-// Teto do checkout self-service (limite operacional, não comercial — o preço
-// 21+ é público). Também delimita a varredura de unitsForAmount; até 50 não há
-// colisão de totais entre (units, ciclo) — verificado; acima disso haveria
-// (ex.: 88 lojas mensal = 5 lojas anual = R$3.960).
+export const ANNUAL_DISCOUNT_LABEL = '−24%';
+
+// Teto operacional do checkout self-service. Também delimita a varredura de
+// unitsForAmount; 97 e 127 são coprimos — nenhuma colisão de totais até 50.
 export const MAX_SELF_SERVICE_UNITS = 50;
 
-export function bandForUnits(unitCount) {
-  const n = Math.max(1, Math.floor(Number(unitCount) || 1));
-  return PRICE_BANDS.find(b => n >= b.min && n <= b.max) || null;
-}
+const normCycle = (c) => (c === 'monthly' || c === 'mensal' ? 'monthly' : 'annual');
 
 /**
- * Preço para `unitCount` lojas — qualquer quantidade (a faixa 21+ é aberta).
- * Retorna { band, units, perUnit, monthlyTotal, perUnitAnnual, annualTotal,
- *           annualMonthlyEq, annualSavings }.
- * annualTotal = perUnitAnnual × units × 12 (equivale a ~10 mensalidades);
- * annualSavings = quanto se economiza num ano em relação ao mensal.
+ * Preço para `unitCount` lojas no ciclo dado (padrão: anual, o herói).
+ * `monthlyCharge` é o valor cobrado por mês no cartão (nos DOIS planos a
+ * cobrança é mensal). `savingsPerYear` é quanto o anual economiza em 12 meses
+ * frente ao mensal. `monthlyTotal`/`chargeAmount` são aliases de compat.
  */
-export function priceForUnits(unitCount, cycle = 'monthly') {
-  const units = Math.max(1, Math.floor(Number(unitCount) || 1));
-  const band = bandForUnits(units);
-  if (!band) return null;
-  const monthlyTotal = band.perUnit * units;
-  const annualMonthlyEq = band.perUnitAnnual * units;
-  const annualTotal = annualMonthlyEq * 12;
+export function priceForUnits(unitCount, cycle = 'annual') {
+  const units = Math.min(MAX_SELF_SERVICE_UNITS, Math.max(1, Math.floor(Number(unitCount) || 1)));
+  const c = normCycle(cycle);
+  const perUnit = PRICE_PER_UNIT[c];
+  const monthlyCharge = perUnit * units;
+  const savingsPerYear = (PRICE_PER_UNIT.monthly - PRICE_PER_UNIT.annual) * 12 * units;
   return {
-    band, units, cycle,
-    perUnit: band.perUnit,
-    monthlyTotal,
-    perUnitAnnual: band.perUnitAnnual,
-    annualTotal,
-    annualMonthlyEq,
-    annualSavings: monthlyTotal * 12 - annualTotal,
-    // Valor efetivamente cobrado pelo ciclo escolhido:
-    chargeAmount: cycle === 'annual' ? annualTotal : monthlyTotal,
+    units, cycle: c, perUnit, monthlyCharge, savingsPerYear,
+    monthlyTotal: monthlyCharge, chargeAmount: monthlyCharge,
   };
 }
 
 /**
- * Inverso: dado o valor cobrado numa assinatura (webhook do MP), descobre
- * quantas lojas e qual ciclo. Os totais são únicos por (units, cycle) dentro
- * do teto self-service. Null se não reconhecer.
+ * Inverso: dado o valor mensal cobrado numa assinatura (webhook do MP),
+ * descobre quantas lojas e qual plano. Null se não reconhecer.
  */
 export function unitsForAmount(amount) {
   const n = Number(amount);
   if (!n) return null;
   for (let u = 1; u <= MAX_SELF_SERVICE_UNITS; u++) {
-    const p = priceForUnits(u);
-    if (p.monthlyTotal === n) return { units: u, cycle: 'monthly', band: p.band };
-    if (p.annualTotal === n) return { units: u, cycle: 'annual', band: p.band };
+    if (PRICE_PER_UNIT.annual * u === n) return { units: u, cycle: 'annual' };
+    if (PRICE_PER_UNIT.monthly * u === n) return { units: u, cycle: 'monthly' };
   }
   return null;
 }
 
-// ── Tabela legada (assinaturas criadas antes de 21/07/2026) ──────────────────
-// Clientes antigos mantêm o preço contratado (grandfathering); o webhook ainda
-// precisa mapear esses valores para plan/unit_limit.
-export const LEGACY_TIERS = [
-  { id: 'starter', label: '1 unidade',      price: 97,  unitLimit: 1 },
-  { id: 'growth',  label: 'Até 3 unidades', price: 197, unitLimit: 3 },
-  { id: 'scale',   label: 'Até 5 unidades', price: 297, unitLimit: 5 },
-  { id: 'scale',   label: 'Até 5 unidades', price: 397, unitLimit: 5 }, // preço praticado antes de 15/07
-];
-
-// Valor mensal de uma assinatura a partir da linha `companies` (métricas/MRR).
-// Tiers legados pelo preço contratado; modelo novo por unit_limit. Assinaturas
-// anuais valem ~17% menos ao mês — aproximação aceita nas métricas internas.
-export function monthlyValueFor(company) {
-  const legacy = LEGACY_TIERS.find(t => t.id === company?.plan_tier);
-  if (legacy) return legacy.price;
-  const units = Number(company?.unit_limit);
-  if (units >= 1) return priceForUnits(Math.min(MAX_SELF_SERVICE_UNITS, units))?.monthlyTotal || 0;
-  return 0;
+// Plano pelo valor da assinatura no MP → grava plan_tier ('anual'|'mensal')
+// e unit_limit (nº de lojas contratadas) em companies.
+export function getTierByPrice(amount) {
+  const m = unitsForAmount(amount);
+  return m ? { id: m.cycle === 'annual' ? 'anual' : 'mensal', unitLimit: m.units, cycle: m.cycle } : null;
 }
 
-// Tier (novo ou legado) pelo valor da assinatura no MP.
-// Preferência ao novo modelo; 197/297/397 só existem no legado.
-export function getTierByPrice(amount) {
-  const modern = unitsForAmount(amount);
-  if (modern) {
-    return { id: modern.band.id, unitLimit: modern.units, cycle: modern.cycle };
-  }
-  const legacy = LEGACY_TIERS.find(t => t.price === Number(amount));
-  return legacy ? { id: legacy.id, unitLimit: legacy.unitLimit, cycle: 'monthly' } : null;
+// Valor mensal de uma assinatura a partir da linha `companies` (métricas/MRR).
+// plan_tier desconhecido (cortesia/legado) → 0, como antes.
+export function monthlyValueFor(company) {
+  const units = Number(company?.unit_limit);
+  if (!(units >= 1)) return 0;
+  if (company?.plan_tier === 'anual') return PRICE_PER_UNIT.annual * units;
+  if (company?.plan_tier === 'mensal') return PRICE_PER_UNIT.monthly * units;
+  return 0;
 }
 
 const asDate = (v) => (v ? new Date(v) : null);

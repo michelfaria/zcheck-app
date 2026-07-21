@@ -8920,7 +8920,7 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [units, setUnits] = useState(1);
-  const [cycle, setCycle] = useState('monthly');
+  const [cycle, setCycle] = useState('annual'); // anual (R$97/loja) é o herói
   const isGestao = currentUser?.role === 'gestao';
 
   const price = priceForUnits(units, cycle);
@@ -8977,9 +8977,9 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
 
         {isGestao ? (
           <>
-            {/* Ciclo */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }} role="group" aria-label="Ciclo de cobrança">
-              {[['monthly', 'Mensal'], ['annual', 'Anual · 2 meses grátis']].map(([id, label]) => (
+            {/* Plano — anual primeiro e pré-selecionado */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }} role="group" aria-label="Plano">
+              {[['annual', 'Anual · R$ 97/loja · −24%'], ['monthly', 'Mensal · R$ 127/loja']].map(([id, label]) => (
                 <button key={id} type="button" onClick={() => setCycle(id)} aria-pressed={cycle === id}
                   style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${cycle === id ? C.ink : C.border}`,
@@ -9011,11 +9011,13 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
             {price && (
               <div aria-live="polite" style={{ textAlign: 'center', marginBottom: 14 }}>
                 <p style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>
-                  {brl(annual ? price.annualMonthlyEq : price.monthlyTotal)}<span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>/mês</span>
+                  {brl(price.monthlyCharge)}<span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>/mês</span>
                 </p>
                 <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                  {units} {units === 1 ? 'loja' : 'lojas'} × {brl(annual ? price.perUnitAnnual : price.perUnit)}
-                  {annual && <> · cobrança anual de {brl(price.annualTotal)} (economia de {brl(price.annualSavings)})</>}
+                  {units} {units === 1 ? 'loja' : 'lojas'} × {brl(price.perUnit)}
+                  {annual
+                    ? <> · 12 meses no cartão · economia de {brl(price.savingsPerYear)}/ano</>
+                    : <> · sem fidelidade, cancele quando quiser</>}
                 </p>
                 {annual && (
                   <p style={{ fontSize: 11.5, fontWeight: 700, color: C.success, marginTop: 6 }}>

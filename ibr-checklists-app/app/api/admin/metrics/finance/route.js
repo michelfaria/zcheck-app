@@ -1,5 +1,5 @@
 import { adminGuard, jsonNoStore } from '../../../../../lib/adminApi';
-import { priceForUnits, monthlyValueFor, PRICE_BANDS, billingState } from '../../../../../lib/plans';
+import { priceForUnits, monthlyValueFor, PRICE_PER_UNIT, billingState } from '../../../../../lib/plans';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,9 +48,9 @@ export async function GET(request) {
     if (b.state === 'trialing') {
       const use7 = h.completions_7d || 0;
       const p = use7 >= 10 ? CONVERSION.high : use7 >= 1 ? CONVERSION.some : CONVERSION.none;
-      // Acima do teto self-service projeta pelo topo da tabela (piso é negociado).
-      const target = priceForUnits(Math.min(20, Math.max(1, h.units || 1)));
-      projection = { probability: p, tier: target.band.id, value: target.monthlyTotal };
+      // Projeção conservadora: valor do plano anual (o herói) para as lojas atuais.
+      const target = priceForUnits(Math.max(1, h.units || 1));
+      projection = { probability: p, tier: 'anual', value: target.monthlyTotal };
       projectedAdd += p * target.monthlyTotal;
     }
 
@@ -117,6 +117,9 @@ export async function GET(request) {
       (b.monthly - a.monthly) ||
       (b.state === 'trialing') - (a.state === 'trialing') ||
       (b.completions_30d - a.completions_30d)),
-    tiers: PRICE_BANDS,
+    tiers: [
+      { id: 'anual', label: 'Anual (12 meses no cartão)', perUnit: PRICE_PER_UNIT.annual },
+      { id: 'mensal', label: 'Mensal (sem fidelidade)', perUnit: PRICE_PER_UNIT.monthly },
+    ],
   });
 }
