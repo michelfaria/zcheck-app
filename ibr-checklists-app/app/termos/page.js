@@ -87,7 +87,7 @@ export default function TermosPage() {
           <P>O período de teste é de 14 (quatorze) dias, gratuito e sem exigência de cartão de crédito. Não há taxa de implantação nem cobrança por usuário — o número de usuários por loja é ilimitado.</P>
           <P>Considera-se loja/unidade cada ponto de operação com equipe própria. Lojas adicionadas ou removidas no curso do mês são cobradas de forma proporcional (pró-rata) a partir da fatura seguinte.</P>
           <P><strong>Cancelamento antecipado do Plano Anual:</strong> o desconto do Plano Anual é condicionado à permanência de 12 meses. Em caso de cancelamento antes desse prazo, será devida a diferença entre o valor do Plano Mensal e o valor do Plano Anual (R$ 30 por loja/mês na tabela vigente) relativa aos meses já utilizados, sem outras multas ou penalidades. Após a cobrança dessa diferença, o cancelamento é imediato.</P>
-          <P>Alterações na tabela de preços serão publicadas em zcheckapp.com; Clientes com contrato vigente mantêm o valor contratado por, no mínimo, 12 (doze) meses a contar da alteração.</P>
+          <P>Alterações na tabela de preços serão publicadas em zcheckapp.com. No <strong>Plano Anual</strong>, o valor contratado permanece garantido até o fim do período de 12 (doze) meses em curso. No <strong>Plano Mensal</strong>, o novo valor passa a valer a partir do ciclo seguinte, mediante aviso prévio de 30 (trinta) dias.</P>
           <P>Em caso de inadimplência, o acesso ao Aplicativo poderá ser suspenso até a regularização, permanecendo os dados do Cliente preservados pelo prazo mínimo de 90 (noventa) dias.</P>
         </Section>
 
