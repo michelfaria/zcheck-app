@@ -553,6 +553,44 @@ export default function LandingPage() {
               </details>
             ))}
           </div>
+
+          {/* Compromissos públicos */}
+          <div style={{ maxWidth: 680, margin: '48px auto 0', border: `1.5px solid ${C.border}`, borderRadius: R.lg, padding: 28 }}>
+            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16 }}>Compromissos públicos</h3>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                'Preço público, desde o primeiro dia. Sem cotação, sem consultor, sem taxa escondida.',
+                'Sem taxa de implantação — e no plano anual, você ganha implantação assistida, desde 1 loja.',
+                'Sem custo por usuário — usuários ilimitados em cada loja.',
+                'Cancelamento em 2 cliques, sem multa, sem fidelidade no plano mensal.',
+              ].map(item => (
+                <li key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Check size={16} color={C.success} aria-hidden style={{ flexShrink: 0, marginTop: 3 }} />
+                  <span style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.6 }}>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Como o mercado faz × como o ZCheck faz */}
+          <div style={{ maxWidth: 680, margin: '32px auto 0' }}>
+            <h3 style={{ fontSize: T.bodyLg, fontWeight: W.bold, marginBottom: 16, textAlign: 'center' }}>
+              Como o mercado faz · Como o ZCheck faz
+            </h3>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
+              {[
+                ['“Peça uma cotação.”', `O preço está na página: R$ ${PRICE_PER_UNIT.annual}/loja.`],
+                ['“Fale com um consultor.”', 'Comece o teste agora.'],
+                ['Fidelidade na letra miúda.', 'Mensal sem fidelidade; anual claro: 12 meses.'],
+                ['Taxa de implantação escondida.', 'Sem taxa. Está escrito aqui em cima.'],
+              ].map(([mercado, zcheck], i) => (
+                <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
+                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.muted, background: C.bg }}>{mercado}</p>
+                  <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.ink, fontWeight: W.semibold }}>{zcheck}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

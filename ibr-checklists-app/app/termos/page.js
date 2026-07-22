@@ -26,7 +26,7 @@ export default function TermosPage() {
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, marginBottom: 8 }}>Termos de Uso</h1>
-          <p style={{ fontSize: 14, color: C.muted }}>ZCheck — Versão 1.0 — 25 de junho de 2026</p>
+          <p style={{ fontSize: 14, color: C.muted }}>ZCheck — Versão 1.1 — 21 de julho de 2026</p>
         </div>
 
         <Section title="1. Das Partes e do Objeto">
@@ -78,20 +78,33 @@ export default function TermosPage() {
           <P>É vedada qualquer reprodução, distribuição ou uso comercial sem autorização prévia e expressa da Empresa.</P>
         </Section>
 
-        <Section title="7. Disponibilidade e Responsabilidade">
+        <Section title="7. Planos, Preços e Pagamento">
+          <P>A contratação do Aplicativo pela empresa contratante ("Cliente") observa preço único por loja/unidade ativa, publicado em zcheckapp.com, nos seguintes planos:</P>
+          <ul style={{ paddingLeft: 24, marginBottom: 12 }}>
+            <Li><strong>Plano Anual:</strong> R$ 97 (noventa e sete reais) por loja/mês, com período mínimo de contratação de 12 (doze) meses, cobrado mensalmente no cartão de crédito. Inclui implantação assistida sem custo adicional.</Li>
+            <Li><strong>Plano Mensal:</strong> R$ 127 (cento e vinte e sete reais) por loja/mês, sem período mínimo, cancelável a qualquer momento com efeito ao fim do ciclo mensal vigente.</Li>
+          </ul>
+          <P>O período de teste é de 14 (quatorze) dias, gratuito e sem exigência de cartão de crédito. Não há taxa de implantação nem cobrança por usuário — o número de usuários por loja é ilimitado.</P>
+          <P>Considera-se loja/unidade cada ponto de operação com equipe própria. Lojas adicionadas ou removidas no curso do mês são cobradas de forma proporcional (pró-rata) a partir da fatura seguinte.</P>
+          <P><strong>Cancelamento antecipado do Plano Anual:</strong> o desconto do Plano Anual é condicionado à permanência de 12 meses. Em caso de cancelamento antes desse prazo, será devida a diferença entre o valor do Plano Mensal e o valor do Plano Anual (R$ 30 por loja/mês na tabela vigente) relativa aos meses já utilizados, sem outras multas ou penalidades. Após a cobrança dessa diferença, o cancelamento é imediato.</P>
+          <P>Alterações na tabela de preços serão publicadas em zcheckapp.com; Clientes com contrato vigente mantêm o valor contratado por, no mínimo, 12 (doze) meses a contar da alteração.</P>
+          <P>Em caso de inadimplência, o acesso ao Aplicativo poderá ser suspenso até a regularização, permanecendo os dados do Cliente preservados pelo prazo mínimo de 90 (noventa) dias.</P>
+        </Section>
+
+        <Section title="8. Disponibilidade e Responsabilidade">
           <P>A Empresa envidará seus melhores esforços para manter o Aplicativo disponível. Contudo, não garante disponibilidade ininterrupta, especialmente em razão de manutenções programadas, falhas de infraestrutura de terceiros ou casos fortuitos e de força maior.</P>
           <P>A Empresa não se responsabiliza por danos indiretos, lucros cessantes ou perdas decorrentes da indisponibilidade temporária do Aplicativo.</P>
         </Section>
 
-        <Section title="8. Rescisão de Acesso">
+        <Section title="9. Rescisão de Acesso">
           <P>A Empresa reserva-se o direito de suspender ou encerrar o acesso de qualquer usuário que viole estes Termos de Uso, encerre seu vínculo empregatício com a Empresa, ou pratique atos que comprometam a segurança ou integridade do Aplicativo.</P>
         </Section>
 
-        <Section title="9. Alterações dos Termos">
+        <Section title="10. Alterações dos Termos">
           <P>A Empresa poderá modificar estes Termos a qualquer tempo, mediante notificação aos usuários pelo próprio Aplicativo. O uso continuado após a notificação implica aceitação das novas condições.</P>
         </Section>
 
-        <Section title="10. Foro e Lei Aplicável">
+        <Section title="11. Foro e Lei Aplicável">
           <P>Estes Termos de Uso são regidos pelas leis da República Federativa do Brasil. Fica eleito o foro da Comarca de Ilhabela, Estado de São Paulo, com renúncia expressa a qualquer outro, por mais privilegiado que seja.</P>
         </Section>
 
