@@ -58,3 +58,45 @@ body {
 input, textarea, button, select {
   font-family: inherit;
 }
+
+@layer base {
+  /* Tema shadcn MAPEADO para lib/tokens.js — uma paleta só, não duas.
+     Formato: canais HSL (o tailwind.config.mjs envolve em hsl(var(--x))),
+     obrigatório no arranjo Tailwind v3 e o que permite opacidade (/50).
+     `--sh-border`/`--sh-muted` levam prefixo porque o espelho de tokens acima
+     (fora de @layer, que vence o cascade) já usa `--border`/`--muted` em hex.
+     Mudou um hex em tokens.js, recalcule o canal aqui. Sem modo escuro por ora. */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 202.3 87.8% 19.2%;          /* C.ink #063C5C */
+    --card: 0 0% 100%;
+    --card-foreground: 202.3 87.8% 19.2%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 202.3 87.8% 19.2%;
+    --primary: 202.3 87.8% 19.2%;             /* C.ink */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 33.3% 97.6%;           /* C.bg #F7F9FB */
+    --secondary-foreground: 202.3 87.8% 19.2%;
+    --sh-muted: 210 33.3% 97.6%;            /* C.bg */
+    --muted-foreground: 206.9 13.7% 41.4%;    /* C.muted #5B6B78 */
+    --accent: 210 33.3% 97.6%;
+    --accent-foreground: 202.3 87.8% 19.2%;
+    --destructive: 0 73.7% 41.8%;           /* C.critical #B91C1C */
+    --destructive-foreground: 0 0% 100%;
+    --sh-border: 205.7 31.8% 91.4%;           /* C.border #E2EAF0 */
+    --input: 205.9 16.7% 56.7%;               /* C.borderStrong #7E93A3 — contorno de controle */
+    --ring: 202.3 87.8% 19.2%;                /* C.ink */
+    --chart-1: 202.3 87.8% 19.2%;             /* C.ink */
+    --chart-2: 142.4 71.8% 29.2%;             /* C.success #15803D */
+    --chart-3: 26 90.5% 37.1%;              /* C.warning #B45309 */
+    --chart-4: 206.9 13.7% 41.4%;             /* C.muted */
+    --chart-5: 142.1 76.2% 36.3%;             /* successBright #16A34A */
+    --radius: 0.75rem;                  /* 12px = R.md (cards); sm derivado = R.sm */
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
