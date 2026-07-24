@@ -3752,10 +3752,19 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
    tolerante ao que Excel/Numbers fazem com o arquivo (";" no lugar da vírgula,
    "Tarefa" com maiúscula, BOM, CRLF). */
 
-function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER, onClose, onImported }) {
+/**
+ * Importação em lote. Aceita vários CSVs de uma vez (ou colar um), e barra
+ * checklist repetido em três frentes: contra o que já existe no banco, contra
+ * o que veio duplicado no próprio lote, e por comparação normalizada — a
+ * checagem antiga era igualdade exata, então "Abertura" e "abertura " entravam
+ * como dois checklists distintos.
+ */
+function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_TYPE_ORDER, onClose, onImported }) {
   const [csvText, setCsvText] = useState('');
   const [preview, setPreview] = useState(null);
   const [warnings, setWarnings] = useState([]);
+  const [loaded, setLoaded] = useState([]);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
@@ -3765,18 +3774,69 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
   useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   const knownUnits = (allUnits || []).map(u => u.name).join(', ');
+  const unitByName = useMemo(
+    () => new Map((allUnits || []).map(u => [csvNorm(u.name), u])), [allUnits]);
+  // Identidade de um checklist: loja + setor + nome, tudo normalizado.
+  const dupKey = (unitId, sector, name) => `${unitId}|${csvNorm(sector)}|${csvNorm(name)}`;
+  // O que a empresa já tem hoje, para marcar repetido ANTES de importar.
+  const existentes = useMemo(
+    () => new Set((templates || []).map(t => dupKey(t.unitId, t.sector, t.name))), [templates]);
+
+  /** Marca loja inexistente, repetido no banco e repetido dentro do lote. */
+  const classificar = (lista) => {
+    const noLote = new Set();
+    return lista.map(c => {
+      const unitRow = unitByName.get(csvNorm(c.unitName));
+      if (!unitRow) return { ...c, status: 'sem-loja' };
+      const k = dupKey(unitRow.id, c.sector, c.name);
+      if (existentes.has(k)) return { ...c, unitRow, key: k, status: 'ja-existe' };
+      if (noLote.has(k)) return { ...c, unitRow, key: k, status: 'repetido-no-lote' };
+      noLote.add(k);
+      return { ...c, unitRow, key: k, status: 'novo' };
+    });
+  };
 
   const parse = (text) => {
-    setError(''); setResult(null); setPreview(null); setWarnings([]);
+    setError(''); setResult(null); setPreview(null); setWarnings([]); setLoaded([]);
     const r = parseImportCSV(text ?? csvText);
     setWarnings(r.warnings || []);
     if (r.error) { setError(r.error); return; }
-    setPreview(r.checklists);
+    setPreview(classificar(r.checklists.map(c => ({ ...c, source: null }))));
   };
-  const onFile = (e) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const rd = new FileReader(); rd.onload = ev => { setCsvText(ev.target.result); parse(ev.target.result); }; rd.readAsText(f, 'UTF-8');
+
+  /**
+   * Lote: lê todos os arquivos escolhidos de uma vez. Um arquivo com problema
+   * não derruba os outros — vira erro nomeado na lista, e o resto segue.
+   */
+  const onFile = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // permite reescolher os mesmos arquivos depois
+    if (!files.length) return;
+    setError(''); setResult(null); setPreview(null); setWarnings([]); setCsvText('');
+    setReading(true);
+    const todos = []; const avisos = []; const falhas = []; const lidos = [];
+    for (const f of files) {
+      let texto;
+      try { texto = await f.text(); }
+      catch (_) { falhas.push(`${f.name}: não foi possível ler o arquivo.`); continue; }
+      const r = parseImportCSV(texto);
+      (r.warnings || []).forEach(w => avisos.push(`${f.name} — ${w}`));
+      if (r.error) { falhas.push(`${f.name}: ${r.error}`); continue; }
+      r.checklists.forEach(c => todos.push({ ...c, source: f.name }));
+      lidos.push({ name: f.name, checklists: r.checklists.length, itens: r.checklists.reduce((s, c) => s + c.items.length, 0) });
+    }
+    setReading(false);
+    setWarnings([...falhas, ...avisos]);
+    setLoaded(lidos);
+    if (!todos.length) {
+      setError(files.length > 1
+        ? 'Nenhum checklist encontrado nos arquivos selecionados.'
+        : (falhas[0] || 'Nenhum checklist encontrado.'));
+      return;
+    }
+    setPreview(classificar(todos));
   };
+
   // O modelo sai com a loja e o setor REAIS da empresa: baixar e importar sem
   // editar precisa funcionar. Com "Loja 1"/"Salão" fixos dava sempre 0 importados.
   const baixarModelo = () => {
@@ -3789,43 +3849,44 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
     });
     const a = document.createElement('a');
     // BOM: sem ele o Excel abre "Salão" como "SalÃ£o".
-    a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
     a.download = 'zcheck-modelo.csv'; a.click();
   };
+
+  const novos = (preview || []).filter(c => c.status === 'novo');
+
   const doImport = async () => {
-    if (!preview?.length) return;
+    if (!novos.length) return;
     setImporting(true); setResult(null);
     try {
       const { authedSupabase } = await import('../../lib/supabase');
       const db = authedSupabase();
-      // Casa a loja por nome normalizado: "loja 1", "Loja 1" e "LOJA 1" valem igual.
-      const unitMap = new Map((allUnits || []).map(u => [csvNorm(u.name), u]));
+      // Recarrega a lista do banco na hora de gravar: entre abrir o modal e
+      // clicar em Importar, outra pessoa pode ter criado o mesmo checklist.
+      const { data: atuais } = await db.from('templates')
+        .select('unit_id, sector, name').eq('company_id', company.id);
+      const jaNoBanco = new Set((atuais || []).map(t => dupKey(t.unit_id, t.sector, t.name)));
+
       let created = 0, skipped = 0;
       const problems = [];
-      for (const tpl of preview) {
-        const unitRow = unitMap.get(csvNorm(tpl.unitName));
-        if (!unitRow) {
-          problems.push(`"${tpl.name}": a loja "${tpl.unitName}" não existe. Lojas cadastradas: ${knownUnits || '—'}.`);
-          skipped++; continue;
-        }
-        const { data: existing } = await db.from('templates').select('id')
-          .eq('company_id', company.id).eq('unit_id', unitRow.id).eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
-        if (existing?.length) {
-          problems.push(`"${tpl.name}": já existe em ${unitRow.name} / ${tpl.sector}.`);
+      for (const tpl of novos) {
+        if (jaNoBanco.has(tpl.key)) {
+          problems.push(`"${tpl.name}" (${tpl.unitRow.name} / ${tpl.sector}): já existe — não foi duplicado.`);
           skipped++; continue;
         }
         const { error: insErr } = await db.from('templates').insert({
-          id: tpl.id, company_id: company.id, unit_id: unitRow.id, sector: tpl.sector, name: tpl.name,
+          id: tpl.id, company_id: company.id, unit_id: tpl.unitRow.id, sector: tpl.sector, name: tpl.name,
           shift: csvNorm(tpl.name).includes('abertura') ? 'Manhã' : csvNorm(tpl.name).includes('fechamento') ? 'Tarde' : ['Manhã', 'Tarde'],
           deadline: tpl.deadline, items: tpl.items,
         });
         // Antes o erro do banco era descartado e virava um "ignorado" sem motivo.
         if (insErr) { problems.push(`"${tpl.name}": ${insErr.message}`); skipped++; continue; }
+        jaNoBanco.add(tpl.key); // trava o repetido dentro do próprio lote
         created++;
         // Criou, mas pode nascer invisível na aba Executar — avisa em vez de sumir.
-        const setores = unitRow.sectors || [];
+        const setores = tpl.unitRow.sectors || [];
         if (setores.length && !setores.some(s => csvNorm(s) === csvNorm(tpl.sector))) {
-          problems.push(`"${tpl.name}" foi criado, mas o setor "${tpl.sector}" não existe em ${unitRow.name} — crie o setor em Estrutura para ele aparecer em Executar.`);
+          problems.push(`"${tpl.name}" foi criado, mas o setor "${tpl.sector}" não existe em ${tpl.unitRow.name} — crie o setor em Estrutura para ele aparecer em Executar.`);
         }
         if (!activeTypes.some(t => t.match({ name: tpl.name }))) {
           problems.push(`"${tpl.name}" foi criado, mas o nome não corresponde a nenhum tipo de checklist (${activeTypes.map(t => t.label).join(', ')}) — ele não vai aparecer em Executar.`);
@@ -3836,7 +3897,7 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
       if (created > 0) {
         // Some o CSV da tela: sem isso o botão "Importar" continuava armado e
         // dava para reimportar o mesmo arquivo por engano.
-        setCsvText(''); setPreview(null); setWarnings([]);
+        setCsvText(''); setPreview(null); setWarnings([]); setLoaded([]);
         await onImported?.();
         showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`);
         // Deu tudo certo e não há aviso para ler: confirma e fecha sozinho.
@@ -3849,6 +3910,14 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
     }
     setImporting(false);
   };
+
+  const BADGE = {
+    'novo':             { texto: 'novo',                cor: C.success },
+    'ja-existe':        { texto: 'já existe — ignorado', cor: C.muted },
+    'repetido-no-lote': { texto: 'repetido no lote',     cor: C.warning },
+    'sem-loja':         { texto: 'loja não encontrada',  cor: C.critical },
+  };
+  const bloqueados = (preview || []).length - novos.length;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
@@ -3863,21 +3932,39 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
           {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot; (vazio = todos os dias);
           texto com vírgula vai entre aspas. Fotos de referência e documentos você anexa depois, no app.
           {' '}Aceita separador vírgula, ponto e vírgula ou tabulação — pode salvar direto do Excel, do Numbers ou do Google Sheets.
+          {' '}<strong>Pode selecionar vários arquivos de uma vez.</strong>
         </p>
         <div className="flex gap-2" style={{ marginBottom: 10 }}>
           <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            Carregar arquivo <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: 'none' }} />
+            {reading ? 'Lendo…' : 'Carregar arquivos'}
+            <input type="file" accept=".csv,text/csv" multiple onChange={onFile} style={{ display: 'none' }} />
           </label>
           <button onClick={baixarModelo} style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Baixar modelo</button>
         </div>
-        <textarea value={csvText} onChange={e => { setCsvText(e.target.value); }} onBlur={() => csvText && parse(csvText)}
-          placeholder="…ou cole o CSV aqui" rows={6}
-          style={{ width: '100%', fontSize: 13, fontFamily: 'ui-monospace, monospace', color: C.ink, background: 'white', padding: 12, border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
+
+        {/* Arquivos lidos no lote */}
+        {loaded.length > 0 && !result && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>
+              {loaded.length} arquivo{loaded.length > 1 ? 's' : ''} lido{loaded.length > 1 ? 's' : ''}
+            </p>
+            {loaded.map(f => (
+              <p key={f.name} style={{ fontSize: 12, color: C.muted }}>• {f.name} — {f.checklists} checklist(s), {f.itens} tarefas</p>
+            ))}
+          </div>
+        )}
+
+        {!loaded.length && (
+          <textarea value={csvText} onChange={e => { setCsvText(e.target.value); }} onBlur={() => csvText && parse(csvText)}
+            placeholder="…ou cole o CSV aqui" rows={6}
+            style={{ width: '100%', fontSize: 13, fontFamily: 'ui-monospace, monospace', color: C.ink, background: 'white', padding: 12, border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
+        )}
+
         {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginBottom: 10 }}>{error}</p>}
         {/* Linhas descartadas na leitura — antes sumiam em silêncio. */}
         {warnings.length > 0 && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura do arquivo</p>
+            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura</p>
             {warnings.map((w, i) => (
               <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {w}</p>
             ))}
@@ -3885,10 +3972,27 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
         )}
         {preview && !result && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <p style={{ fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{preview.length} checklist(s) a importar:</p>
-            {preview.map(p => (
-              <p key={p.id} style={{ fontSize: 12, color: C.muted }}>• {p.name} · {p.unitName} / {p.sector} · {p.items.length} itens</p>
-            ))}
+            <p style={{ fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+              {novos.length} a importar{bloqueados > 0 ? ` · ${bloqueados} bloqueado${bloqueados > 1 ? 's' : ''}` : ''}
+            </p>
+            {preview.map(p => {
+              const b = BADGE[p.status];
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 3 }}>
+                  <p style={{ fontSize: 12, color: p.status === 'novo' ? C.ink : C.muted, flex: 1 }}>
+                    {p.name} · {p.unitName} / {p.sector} · {p.items.length} itens
+                    {p.source ? <span style={{ color: C.mutedLight }}> · {p.source}</span> : null}
+                  </p>
+                  <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: b.cor, whiteSpace: 'nowrap' }}>{b.texto}</span>
+                </div>
+              );
+            })}
+            {bloqueados > 0 && (
+              <p style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+                Checklist repetido não é importado de novo — a comparação ignora maiúsculas e acentos.
+                Para substituir um que já existe, edite-o em Checklists ou apague antes de importar.
+              </p>
+            )}
           </div>
         )}
         {result && (
@@ -3923,9 +4027,9 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
         ) : (
           <div className="flex gap-2">
             <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
-            <button onClick={doImport} disabled={!preview?.length || importing}
-              style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!preview?.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!preview?.length || importing) ? 'not-allowed' : 'pointer' }}>
-              {importing ? 'Importando…' : 'Importar'}
+            <button onClick={doImport} disabled={!novos.length || importing}
+              style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!novos.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!novos.length || importing) ? 'not-allowed' : 'pointer' }}>
+              {importing ? 'Importando…' : novos.length > 1 ? `Importar ${novos.length} checklists` : 'Importar'}
             </button>
           </div>
         )}
@@ -4380,7 +4484,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         )}
       </div>
       {showImport && (
-        <ImportCsvModal company={company} allUnits={allUnits} activeTypes={activeTypes}
+        <ImportCsvModal company={company} allUnits={allUnits} templates={templates} activeTypes={activeTypes}
           onClose={() => setShowImport(false)} onImported={onReloadTemplates} />
       )}
 
@@ -7287,6 +7391,12 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
     if (!actionPlans?.length) return;
     setActioned(a => ({ ...Object.fromEntries(actionPlans.map(p => [p.recId, true])), ...a }));
   }, [actionPlans]);
+  // Esc fecha: um caminho de saída que não depende de acertar o × com o dedo.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   // Follow-up: planos abertos de dias ANTERIORES, cobrados no topo do briefing.
   const pendingPlans = (actionPlans || []).filter(p => p.briefingDate !== briefing.date);
   const [planAnswers, setPlanAnswers] = useState({}); // planId → 'done' | 'kept'
@@ -7373,11 +7483,21 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-      <div style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
-        {/* Cabeçalho */}
-        <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'relative' }}>
-          <button onClick={onClose} aria-label="Fechar" style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999, width: 30, height: 30, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>×</button>
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+        {/* Cabeçalho — sticky: o briefing é longo e o X ficava rolando para fora
+            da tela junto com ele. */}
+        <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'sticky', top: 0, zIndex: 2 }}>
+          {/* Alvo de toque de 40px (era 30, abaixo do mínimo de acessibilidade) e
+              flex de verdade, para o × ficar no centro do alvo e não só perto dele.
+              O padding-box inteiro clica: o raio arredondado antes recortava os
+              cantos do alvo. */}
+          <button type="button" onClick={onClose} aria-label="Fechar briefing"
+            style={{ position: 'absolute', top: 12, right: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999,
+              width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>
           <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
           <p className="font-display" style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
           <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
