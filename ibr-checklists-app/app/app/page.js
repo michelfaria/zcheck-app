@@ -33,6 +33,7 @@ import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 // Execução colaborativa em tempo real (H6)
 import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
+import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
 import { C, R, W, T } from '../../lib/tokens';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
 import { billingState, priceForUnits, MAX_SELF_SERVICE_UNITS } from '../../lib/plans';
@@ -3746,81 +3747,25 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
    separada que perdia o token e caía no login ao "Voltar"). ── */
 /* O CSV cobre os MESMOS campos do editor "+ Novo" (pedido 18/07): critico,
    foto (exigir foto na execução), dias (da semana), orientacao, video, link.
-   Só fotos de referência e documentos ficam para anexar no app. */
-const CSV_IMPORT_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,foto,dias,orientacao,video,link,deadline
-checklist,Abertura,Loja 1,Salão,,,,,,,,08:00
-tarefa,Abertura,Loja 1,Salão,Limpar mesas e cadeiras,nao,sim,,"Conferir rodapés, cantos e vãos",,,
-tarefa,Abertura,Loja 1,Salão,Verificar caixas,sim,,seg qua sex,,,,
-checklist,Fechamento,Loja 1,Salão,,,,,,,,18:00
-tarefa,Fechamento,Loja 1,Salão,Fechar caixas,sim,,,,https://youtube.com/watch?v=exemplo,,`;
+   Só fotos de referência e documentos ficam para anexar no app.
+   O parser vive em lib/csvImport.js — compartilhado com a página /importar e
+   tolerante ao que Excel/Numbers fazem com o arquivo (";" no lugar da vírgula,
+   "Tarefa" com maiúscula, BOM, CRLF). */
 
-// Divide uma linha CSV respeitando aspas ("..." com "" escapado) — orientação
-// e links podem conter vírgula, e o Excel/Sheets exporta assim.
-function splitCsvLine(line) {
-  const out = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQ) {
-      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
-      else cur += ch;
-    } else if (ch === '"') inQ = true;
-    else if (ch === ',') { out.push(cur); cur = ''; }
-    else cur += ch;
-  }
-  out.push(cur);
-  return out.map(v => v.trim());
-}
-
-const CSV_DAY_CODES = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
-// "seg qua sex" (ou "seg;qua;sex") → [1,3,5]; vazio/nada reconhecido → null (= todos os dias).
-function parseCsvDays(s) {
-  if (!s) return null;
-  const norm = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const days = [...new Set(norm.split(/[^a-z]+/).map(t => CSV_DAY_CODES[t]).filter(d => d !== undefined))].sort((a, b) => a - b);
-  return days.length ? days : null;
-}
-
-function parseImportCSV(text) {
-  const lines = (text || '').trim().split('\n').filter(l => l.trim());
-  if (!lines.length) return { error: 'Cole ou carregue um CSV.' };
-  // Cabeçalhos sem acento ("orientação" vale como "orientacao").
-  const headers = splitCsvLine(lines[0]).map(h => h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-  const missing = ['tipo', 'checklist', 'loja', 'setor'].filter(r => !headers.includes(r));
-  if (missing.length) return { error: `Colunas obrigatórias ausentes: ${missing.join(', ')}` };
-  const rows = lines.slice(1).map(line => {
-    const vals = splitCsvLine(line);
-    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
-  });
-  const checklists = []; let current = null;
-  for (const row of rows) {
-    if (!row.tipo || !row.checklist || !row.loja || !row.setor) continue;
-    if (row.tipo === 'checklist') {
-      current = { id: uid(), name: row.checklist.trim(), unitName: row.loja.trim(), sector: row.setor.trim(), deadline: row.deadline?.trim() || null, items: [] };
-      checklists.push(current);
-    } else if (row.tipo === 'tarefa' && current && row.tarefa?.trim()) {
-      const item = { id: uid(), text: row.tarefa.trim(), critical: row.critico?.toLowerCase() === 'sim' };
-      if (row.foto?.toLowerCase() === 'sim') item.photoRequired = true;
-      const days = parseCsvDays(row.dias); if (days) item.recurrence = days;
-      if (row.orientacao) item.description = row.orientacao;
-      if (row.video) item.refVideo = row.video;
-      if (row.link) item.refLink = row.link;
-      current.items.push(item);
-    }
-  }
-  if (!checklists.length) return { error: 'Nenhum checklist encontrado. Confira o formato.' };
-  return { checklists };
-}
-
-function ImportCsvModal({ company, allUnits, onClose, onImported }) {
+function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER, onClose, onImported }) {
   const [csvText, setCsvText] = useState('');
   const [preview, setPreview] = useState(null);
+  const [warnings, setWarnings] = useState([]);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
 
+  const knownUnits = (allUnits || []).map(u => u.name).join(', ');
+
   const parse = (text) => {
-    setError(''); setResult(null); setPreview(null);
+    setError(''); setResult(null); setPreview(null); setWarnings([]);
     const r = parseImportCSV(text ?? csvText);
+    setWarnings(r.warnings || []);
     if (r.error) { setError(r.error); return; }
     setPreview(r.checklists);
   };
@@ -3828,9 +3773,19 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
     const f = e.target.files?.[0]; if (!f) return;
     const rd = new FileReader(); rd.onload = ev => { setCsvText(ev.target.result); parse(ev.target.result); }; rd.readAsText(f, 'UTF-8');
   };
+  // O modelo sai com a loja e o setor REAIS da empresa: baixar e importar sem
+  // editar precisa funcionar. Com "Loja 1"/"Salão" fixos dava sempre 0 importados.
   const baixarModelo = () => {
+    const u = (allUnits || [])[0];
+    const csv = buildModelCsv({
+      loja: u?.name || undefined,
+      setor: u?.sectors?.[0] || undefined,
+      tipoAbertura: activeTypes.find(t => csvNorm(t.label).includes('abertura'))?.label || 'Abertura',
+      tipoFechamento: activeTypes.find(t => csvNorm(t.label).includes('fechamento'))?.label || 'Fechamento',
+    });
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([CSV_IMPORT_TEMPLATE], { type: 'text/csv;charset=utf-8' }));
+    // BOM: sem ele o Excel abre "Salão" como "SalÃ£o".
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
     a.download = 'zcheck-modelo.csv'; a.click();
   };
   const doImport = async () => {
@@ -3839,28 +3794,48 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
     try {
       const { authedSupabase } = await import('../../lib/supabase');
       const db = authedSupabase();
-      const unitMap = Object.fromEntries((allUnits || []).map(u => [u.name.toLowerCase(), u.id]));
+      // Casa a loja por nome normalizado: "loja 1", "Loja 1" e "LOJA 1" valem igual.
+      const unitMap = new Map((allUnits || []).map(u => [csvNorm(u.name), u]));
       let created = 0, skipped = 0;
+      const problems = [];
       for (const tpl of preview) {
-        const unitId = unitMap[tpl.unitName.toLowerCase()];
-        if (!unitId) { skipped++; continue; }
+        const unitRow = unitMap.get(csvNorm(tpl.unitName));
+        if (!unitRow) {
+          problems.push(`"${tpl.name}": a loja "${tpl.unitName}" não existe. Lojas cadastradas: ${knownUnits || '—'}.`);
+          skipped++; continue;
+        }
         const { data: existing } = await db.from('templates').select('id')
-          .eq('company_id', company.id).eq('unit_id', unitId).eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
-        if (existing?.length) { skipped++; continue; }
-        const { error } = await db.from('templates').insert({
-          id: tpl.id, company_id: company.id, unit_id: unitId, sector: tpl.sector, name: tpl.name,
-          shift: tpl.name.toLowerCase().includes('abertura') ? 'Manhã' : tpl.name.toLowerCase().includes('fechamento') ? 'Tarde' : ['Manhã', 'Tarde'],
+          .eq('company_id', company.id).eq('unit_id', unitRow.id).eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
+        if (existing?.length) {
+          problems.push(`"${tpl.name}": já existe em ${unitRow.name} / ${tpl.sector}.`);
+          skipped++; continue;
+        }
+        const { error: insErr } = await db.from('templates').insert({
+          id: tpl.id, company_id: company.id, unit_id: unitRow.id, sector: tpl.sector, name: tpl.name,
+          shift: csvNorm(tpl.name).includes('abertura') ? 'Manhã' : csvNorm(tpl.name).includes('fechamento') ? 'Tarde' : ['Manhã', 'Tarde'],
           deadline: tpl.deadline, items: tpl.items,
         });
-        if (!error) created++; else skipped++;
+        // Antes o erro do banco era descartado e virava um "ignorado" sem motivo.
+        if (insErr) { problems.push(`"${tpl.name}": ${insErr.message}`); skipped++; continue; }
+        created++;
+        // Criou, mas pode nascer invisível na aba Executar — avisa em vez de sumir.
+        const setores = unitRow.sectors || [];
+        if (setores.length && !setores.some(s => csvNorm(s) === csvNorm(tpl.sector))) {
+          problems.push(`"${tpl.name}" foi criado, mas o setor "${tpl.sector}" não existe em ${unitRow.name} — crie o setor em Estrutura para ele aparecer em Executar.`);
+        }
+        if (!activeTypes.some(t => t.match({ name: tpl.name }))) {
+          problems.push(`"${tpl.name}" foi criado, mas o nome não corresponde a nenhum tipo de checklist (${activeTypes.map(t => t.label).join(', ')}) — ele não vai aparecer em Executar.`);
+        }
       }
-      setResult({ created, skipped });
+      setResult({ created, skipped, problems });
       if (created > 0) { await onImported?.(); showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`); }
-    } catch (e) { console.error(e); setResult({ error: 'Erro na importação. Tente novamente.' }); }
+    } catch (e) {
+      console.error(e);
+      setResult({ error: `Erro na importação: ${e?.message || 'tente novamente.'}` });
+    }
     setImporting(false);
   };
 
-  const knownUnits = (allUnits || []).map(u => u.name).join(', ');
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
       <div style={{ width: '100%', maxWidth: 560, background: C.bg, borderRadius: '16px 16px 0 0', maxHeight: '92vh', overflowY: 'auto', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }} onClick={e => e.stopPropagation()}>
@@ -3873,6 +3848,7 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
           A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
           {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot; (vazio = todos os dias);
           texto com vírgula vai entre aspas. Fotos de referência e documentos você anexa depois, no app.
+          {' '}Aceita separador vírgula, ponto e vírgula ou tabulação — pode salvar direto do Excel, do Numbers ou do Google Sheets.
         </p>
         <div className="flex gap-2" style={{ marginBottom: 10 }}>
           <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
@@ -3884,6 +3860,15 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
           placeholder="…ou cole o CSV aqui" rows={6}
           style={{ width: '100%', fontSize: 13, fontFamily: 'ui-monospace, monospace', color: C.ink, background: 'white', padding: 12, border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
         {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginBottom: 10 }}>{error}</p>}
+        {/* Linhas descartadas na leitura — antes sumiam em silêncio. */}
+        {warnings.length > 0 && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura do arquivo</p>
+            {warnings.map((w, i) => (
+              <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {w}</p>
+            ))}
+          </div>
+        )}
         {preview && !result && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
             <p style={{ fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 6 }}>{preview.length} checklist(s) a importar:</p>
@@ -3893,9 +3878,19 @@ function ImportCsvModal({ company, allUnits, onClose, onImported }) {
           </div>
         )}
         {result && (
-          <p style={{ fontSize: 13, fontWeight: 700, color: result.error ? C.critical : C.success, marginBottom: 10 }}>
-            {result.error || `Importados: ${result.created}. Ignorados (já existiam ou loja não encontrada): ${result.skipped}.`}
-          </p>
+          <div style={{ marginBottom: 10 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: result.error ? C.critical : (result.created > 0 ? C.success : C.critical) }}>
+              {result.error || `Importados: ${result.created}. Ignorados: ${result.skipped}.`}
+            </p>
+            {/* O motivo de cada checklist que não entrou (ou que entrou torto). */}
+            {result.problems?.length > 0 && (
+              <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginTop: 8 }}>
+                {result.problems.map((p, i) => (
+                  <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {p}</p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         <div className="flex gap-2">
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
@@ -4355,7 +4350,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         )}
       </div>
       {showImport && (
-        <ImportCsvModal company={company} allUnits={allUnits}
+        <ImportCsvModal company={company} allUnits={allUnits} activeTypes={activeTypes}
           onClose={() => setShowImport(false)} onImported={onReloadTemplates} />
       )}
 

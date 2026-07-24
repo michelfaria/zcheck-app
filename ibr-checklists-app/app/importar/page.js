@@ -4,69 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { authedSupabase, setSessionToken } from '../../lib/supabase';
 import { validatePin, fetchPublicUsers, fetchCompany } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
+// Mesmo parser do modal dentro do app (Gerenciar > Importar). Antes esta página
+// tinha uma cópia própria, com 7 colunas e split(',') cru: o modelo baixado do
+// app (12 colunas, texto entre aspas) entrava com os campos trocados.
+import { parseImportCSV, buildModelCsv, csvNorm, CSV_COLUMNS } from '../../lib/csvImport';
 
 import { C } from '../../lib/tokens';
 // Quem pode importar é quem pode gerenciar templates dentro do app (ROLE_TABS).
 const IMPORT_ROLES = ['gerencia', 'gestao'];
 
-const uid = () => Math.random().toString(36).slice(2, 10);
-
 const db = () => authedSupabase();
-
-const CSV_TEMPLATE = `tipo,checklist,loja,setor,tarefa,critico,deadline
-checklist,Abertura,Loja 1,Salão,,, 08:00
-tarefa,Abertura,Loja 1,Salão,Limpar mesas e cadeiras,nao,
-tarefa,Abertura,Loja 1,Salão,Abastecer sachês,nao,
-tarefa,Abertura,Loja 1,Salão,Verificar caixas registradoras,sim,
-checklist,Fechamento,Loja 1,Salão,,,18:00
-tarefa,Fechamento,Loja 1,Salão,Fechar caixas,sim,
-tarefa,Fechamento,Loja 1,Salão,Limpar salão,nao,
-tarefa,Fechamento,Loja 1,Salão,Verificar alarme,sim,`;
-
-function parseCSV(text) {
-  const lines = text.trim().split('\n').filter(l => l.trim());
-  if (!lines.length) return { error: 'Arquivo vazio.' };
-
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-  const required = ['tipo', 'checklist', 'loja', 'setor'];
-  const missing = required.filter(r => !headers.includes(r));
-  if (missing.length) return { error: `Colunas obrigatórias ausentes: ${missing.join(', ')}` };
-
-  const rows = lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim());
-    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
-  });
-
-  // Group into checklists with items
-  const checklists = [];
-  let current = null;
-
-  for (const row of rows) {
-    if (!row.tipo || !row.checklist || !row.loja || !row.setor) continue;
-
-    if (row.tipo === 'checklist') {
-      current = {
-        id: uid(),
-        name: row.checklist.trim(),
-        unitName: row.loja.trim(),
-        sector: row.setor.trim(),
-        deadline: row.deadline?.trim() || null,
-        items: [],
-      };
-      checklists.push(current);
-    } else if (row.tipo === 'tarefa' && current) {
-      if (!row.tarefa?.trim()) continue;
-      current.items.push({
-        id: uid(),
-        text: row.tarefa.trim(),
-        critical: row.critico?.toLowerCase() === 'sim',
-      });
-    }
-  }
-
-  if (!checklists.length) return { error: 'Nenhum checklist encontrado. Verifique o formato.' };
-  return { checklists };
-}
 
 /**
  * Portão de PIN. Importar template escreve na tabela `templates`, que é escopada
@@ -165,12 +112,35 @@ function PinGate({ onAuth }) {
 
 export default function ImportarPage() {
   const [user, setUser] = useState(null);
+  const [units, setUnits] = useState([]);
   const [csvText, setCsvText] = useState('');
   const [preview, setPreview] = useState(null);
+  const [warnings, setWarnings] = useState([]);
   const [parseError, setParseError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileRef = useRef(null);
+
+  // As lojas da empresa entram já no login: o modelo é gerado com a loja e o
+  // setor REAIS, e a mensagem de erro consegue listar o que existe.
+  useEffect(() => {
+    if (!user?.companyId) return;
+    let cancelled = false;
+    (async () => {
+      const [{ data: us }, { data: ss }] = await Promise.all([
+        db().from('units').select('id, name').eq('company_id', user.companyId),
+        db().from('sectors').select('name, unit_id').eq('company_id', user.companyId),
+      ]);
+      if (cancelled) return;
+      setUnits((us || []).map(u => ({
+        ...u,
+        sectors: (ss || []).filter(s => s.unit_id === u.id).map(s => s.name),
+      })));
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.companyId]);
+
+  const knownUnits = units.map(u => u.name).join(', ');
 
   const handleFile = e => {
     const file = e.target.files?.[0];
@@ -187,7 +157,9 @@ export default function ImportarPage() {
     setParseError('');
     setPreview(null);
     setImportResult(null);
-    const result = parseCSV(text || csvText);
+    setWarnings([]);
+    const result = parseImportCSV(text || csvText);
+    setWarnings(result.warnings || []);
     if (result.error) { setParseError(result.error); return; }
     setPreview(result.checklists);
   };
@@ -201,52 +173,68 @@ export default function ImportarPage() {
       // A empresa é a do token, não uma escolha da tela. O RLS recusaria escrita
       // em qualquer outra, mas passar explicitamente deixa a intenção visível.
       const companyId = user.companyId;
-
-      // Fetch units for the company to match names
-      const { data: units } = await db().from('units').select('id, name').eq('company_id', companyId);
-      const unitMap = Object.fromEntries((units || []).map(u => [u.name.toLowerCase(), u.id]));
+      // Nome normalizado: "loja 1", "Loja 1" e "LOJA 1" casam com a mesma loja.
+      const unitMap = new Map(units.map(u => [csvNorm(u.name), u]));
 
       let created = 0, skipped = 0;
+      const problems = [];
 
       for (const tpl of preview) {
-        const unitId = unitMap[tpl.unitName.toLowerCase()];
-        if (!unitId) { skipped++; continue; }
+        const unitRow = unitMap.get(csvNorm(tpl.unitName));
+        if (!unitRow) {
+          problems.push(`"${tpl.name}": a loja "${tpl.unitName}" não existe. Lojas cadastradas: ${knownUnits || '—'}.`);
+          skipped++; continue;
+        }
 
         // Check if template already exists
         const { data: existing } = await db().from('templates')
-          .select('id').eq('company_id', companyId).eq('unit_id', unitId)
+          .select('id').eq('company_id', companyId).eq('unit_id', unitRow.id)
           .eq('sector', tpl.sector).eq('name', tpl.name).limit(1);
 
-        if (existing?.length) { skipped++; continue; }
+        if (existing?.length) {
+          problems.push(`"${tpl.name}": já existe em ${unitRow.name} / ${tpl.sector}.`);
+          skipped++; continue;
+        }
 
         const { error } = await db().from('templates').insert({
-          id: tpl.id, company_id: companyId, unit_id: unitId,
+          id: tpl.id, company_id: companyId, unit_id: unitRow.id,
           sector: tpl.sector, name: tpl.name,
-          shift: tpl.name.toLowerCase().includes('abertura') ? 'Manhã'
-            : tpl.name.toLowerCase().includes('fechamento') ? 'Tarde'
+          shift: csvNorm(tpl.name).includes('abertura') ? 'Manhã'
+            : csvNorm(tpl.name).includes('fechamento') ? 'Tarde'
             : ['Manhã', 'Tarde'],
           deadline: tpl.deadline,
           items: tpl.items,
         });
 
-        if (!error) created++; else skipped++;
+        // O erro do banco era descartado: tudo virava "ignorado" sem motivo.
+        if (error) { problems.push(`"${tpl.name}": ${error.message}`); skipped++; continue; }
+        created++;
+
+        const setores = unitRow.sectors || [];
+        if (setores.length && !setores.some(s => csvNorm(s) === csvNorm(tpl.sector))) {
+          problems.push(`"${tpl.name}" foi criado, mas o setor "${tpl.sector}" não existe em ${unitRow.name} — crie o setor no app para ele aparecer em Executar.`);
+        }
       }
 
-      setImportResult({ created, skipped, total: preview.length });
+      setImportResult({ created, skipped, total: preview.length, problems });
     } catch (e) {
       console.error(e);
-      setImportResult({ error: 'Erro durante importação. Verifique o console.' });
+      setImportResult({ error: `Erro durante importação: ${e?.message || 'verifique o console.'}` });
     }
     setImporting(false);
   };
 
   const downloadTemplate = () => {
-    const blob = new Blob([CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' });
+    const u = units[0];
+    const csv = buildModelCsv({ loja: u?.name || undefined, setor: u?.sectors?.[0] || undefined });
+    // BOM: sem ele o Excel abre "Salão" como "SalÃ£o".
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'zchek-modelo.csv';
+    a.download = 'zcheck-modelo.csv';
     a.click();
   };
+
 
   if (!user) return <PinGate onAuth={setUser} />;
 
@@ -286,6 +274,9 @@ export default function ImportarPage() {
                 Baixe o modelo CSV, preencha com seus checklists e importe abaixo.
                 Cada linha de <strong>checklist</strong> cria um novo checklist.
                 Cada linha de <strong>tarefa</strong> é um item do checklist acima.
+                O modelo já vem com a sua loja{knownUnits ? ` (${knownUnits})` : ''} — aceita separador
+                vírgula, ponto e vírgula ou tabulação, então pode salvar direto do Excel, do Numbers
+                ou do Google Sheets.
               </p>
             </div>
             <button onClick={downloadTemplate}
@@ -295,10 +286,10 @@ export default function ImportarPage() {
           </div>
 
           <div style={{ marginTop: 16, background: C.bg, borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 11, color: C.muted, overflowX: 'auto' }}>
-            <pre style={{ margin: 0 }}>{`tipo,checklist,loja,setor,tarefa,critico,deadline
-checklist,Abertura,Loja 1,Salão,,,08:00
-tarefa,Abertura,Loja 1,Salão,Limpar mesas,nao,
-tarefa,Abertura,Loja 1,Salão,Verificar caixa,sim,`}</pre>
+            <pre style={{ margin: 0 }}>{[CSV_COLUMNS.join(','), ...buildModelCsv({
+              loja: units[0]?.name || undefined,
+              setor: units[0]?.sectors?.[0] || undefined,
+            }).split('\r\n').slice(1, 4)].join('\n')}</pre>
           </div>
         </div>
 
@@ -327,6 +318,16 @@ tarefa,Abertura,Loja 1,Salão,Verificar caixa,sim,`}</pre>
         {parseError && (
           <div style={{ background: '#FFF3F0', border: `1px solid ${C.critical}`, borderRadius: 10, padding: '12px 16px', marginBottom: 24 }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: C.critical }}>⚠ {parseError}</p>
+          </div>
+        )}
+
+        {/* Linhas descartadas na leitura — antes sumiam em silêncio. */}
+        {warnings.length > 0 && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 24 }}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura do arquivo</p>
+            {warnings.map((w, i) => (
+              <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {w}</p>
+            ))}
           </div>
         )}
 
@@ -382,8 +383,16 @@ tarefa,Abertura,Loja 1,Salão,Verificar caixa,sim,`}</pre>
                   <p style={{ fontSize: 16, fontWeight: 800, color: C.success, marginBottom: 8 }}>✓ Importação concluída!</p>
                   <p style={{ fontSize: 13, color: C.muted }}>
                     <strong style={{ color: C.ink }}>{importResult.created}</strong> checklist{importResult.created !== 1 ? 's' : ''} criado{importResult.created !== 1 ? 's' : ''}
-                    {importResult.skipped > 0 && <> · <strong style={{ color: C.muted }}>{importResult.skipped}</strong> ignorado{importResult.skipped !== 1 ? 's' : ''} (já existiam ou loja não encontrada)</>}
+                    {importResult.skipped > 0 && <> · <strong style={{ color: C.muted }}>{importResult.skipped}</strong> ignorado{importResult.skipped !== 1 ? 's' : ''}</>}
                   </p>
+                  {/* O motivo de cada checklist que não entrou (ou que entrou torto). */}
+                  {importResult.problems?.length > 0 && (
+                    <div style={{ marginTop: 10, background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px' }}>
+                      {importResult.problems.map((p, i) => (
+                        <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {p}</p>
+                      ))}
+                    </div>
+                  )}
                   <a href="/app" style={{ display: 'inline-block', marginTop: 16, padding: '10px 24px', background: C.ink, color: 'white', borderRadius: 8, fontWeight: 800, fontSize: 13, textDecoration: 'none' }}>
                     Ir para o app →
                   </a>
