@@ -3759,6 +3759,10 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
+  // Fecha sozinho quando não sobrou nada para ler. O timer é cancelado se o
+  // modal sair antes da hora (usuário clicou em Fechar).
+  const closeTimer = useRef(null);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   const knownUnits = (allUnits || []).map(u => u.name).join(', ');
 
@@ -3827,8 +3831,18 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
           problems.push(`"${tpl.name}" foi criado, mas o nome não corresponde a nenhum tipo de checklist (${activeTypes.map(t => t.label).join(', ')}) — ele não vai aparecer em Executar.`);
         }
       }
-      setResult({ created, skipped, problems });
-      if (created > 0) { await onImported?.(); showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`); }
+      const limpo = created > 0 && skipped === 0 && problems.length === 0;
+      setResult({ created, skipped, problems, limpo });
+      if (created > 0) {
+        // Some o CSV da tela: sem isso o botão "Importar" continuava armado e
+        // dava para reimportar o mesmo arquivo por engano.
+        setCsvText(''); setPreview(null); setWarnings([]);
+        await onImported?.();
+        showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`);
+        // Deu tudo certo e não há aviso para ler: confirma e fecha sozinho.
+        // Com pendências, o modal fica aberto até o usuário ler e fechar.
+        if (limpo) closeTimer.current = setTimeout(() => onClose?.(), 1800);
+      }
     } catch (e) {
       console.error(e);
       setResult({ error: `Erro na importação: ${e?.message || 'tente novamente.'}` });
@@ -3879,9 +3893,16 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
         )}
         {result && (
           <div style={{ marginBottom: 10 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: result.error ? C.critical : (result.created > 0 ? C.success : C.critical) }}>
-              {result.error || `Importados: ${result.created}. Ignorados: ${result.skipped}.`}
+            <p style={{ fontSize: result.error ? 13 : 15, fontWeight: 800, color: result.error ? C.critical : (result.created > 0 ? C.success : C.critical) }}>
+              {result.error
+                ? result.error
+                : result.created > 0
+                  ? `✓ Importação concluída — ${result.created} checklist${result.created > 1 ? 's' : ''} criado${result.created > 1 ? 's' : ''}${result.skipped > 0 ? `, ${result.skipped} ignorado${result.skipped > 1 ? 's' : ''}` : ''}.`
+                  : `Nenhum checklist importado (${result.skipped} ignorado${result.skipped !== 1 ? 's' : ''}).`}
             </p>
+            {result.limpo && (
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Fechando…</p>
+            )}
             {/* O motivo de cada checklist que não entrou (ou que entrou torto). */}
             {result.problems?.length > 0 && (
               <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginTop: 8 }}>
@@ -3892,13 +3913,22 @@ function ImportCsvModal({ company, allUnits, activeTypes = CHECKLIST_TYPE_ORDER,
             )}
           </div>
         )}
-        <div className="flex gap-2">
-          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
-          <button onClick={doImport} disabled={!preview?.length || importing}
-            style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!preview?.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!preview?.length || importing) ? 'not-allowed' : 'pointer' }}>
-            {importing ? 'Importando…' : 'Importar'}
+        {/* Depois de importar, "Concluir" vira a ação principal: o que sobrou na
+            tela é o resultado, não mais um arquivo esperando importação. */}
+        {result?.created > 0 ? (
+          <button onClick={onClose}
+            style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: C.success, color: 'white', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+            Concluir
           </button>
-        </div>
+        ) : (
+          <div className="flex gap-2">
+            <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
+            <button onClick={doImport} disabled={!preview?.length || importing}
+              style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!preview?.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!preview?.length || importing) ? 'not-allowed' : 'pointer' }}>
+              {importing ? 'Importando…' : 'Importar'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

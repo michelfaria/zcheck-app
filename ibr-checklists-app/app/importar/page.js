@@ -375,12 +375,16 @@ export default function ImportarPage() {
 
         {/* Import result */}
         {importResult && (
-          <div style={{ background: importResult.error ? '#FFF3F0' : '#F0FAF4', border: `1px solid ${importResult.error ? C.critical : C.success}`, borderRadius: 12, padding: 20 }}>
+          <div style={{ background: (importResult.error || !importResult.created) ? '#FFF3F0' : '#F0FAF4', border: `1px solid ${(importResult.error || !importResult.created) ? C.critical : C.success}`, borderRadius: 12, padding: 20 }}>
             {importResult.error
               ? <p style={{ fontSize: 14, fontWeight: 700, color: C.critical }}>⚠ {importResult.error}</p>
               : (
                 <>
-                  <p style={{ fontSize: 16, fontWeight: 800, color: C.success, marginBottom: 8 }}>✓ Importação concluída!</p>
+                  {/* "Concluída!" só quando algo entrou de fato — antes dizia isso
+                      mesmo com 0 criados, contradizendo o próprio número abaixo. */}
+                  <p style={{ fontSize: 16, fontWeight: 800, color: importResult.created ? C.success : C.critical, marginBottom: 8 }}>
+                    {importResult.created ? '✓ Importação concluída!' : 'Nenhum checklist foi importado'}
+                  </p>
                   <p style={{ fontSize: 13, color: C.muted }}>
                     <strong style={{ color: C.ink }}>{importResult.created}</strong> checklist{importResult.created !== 1 ? 's' : ''} criado{importResult.created !== 1 ? 's' : ''}
                     {importResult.skipped > 0 && <> · <strong style={{ color: C.muted }}>{importResult.skipped}</strong> ignorado{importResult.skipped !== 1 ? 's' : ''}</>}
