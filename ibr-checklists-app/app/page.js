@@ -3,7 +3,7 @@ import {
   AlertTriangle, Clock, Check, Eye, MapPin, Target, TrendingUp, Award,
   Trash2, ShieldCheck, Store, Pill, Dumbbell, BedDouble, Stethoscope,
 } from 'lucide-react';
-import { C, R, W, T, greenOnDark } from '../lib/tokens';
+import { C, R, W, T, greenOnDark, successBright } from '../lib/tokens';
 import BackToTop from '../components/BackToTop';
 import PriceCalculator from '../components/PriceCalculator';
 import { TRIAL_DAYS, PRICE_PER_UNIT } from '../lib/plans';
@@ -36,10 +36,17 @@ function BriefingExample() {
       <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, marginBottom: 8, textAlign: 'center' }}>
         Exemplo ilustrativo do briefing
       </p>
-      <div style={{ background: 'white', borderRadius: R.lg, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-        <div style={{ background: C.ink, color: 'white', padding: '16px 18px' }}>
-          <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
-          <p style={{ fontSize: T.h3, fontWeight: W.semibold, marginTop: 4 }}>Bom dia, Ana</p>
+      {/* O card é a assinatura do hero: a mensagem que chega toda manhã.
+          Carimbo de hora, profundidade e entrada sutil (lp-hero-card no CSS). */}
+      <div className="lp-hero-card" style={{ background: 'white', borderRadius: R.lg, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+        <div style={{ background: C.ink, color: 'white', padding: '16px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
+            <p style={{ fontSize: T.h3, fontWeight: W.semibold, marginTop: 4 }}>Bom dia, Ana</p>
+          </div>
+          <span style={{ fontSize: T.label, fontWeight: W.semibold, background: 'rgba(255,255,255,0.12)', borderRadius: R.pill, padding: '4px 12px', whiteSpace: 'nowrap' }}>
+            Hoje · 07:00
+          </span>
         </div>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.warning}`, borderRadius: R.sm, padding: '10px 12px' }}>
@@ -63,6 +70,19 @@ function BriefingExample() {
               </div>
             </div>
           </div>
+        </div>
+        {/* Régua do dia: a sequência real de um restaurante — abertura, turno,
+            fechamento. Estrutura que informa (é uma ordem de verdade), não enfeite. */}
+        <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.label, fontWeight: W.semibold, color: C.success }}>
+            <Check size={12} aria-hidden /> Abertura · 07:42
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.label, fontWeight: W.semibold, color: C.warning }}>
+            <span style={{ width: 7, height: 7, borderRadius: R.pill, background: C.warning }} aria-hidden /> Turno · agora
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.label, fontWeight: W.medium, color: C.muted }}>
+            <Clock size={12} aria-hidden /> Fechamento · 22:00
+          </span>
         </div>
       </div>
     </div>
@@ -239,6 +259,14 @@ export default function LandingPage() {
         .lp-btn-primary:hover { background: ${C.inkHover}; }
         .lp-nav-links { transition: color .15s; }
         .lp-nav-links:hover { color: ${C.ink}; }
+        /* Hero: o card de briefing "chega" como a mensagem da manhã — entrada
+           única no load, profundidade em camadas. Sublinha só na palavra-tese. */
+        .lp-hero-card { box-shadow: 0 1px 2px rgba(8,20,30,0.06), 0 16px 40px -16px rgba(8,20,30,0.22);
+          animation: lp-card-in .6s cubic-bezier(.22,1,.36,1) both; }
+        @keyframes lp-card-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .lp-hero-card { animation: none; } }
+        .lp-underline { text-decoration: underline; text-decoration-color: ${successBright};
+          text-decoration-thickness: 4px; text-underline-offset: 6px; }
         .lp-btn-ghost { background: transparent; color: ${C.ink}; padding: 14px 24px; font-size: ${T.body}px; border: 1.5px solid ${C.borderStrong}; }
         .lp-container { max-width: 1120px; margin: 0 auto; padding-left: 40px; padding-right: 40px; }
         .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
@@ -313,13 +341,20 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* 1 · HERO */}
-      <section style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+      {/* 1 · HERO — gradiente em duas camadas: branco → bg → tom azulado do ink
+          no pé da dobra, com um halo verde suave atrás do card de briefing.
+          Tudo derivado dos tokens; o tom mais escuro (#EFF4F8) mantém o muted
+          acima de 4.5:1 (AA). */}
+      <section style={{
+        background: `radial-gradient(640px 420px at 78% 24%, rgba(22,163,74,0.07), transparent 70%),
+                     linear-gradient(180deg, #FFFFFF 0%, ${C.bg} 55%, #EFF4F8 100%)`,
+        borderBottom: `1px solid ${C.border}`,
+      }}>
         <div className="lp-container lp-grid-2" style={{ paddingTop: 72, paddingBottom: 72 }}>
           <div>
             <Eyebrow color={C.success}>Do checklist à cultura de execução</Eyebrow>
             <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em', marginBottom: 20 }}>
-              Saiba onde sua operação precisa de atenção — antes que vire problema.
+              Saiba onde sua operação precisa de atenção — <span className="lp-underline">antes</span> que vire problema.
             </h1>
             <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.7, maxWidth: 460, marginBottom: 32 }}>
               Sua equipe executa os checklists pelo celular. Você acompanha de onde
