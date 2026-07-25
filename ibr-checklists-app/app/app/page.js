@@ -7893,10 +7893,10 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
             </div>
           </div>
 
-          {/* Prioridades por loja — só na visão multi-loja. Onde olhar primeiro. */}
+          {/* Situação por loja — só na visão multi-loja. Onde olhar primeiro. */}
           {jit.stores && jit.stores.length > 0 && (
             <div>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades por loja</p>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Situação por loja</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {jit.stores.map(s => {
                   const critico = s.overdue > 0 || s.criticalHotspots > 0;
@@ -9294,6 +9294,14 @@ function AppInner() {
   useEffect(() => {
     if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
     if (!jit || !plansLoaded) return;
+    // Se o usuário já ESTÁ no J.I.T. (link direto, ?aba=jit, ou item do menu),
+    // o pop-up abriria por cima da própria página — dois J.I.T. empilhados.
+    // Marca como visto para o auto-open não disparar depois numa troca de aba.
+    if (tab === 'jit') {
+      autoOpenChecked.current = currentUser.id;
+      try { localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+      return;
+    }
     // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
     // do trabalho — acende o badge do botão manual em vez de interromper.
     if (autoOpenChecked.current === currentUser.id) return;
@@ -9315,7 +9323,7 @@ function AppInner() {
         }
       }
     } catch (_) {}
-  }, [currentUser?.id, jit, plansLoaded, jitHasSignal]);
+  }, [currentUser?.id, jit, plansLoaded, jitHasSignal, tab]);
 
   const closeJit = () => {
     try { if (currentUser) localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
