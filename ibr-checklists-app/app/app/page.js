@@ -33,7 +33,7 @@ import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
-import { C, R, W, T } from '../../lib/tokens';
+import { C, R, W, T, successBright } from '../../lib/tokens';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
 import { useAppUrlState } from '../../lib/appUrlState';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
@@ -7317,6 +7317,48 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
   // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
   const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
 
+  // ── Blocos extras, para a versão PÁGINA do briefing (coluna lateral) ──────
+  // Não entram no pop-up: ali a tela é estreita e o briefing precisa ser curto.
+  // Numa página de desktop, sobra largura — e o gestor já pediu "setor" e
+  // gráfico. Tudo derivado dos MESMOS dados; nenhuma consulta nova.
+
+  // (a) Por setor, hoje. `groupStats` já sabe agrupar por setor.
+  const tFiltered = filterCompletions(completions, scopeFilter([today]));
+  const sectors = groupStats(tFiltered, 'setor', units)
+    .map(g => ({ name: g.key, checklists: g.checklists, rate: Math.round(g.rate), criticalPending: g.criticalPending }))
+    .slice(0, 8);
+
+  // (b) Tendência de 7 dias (item-level), do mais antigo ao mais recente — é a
+  // ordem de leitura de um gráfico de barras.
+  const trend7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const ds = d.toISOString().slice(0, 10);
+    const f = filterCompletions(completions, scopeUnitId ? { dates: [ds], unitId: scopeUnitId } : { dates: [ds] });
+    const sm = summarizeCompletions(f);
+    trend7.push({
+      date: ds,
+      weekday: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').slice(0, 3),
+      rate: f.length ? Math.round(sm.rate) : 0,
+      checklists: f.length,
+      isToday: ds === today,
+    });
+  }
+
+  // (c) Críticos recorrentes — o `hotspot` já está calculado para as
+  // recomendações; aqui ele vira lista, não só as 2 primeiras.
+  const criticalTop = [...hotspot.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([k, n]) => {
+      const [uid, iid] = k.split('|');
+      return { unitId: uid, unitName: unitName(uid), text: itemText.get(iid) || 'item crítico', count: n };
+    });
+
+  // (d) Quem executou hoje.
+  const peopleToday = collaboratorStats(tFiltered).slice(0, 5);
+
   return {
     date: today,
     yesterday: { adherence: yAdherence, checklists: yFiltered.length, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
@@ -7324,6 +7366,10 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
     recommendations: recs.slice(0, 3),
     stores,
     insight,
+    sectors,
+    trend7,
+    criticalTop,
+    peopleToday,
   };
 }
 
@@ -7522,9 +7568,101 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
     </div>
   );
 
+  // ── Painéis laterais: só na versão PÁGINA ────────────────────────────────
+  // No pop-up a tela é estreita e o briefing tem de ser curto. Numa página de
+  // desktop sobrava metade do monitor em branco — o que lê como "falta coisa",
+  // não como respiro. Tudo aqui vem do mesmo `briefing`; nenhuma consulta nova.
+  const Card = ({ title, children, sub }) => (
+    <section style={{
+      background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16,
+    }}>
+      <h3 style={{
+        fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase',
+        letterSpacing: '0.06em', color: C.muted,
+      }}>{title}</h3>
+      {sub && <p style={{ fontSize: T.caption, color: C.mutedLight, marginTop: 2 }}>{sub}</p>}
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </section>
+  );
+
+  const Row = ({ label, right, meta, rate, tone = C.ink }) => (
+    <div style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.ink, minWidth: 0, flex: 1 }}>{label}</span>
+        <span className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: tone }}>{right}</span>
+      </div>
+      {meta && <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{meta}</p>}
+      {typeof rate === 'number' && (
+        <div style={{ height: 5, borderRadius: R.pill, background: C.bg, marginTop: 6, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${Math.max(2, Math.min(100, rate))}%`, background: rate >= 80 ? successBright : rate >= 50 ? C.warning : C.critical, borderRadius: R.pill }} />
+        </div>
+      )}
+    </div>
+  );
+
+  const trend = briefing.trend7 || [];
+  const maxTrend = Math.max(100, ...trend.map(d => d.rate));
+
+  const sidePanels = (
+    <aside className="zc-briefing-aside">
+      {trend.length > 0 && (
+        <Card title="Aderência · 7 dias" sub="% de tarefas concluídas por dia">
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 96 }}>
+            {trend.map(d => (
+              <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span className="font-display" style={{ fontSize: T.label, fontWeight: W.semibold, color: d.isToday ? C.ink : C.mutedLight }}>
+                  {d.checklists ? `${d.rate}%` : '—'}
+                </span>
+                <div style={{ width: '100%', height: 56, display: 'flex', alignItems: 'flex-end' }}>
+                  <div title={`${d.weekday}: ${d.rate}%`} style={{
+                    width: '100%',
+                    height: `${Math.max(3, (d.rate / maxTrend) * 100)}%`,
+                    background: d.isToday ? C.ink : (d.rate >= 80 ? successBright : d.rate >= 50 ? C.warning : C.critical),
+                    borderRadius: '3px 3px 0 0',
+                    opacity: d.checklists ? 1 : 0.25,
+                  }} />
+                </div>
+                <span style={{ fontSize: T.label, color: C.mutedLight, textTransform: 'capitalize' }}>{d.weekday}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {(briefing.sectors || []).length > 0 && (
+        <Card title="Por setor · hoje" sub="conclusão de tarefas no setor">
+          {briefing.sectors.map(sc => (
+            <Row key={sc.name} label={sc.name} right={`${sc.rate}%`} rate={sc.rate}
+              tone={sc.rate >= 80 ? C.success : sc.rate >= 50 ? C.warning : C.critical}
+              meta={`${sc.checklists} checklist${sc.checklists > 1 ? 's' : ''}${sc.criticalPending ? ` · ${sc.criticalPending} crítico${sc.criticalPending > 1 ? 's' : ''} pendente${sc.criticalPending > 1 ? 's' : ''}` : ''}`} />
+          ))}
+        </Card>
+      )}
+
+      {(briefing.criticalTop || []).length > 0 && (
+        <Card title="Críticos recorrentes" sub="pendentes 2× ou mais nos últimos 7 dias">
+          {briefing.criticalTop.map((c, i) => (
+            <Row key={`${c.unitId}-${i}`} label={truncName(c.text, 44)} right={`${c.count}×`} tone={C.critical}
+              meta={c.unitName} />
+          ))}
+        </Card>
+      )}
+
+      {(briefing.peopleToday || []).length > 0 && (
+        <Card title="Quem executou hoje">
+          {briefing.peopleToday.map(pp => (
+            <Row key={pp.key} label={truncName(pp.name, 26)} right={`${pp.tasksDone}`}
+              meta={`${pp.checklists} checklist${pp.checklists > 1 ? 's' : ''} · ${pp.tasksDone} tarefa${pp.tasksDone > 1 ? 's' : ''}`} />
+          ))}
+        </Card>
+      )}
+    </aside>
+  );
+
   const Shell = ({ children }) => (asPage ? (
     <div className="zc-briefing-page">
       <div className="zc-briefing-panel">{children}</div>
+      {sidePanels}
     </div>
   ) : (
     <div onClick={onClose}

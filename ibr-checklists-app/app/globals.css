@@ -199,11 +199,18 @@ input, textarea, button, select {
    painel, e esticar até 1120px daria linha de texto longa demais. */
 .zc-briefing-page { padding: var(--zc-pad-view); }
 .zc-briefing-panel {
-  max-width: 720px;                 /* CT.prose */
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;              /* R.md */
   overflow: hidden;
+}
+/* No celular os painéis laterais entram DEPOIS do briefing, empilhados —
+   a informação não se perde, só muda de lugar. */
+.zc-briefing-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 /* Raiz de view. Substitui o `p-4` do Tailwind nas 19 raízes: no celular vale
@@ -247,6 +254,21 @@ input, textarea, button, select {
   /* O badge de pendências no rail SUBSTITUI o popup de takeover — era esse o
      ponto: interrupção vira status permanente. Mostrar os dois é o oposto. */
   .zc-requests-popup { display: none !important; }
+
+  /* Briefing em duas colunas: uma coluna de 720px num monitor largo deixava
+     metade da tela em branco, e branco desse tamanho não lê como respiro — lê
+     como "falta coisa". A esquerda continua com medida de leitura; a direita
+     recebe gráfico e recortes (setor, críticos recorrentes, quem executou). */
+  .zc-briefing-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .zc-briefing-panel { max-width: 720px; }
+  /* Sem `sticky`: a coluna passa de 1200px de altura e um elemento sticky mais
+     alto que a viewport prende o topo e deixa o último card inalcançável. */
+  .zc-briefing-aside { margin-top: 0; gap: 16px; }
 
   /* O seletor de loja usava `flex: 1` por botão: com 3 lojas em 1677px cada
      botão virava 463px de largura — e o "Ver briefing do dia" ocupava 1409px.
