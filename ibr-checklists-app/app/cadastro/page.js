@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { Camera, Image as ImageIcon, CheckCircle2, Clock, XCircle, SearchX } from 'lucide-react';
 // Cliente anônimo, de propósito: quem se cadastra ainda não tem conta.
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../lib/supabase';
 import { getTenantSlug } from '../../lib/tenant';
@@ -210,7 +211,7 @@ export default function CadastroPage() {
   if (step === 'success') {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui,sans-serif' }}>
-        <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
+        <CheckCircle2 size={56} color={C.success} strokeWidth={1.5} aria-hidden style={{ marginBottom: 16 }} />
         <h1 style={{ fontSize: 22, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Solicitação enviada!</h1>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 300, lineHeight: 1.6, marginBottom: 32 }}>
           Sua solicitação foi recebida. Sua solicitação será analisada em breve. Você será contatado via WhatsApp ou e-mail quando houver retorno.
@@ -306,7 +307,7 @@ export default function CadastroPage() {
                 background: 'none', fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
               }}>
-                <span style={{ fontSize: 34 }}>📷</span>
+                <Camera size={28} color={C.muted} strokeWidth={1.5} aria-hidden />
                 Tirar selfie
               </button>
               <button onClick={() => galeriaRef.current?.click()} style={{
@@ -314,7 +315,7 @@ export default function CadastroPage() {
                 background: 'none', fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
               }}>
-                <span style={{ fontSize: 34 }}>🖼️</span>
+                <ImageIcon size={28} color={C.muted} strokeWidth={1.5} aria-hidden />
                 Escolher da galeria
               </button>
             </div>
@@ -386,10 +387,10 @@ function StatusChecker({ cpf: initialCpf } = {}) {
   };
 
   const statusInfo = {
-    pendente:  { icon: '⏳', label: 'Solicitação em análise', color: '#C6842A', desc: 'Sua solicitação está sendo analisada. Por favor aguarde.' },
-    aprovado:  { icon: '✅', label: 'Acesso aprovado!', color: '#31C85A', desc: 'Seu acesso foi aprovado. Abra o app e faça login com seu PIN.' },
-    rejeitado: { icon: '❌', label: 'Solicitação não aprovada', color: '#D1462F', desc: 'Sua solicitação não foi aprovada. Entre em contato com a gestão.' },
-    not_found: { icon: '🔍', label: 'Não encontrado', color: '#6B8299', desc: 'Nenhuma solicitação encontrada com esse CPF.' },
+    pendente:  { Icon: Clock,        label: 'Solicitação em análise', color: '#C6842A', desc: 'Sua solicitação está sendo analisada. Por favor aguarde.' },
+    aprovado:  { Icon: CheckCircle2, label: 'Acesso aprovado!', color: '#31C85A', desc: 'Seu acesso foi aprovado. Abra o app e faça login com seu PIN.' },
+    rejeitado: { Icon: XCircle,      label: 'Solicitação não aprovada', color: '#D1462F', desc: 'Sua solicitação não foi aprovada. Entre em contato com a gestão.' },
+    not_found: { Icon: SearchX,      label: 'Não encontrado', color: '#6B8299', desc: 'Nenhuma solicitação encontrada com esse CPF.' },
   };
 
   const info = status ? statusInfo[status] : null;
@@ -416,7 +417,7 @@ function StatusChecker({ cpf: initialCpf } = {}) {
 
       {checked && info && (
         <div style={{ marginTop: 14, padding: '16px', borderRadius: 10, background: 'white', border: `2px solid ${info.color}30`, textAlign: 'center' }}>
-          <p style={{ fontSize: 30, marginBottom: 8 }}>{info.icon}</p>
+          <info.Icon size={30} color={info.color} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 8px' }} />
           <p style={{ fontSize: 14, fontWeight: 600, color: info.color, marginBottom: 4 }}>{info.label}</p>
           <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{info.desc}</p>
           {status === 'aprovado' && (

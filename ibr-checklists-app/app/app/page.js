@@ -5,7 +5,13 @@ import {
   CheckCircle2, Circle, AlertTriangle, ChevronRight, ArrowLeft,
   Plus, Trash2, X, Settings2, Clock, Lock, Camera,
   Users, User, LogOut, Store, BarChart3, ChevronUp, ChevronDown, Calendar,
-  WifiOff, RefreshCw, Bell, BellOff, ExternalLink, FileText, PlayCircle, HelpCircle,
+  WifiOff, RefreshCw, Bell, BellOff, ExternalLink, FileText, PlayCircle, HelpCircle, Award,
+  // Entraram na troca dos emojis por ícones de traço (ver RankBadge/StarRating,
+  // RECOMMENDATION_ICON, VERTICAL_ICON e as conquistas do ID Operacional).
+  Check, CheckCheck, ClipboardCheck, ClipboardList, LayoutGrid, Star, Trophy,
+  ThumbsUp, ThumbsDown, TrendingUp, TrendingDown, Download, Printer, Upload,
+  Image as ImageIcon, Pencil, Smartphone, Lightbulb, KeyRound, Sprout, Flame,
+  CalendarCheck, ShieldCheck, UtensilsCrossed, BedDouble, Tent, Dumbbell, PawPrint,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -1083,6 +1089,67 @@ function ToastHost() {
   );
 }
 
+/**
+ * Nota em estrelas. `Star` do lucide preenchida/vazia no lugar do caractere ★,
+ * que herdava a fonte do sistema e variava de largura entre plataformas.
+ * O valor vai no `aria-label` do grupo — cinco <span> não dizem "3 de 5".
+ */
+function StarRating({ stars, size = 12, color = C.warning, emptyColor = C.mutedLight }) {
+  return (
+    <span role="img" aria-label={`${stars} de 5 estrelas`} style={{ display: 'inline-flex', gap: 2, flexShrink: 0 }}>
+      {[1, 2, 3, 4, 5].map(s => (
+        <Star key={s} size={size} aria-hidden
+          color={s <= stars ? color : emptyColor}
+          fill={s <= stars ? color : 'none'}
+          strokeWidth={1.5} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Marcador de seção: o traço curto na cor do acento que o J.I.T. já usava no
+ * lugar de emoji ("Leitura da operação"). Virou componente porque a regra vale
+ * para todo cabeçalho de seção — num painel de gestão, emoji como dado custa
+ * mais credibilidade do que resolve.
+ */
+function SectionMark({ color }) {
+  return <span aria-hidden="true" style={{ width: 14, height: 2, borderRadius: 2, background: color, flexShrink: 0 }} />;
+}
+
+/**
+ * "Foi útil?" — polegares. Botões de verdade, com nome acessível: os emoji
+ * 👍/👎 anteriores ficavam sem rótulo para leitor de tela e o desenho mudava
+ * de plataforma para plataforma.
+ */
+function FeedbackThumbs({ onRate, size = 15 }) {
+  const btn = {
+    display: 'inline-grid', placeItems: 'center', padding: 6, borderRadius: R.sm,
+    border: `1px solid ${C.border}`, background: C.bg, color: C.muted, cursor: 'pointer',
+  };
+  return (
+    <>
+      <button type="button" onClick={() => onRate('yes')} aria-label="Foi útil" style={btn}>
+        <ThumbsUp size={size} aria-hidden />
+      </button>
+      <button type="button" onClick={() => onRate('no')} aria-label="Não foi útil" style={btn}>
+        <ThumbsDown size={size} aria-hidden />
+      </button>
+    </>
+  );
+}
+
+/** Rótulo de faixa de desempenho (ícone + texto) devolvido por `getRating`. */
+function RatingLabel({ rating, size = 12, style }) {
+  if (!rating) return null;
+  const { Icon } = rating;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, ...style }}>
+      <Icon size={size} aria-hidden style={{ flexShrink: 0 }} /> {rating.label}
+    </span>
+  );
+}
+
 function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status];
   return (
@@ -1635,23 +1702,26 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     const rate = Math.round((done / total) * 100);
     const criticalMissed = completionRecord.items.filter(i => i.critical && !i.done).length;
     const levels = [
-      { min: 100, emoji: '🏆', title: 'Perfeito!', msg: 'Todos os itens concluídos. Excelente trabalho!', color: C.success },
-      { min: 90,  emoji: '⭐', title: 'Excelente!', msg: 'Quase tudo concluído. Continue assim!', color: C.success },
-      { min: 75,  emoji: '👍', title: 'Bom trabalho!', msg: 'A maioria dos itens foi concluída.', color: unit.color },
-      { min: 50,  emoji: '📈', title: 'Checklist registrado', msg: 'Você pode melhorar! Tente concluir mais itens amanhã.', color: C.warning },
-      { min: 0,   emoji: '⚠️', title: 'Registrado com pendências', msg: 'Muitos itens ficaram pendentes. Priorize-os no próximo turno.', color: C.critical },
+      { min: 100, Icon: Trophy,        title: 'Perfeito!', msg: 'Todos os itens concluídos. Excelente trabalho!', color: C.success },
+      { min: 90,  Icon: CheckCircle2,  title: 'Excelente!', msg: 'Quase tudo concluído. Continue assim!', color: C.success },
+      { min: 75,  Icon: ThumbsUp,      title: 'Bom trabalho!', msg: 'A maioria dos itens foi concluída.', color: unit.color },
+      { min: 50,  Icon: TrendingUp,    title: 'Checklist registrado', msg: 'Você pode melhorar! Tente concluir mais itens amanhã.', color: C.warning },
+      { min: 0,   Icon: AlertTriangle, title: 'Registrado com pendências', msg: 'Muitos itens ficaram pendentes. Priorize-os no próximo turno.', color: C.critical },
     ];
     const level = levels.find(l => rate >= l.min);
+    const LevelIcon = level.Icon;
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ fontSize: 72, marginBottom: 12, lineHeight: 1 }}>{level.emoji}</div>
+        <LevelIcon size={56} color={level.color} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
         <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: level.color, textAlign: 'center', marginBottom: 8 }}>{level.title}</p>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, marginBottom: 20 }}>{level.msg}</p>
         <div style={{ background: 'white', borderRadius: 14, padding: '16px 24px', border: `2px solid ${level.color}30`, textAlign: 'center', marginBottom: 20, minWidth: 200 }}>
           <p style={{ fontSize: 48, fontWeight: W.bold, color: level.color, lineHeight: 1 }}>{rate}%</p>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{done} de {total} itens</p>
           {criticalMissed > 0 && (
-            <p style={{ fontSize: 12, color: C.critical, fontWeight: W.semibold, marginTop: 6 }}>⚠ {criticalMissed} crítico{criticalMissed > 1 ? 's' : ''} pendente{criticalMissed > 1 ? 's' : ''}</p>
+            <p style={{ fontSize: 12, color: C.critical, fontWeight: W.semibold, marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+              <AlertTriangle size={12} aria-hidden /> {criticalMissed} crítico{criticalMissed > 1 ? 's' : ''} pendente{criticalMissed > 1 ? 's' : ''}
+            </p>
           )}
           <div style={{ width: '100%', height: 6, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
             <div style={{ height: '100%', width: `${rate}%`, background: level.color, borderRadius: 999 }} />
@@ -1674,8 +1744,8 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
         motiv={(() => {
           const n = (template.name || '').toLowerCase();
           const isArray = Array.isArray(template.shift);
-          if (n.includes('abertura') || (!isArray && template.shift === 'Manhã')) return 'Faça um excelente dia! ☀️';
-          if (n.includes('fechamento') || (!isArray && template.shift === 'Tarde')) return 'Bom descanso! 🌙';
+          if (n.includes('abertura') || (!isArray && template.shift === 'Manhã')) return 'Faça um excelente dia!';
+          if (n.includes('fechamento') || (!isArray && template.shift === 'Tarde')) return 'Bom descanso!';
           return null;
         })()}
       />
@@ -1740,7 +1810,9 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       {/* Aviso de execução colaborativa bloqueada (H6) */}
       {collabNotice && (
         <div className="zc-overlay" style={{ position: 'fixed', bottom: 'calc(120px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 300, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: W.semibold, boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}>
-          🔒 {collabNotice}
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Lock size={14} aria-hidden style={{ flexShrink: 0 }} /> {collabNotice}
+          </span>
         </div>
       )}
 
@@ -2071,11 +2143,11 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
   // ── Gamification: score & label ──────────────────────────────────────────
   const getRating = (rate) => {
     if (rate === null) return null;
-    if (rate === 100) return { label: '🏆 Perfeito!', color: C.warning, stars: 5 };
-    if (rate >= 90)  return { label: '⭐ Excelente', color: C.success, stars: 4 };
-    if (rate >= 75)  return { label: '👍 Bom', color: C.success, stars: 3 };
-    if (rate >= 50)  return { label: '📈 Regular', color: unit.color, stars: 2 };
-    return { label: '⚠ Precisa melhorar', color: C.critical, stars: 1 };
+    if (rate === 100) return { Icon: Trophy,        label: 'Perfeito!', color: C.warning, stars: 5 };
+    if (rate >= 90)  return { Icon: CheckCircle2,  label: 'Excelente', color: C.success, stars: 4 };
+    if (rate >= 75)  return { Icon: ThumbsUp,      label: 'Bom', color: C.success, stars: 3 };
+    if (rate >= 50)  return { Icon: TrendingUp,    label: 'Regular', color: unit.color, stars: 2 };
+    return { Icon: AlertTriangle, label: 'Precisa melhorar', color: C.critical, stars: 1 };
   };
 
   const rating = getRating(rateToday);
@@ -2125,13 +2197,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                     <p className="font-display" style={{ fontSize: 'calc(32px * var(--zc-t-scale))', fontWeight: W.bold, color: unit.color, lineHeight: 1, margin: '4px 0' }}>
                       {r !== null ? `${r}%` : '—'}
                     </p>
-                    {sgRating && (
-                      <div>
-                        {[1,2,3,4,5].map(s => (
-                          <span key={s} style={{ fontSize: 12, opacity: s <= sgRating.stars ? 1 : 0.2 }}>★</span>
-                        ))}
-                      </div>
-                    )}
+                    {sgRating && <StarRating stars={sgRating.stars} size={12} color={sgRating.color} />}
                     {sg.avg7 !== null && (
                       <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
                         Média 7d: {sg.avg7}%
@@ -2169,11 +2235,11 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
               const trend = rate !== null && avg !== null ? rate - avg : null;
               const getRating = (r) => {
                 if (r === null) return null;
-                if (r === 100) return { label: '🏆 Perfeito', color: '#2F6F5E' };
-                if (r >= 90) return { label: '⭐ Excelente', color: '#2F6F5E' };
-                if (r >= 75) return { label: '👍 Bom', color: u.color };
-                if (r >= 50) return { label: '📈 Regular', color: C.warning };
-                return { label: '⚠ Atenção', color: C.critical };
+                if (r === 100) return { Icon: Trophy,       label: 'Perfeito', color: '#2F6F5E' };
+                if (r >= 90) return { Icon: CheckCircle2,   label: 'Excelente', color: '#2F6F5E' };
+                if (r >= 75) return { Icon: ThumbsUp,       label: 'Bom', color: u.color };
+                if (r >= 50) return { Icon: TrendingUp,     label: 'Regular', color: C.warning };
+                return { Icon: AlertTriangle, label: 'Atenção', color: C.critical };
               };
               const rating = getRating(rate);
 
@@ -2194,7 +2260,6 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                 return total > 0 ? Math.round((done/total)*100) : 0;
               };
 
-              const rankLabel = idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉';
               const sortedUnits = [...units].sort((a, b) => {
                 const ra = isUnitClosed(closures, a.id, viewDate) ? -1 : (calcRate(viewDate, a.id, a.sectors) ?? -1);
                 const rb = isUnitClosed(closures, b.id, viewDate) ? -1 : (calcRate(viewDate, b.id, b.sectors) ?? -1);
@@ -2208,15 +2273,15 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                     <div>
                       <div className="flex items-center gap-2">
                         <p style={{ fontSize: 13, fontWeight: W.semibold, color: u.color }}>{u.name}</p>
-                        {!unitClosed && rate !== null && (
-                          <span style={{ fontSize: 13 }}>{['🥇','🥈','🥉'][rank] ?? ''}</span>
+                        {!unitClosed && rate !== null && rank >= 0 && (
+                          <RankBadge pos={rank + 1} size={20} />
                         )}
                       </div>
                       {unitClosed
                         ? <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Fechada hoje</p>
                         : <p className="font-display" style={{ fontSize: 'calc(36px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, lineHeight: 1, marginTop: 4 }}>{rate ?? '—'}%</p>
                       }
-                      {rating && <p style={{ fontSize: 11, fontWeight: W.semibold, color: rating.color, marginTop: 2 }}>{rating.label}</p>}
+                      {rating && <RatingLabel rating={rating} size={11} style={{ fontSize: 11, fontWeight: W.semibold, color: rating.color, marginTop: 2 }} />}
                     </div>
                     {!unitClosed && trend !== null && (
                       <div style={{ textAlign: 'right' }}>
@@ -2281,7 +2346,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                 <div className="flex flex-col gap-2">
                   {sorted.map(({u, rate}, i) => (
                     <div key={u.id} className="flex items-center gap-3" style={{ padding: '8px 12px', background: 'white', borderRadius: 10, border: `1.5px solid ${C.border}` }}>
-                      <span style={{ fontSize: 18 }}>{['🥇','🥈','🥉'][i]}</span>
+                      <RankBadge pos={i + 1} size={24} />
                       <p style={{ flex:1, fontSize: 14, fontWeight: W.semibold, color: u.color }}>{u.name}</p>
                       <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{rate}%</p>
                       <div style={{ width: 60, height: 4, background: C.border, borderRadius: 999, overflow:'hidden' }}>
@@ -2316,14 +2381,12 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                 <p className="font-display" style={{ fontSize: 'calc(56px * var(--zc-t-scale))', fontWeight: W.bold, color: 'white', lineHeight: 1, marginTop: 4 }}>
                   {rateToday !== null ? `${rateToday}%` : '—'}
                 </p>
-                {rating && <p style={{ fontSize: 15, fontWeight: W.semibold, color: 'rgba(255,255,255,0.9)', marginTop: 4 }}>{rating.label}</p>}
+                {rating && <RatingLabel rating={rating} size={15} style={{ fontSize: 15, fontWeight: W.semibold, color: 'rgba(255,255,255,0.9)', marginTop: 4 }} />}
               </div>
               {rating && (
-                <div style={{ textAlign: 'right' }}>
-                  {[1,2,3,4,5].map(s => (
-                    <span key={s} style={{ fontSize: 20, opacity: s <= rating.stars ? 1 : 0.25 }}>★</span>
-                  ))}
-                </div>
+                // Sobre a cor da loja, estrela branca: `rating.color` aqui seria
+                // cor sobre cor, sem contraste garantido.
+                <StarRating stars={rating.stars} size={18} color="#fff" emptyColor="rgba(255,255,255,0.4)" />
               )}
             </div>
             {/* Progress bar */}
@@ -2465,7 +2528,6 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
             <Ticket accent={C.border}>
               <div className="space-y-3">
                 {ranking7.map((collab, idx) => {
-                  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                   const barColor = collab.rate >= 80 ? C.success : collab.rate >= 50 ? unit.color : C.critical;
                   const isMe = collab.name === currentUser?.name;
                   const userObj = (users || []).find(u => u.id === collab.key || u.name === collab.name);
@@ -2479,10 +2541,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                     }}>
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-                          {medal
-                            ? <span style={{ fontSize: 18, flexShrink: 0 }}>{medal}</span>
-                            : <span className="font-mono-ibr" style={{ fontSize: 12, color: C.muted, width: 20, textAlign: 'center', flexShrink: 0 }}>{idx + 1}</span>
-                          }
+                          <RankBadge pos={idx + 1} size={22} />
                           <div style={{ minWidth: 0 }}>
                             <p style={{ fontSize: 13, fontWeight: isMe ? 800 : 700, color: isMe ? unit.color : C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {collab.name}{isMe ? ' · você' : ''}
@@ -2826,7 +2885,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         <td style="text-align:center">${c.checklists}</td>
         <td style="text-align:center">${c.tasksDone}${c.criticalDone > 0 ? ` (${c.criticalDone} crít.)` : ''}</td>
         <td style="text-align:center;font-weight:800;color:${c.rate==null?'#888':c.rate>=80?'#31C85A':c.rate>=50?unitColor:'#D1462F'}">${c.rate==null?'—':c.rate.toFixed(0)+'%'}</td>
-        <td style="text-align:center;color:${c.criticalPending>0?'#D1462F':'#888'}">${c.criticalPending > 0 ? `⚠ ${c.criticalPending}` : '—'}</td>
+        <td style="text-align:center;font-weight:${c.criticalPending>0?'700':'400'};color:${c.criticalPending>0?'#D1462F':'#888'}">${c.criticalPending > 0 ? c.criticalPending : '—'}</td>
       </tr>`
     ).join('');
 
@@ -2843,7 +2902,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           <td>${c.sector} · ${c.templateName}</td>
           <td>${c.operatorName}</td>
           <td style="text-align:center">${done}/${c.items.length}</td>
-          <td style="text-align:center">${fotos > 0 ? `📷 ${fotos}` : '—'}</td>
+          <td style="text-align:center">${fotos > 0 ? fotos : '—'}</td>
         </tr>`;
       }).join('');
 
@@ -3302,14 +3361,14 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           className="flex-1 flex items-center justify-center gap-2 py-3"
           style={{ borderRadius: 10, border: `1.5px solid ${C.border}`, fontWeight: W.semibold, fontSize: 13, color: C.ink, background: 'white', cursor: 'pointer' }}
         >
-          ⬇ Excel / CSV
+          <Download size={15} aria-hidden /> Excel / CSV
         </button>
         <button
           onClick={exportPDF}
           className="flex-1 flex items-center justify-center gap-2 py-3"
           style={{ borderRadius: 10, border: 'none', fontWeight: W.semibold, fontSize: 13, color: 'white', background: unit.color, cursor: 'pointer', boxShadow: `0 2px 8px ${unit.color}44` }}
         >
-          🖨 Exportar PDF
+          <Printer size={15} aria-hidden /> Exportar PDF
         </button>
       </div>
 
@@ -3739,8 +3798,9 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                             background: active ? unit.color : 'white',
                             color: active ? 'white' : C.muted,
                             border: `1.5px solid ${active ? unit.color : C.border}`,
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
                           }}>
-                          {active ? '✓ ' : ''}{label}
+                          {active && <Check size={12} aria-hidden />}{label}
                         </button>
                       );
                     })}
@@ -4035,7 +4095,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
               {result.error
                 ? result.error
                 : result.created > 0
-                  ? `✓ Importação concluída — ${result.created} checklist${result.created > 1 ? 's' : ''} criado${result.created > 1 ? 's' : ''}${result.skipped > 0 ? `, ${result.skipped} ignorado${result.skipped > 1 ? 's' : ''}` : ''}.`
+                  ? `Importação concluída — ${result.created} checklist${result.created > 1 ? 's' : ''} criado${result.created > 1 ? 's' : ''}${result.skipped > 0 ? `, ${result.skipped} ignorado${result.skipped > 1 ? 's' : ''}` : ''}.`
                   : `Nenhum checklist importado (${result.skipped} ignorado${result.skipped !== 1 ? 's' : ''}).`}
             </p>
             {result.limpo && (
@@ -4508,10 +4568,10 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
           Ao lado, atalho fixo para subir/trocar o logo da empresa (pedido 18/07). */}
       <div className="flex flex-wrap gap-2" style={{ padding: '10px 16px 0' }}>
         <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
-          📥 Importar checklists via CSV
+          <Upload size={14} aria-hidden /> Importar checklists via CSV
         </button>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: headerLogoBusy ? 'default' : 'pointer', opacity: headerLogoBusy ? 0.6 : 1 }}>
-          🖼️ {headerLogoBusy ? 'Enviando…' : (company?.logo_url ? 'Trocar logo' : 'Subir logo')}
+          <ImageIcon size={14} aria-hidden /> {headerLogoBusy ? 'Enviando…' : (company?.logo_url ? 'Trocar logo' : 'Subir logo')}
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickHeaderLogo} disabled={headerLogoBusy} style={{ display: 'none' }} />
         </label>
         {company?.logo_url && !headerLogoBusy && (
@@ -4662,8 +4722,9 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
               <div key={idx} className="flex items-start gap-2" style={{ padding: '6px 0', borderBottom: idx < libPreview.items.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                 <span style={{ fontSize: T.caption, color: C.mutedLight, flexShrink: 0, width: 20 }}>{idx + 1}.</span>
                 <p style={{ flex: 1, fontSize: T.bodySm, color: C.ink, lineHeight: 1.45 }}>{i.text}</p>
-                <span style={{ flexShrink: 0, fontSize: T.label }}>
-                  {i.critical ? '⚠️' : ''}{i.photoRequired ? '📷' : ''}
+                <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, paddingTop: 2 }}>
+                  {i.critical && <AlertTriangle size={13} color={C.critical} aria-label="Crítico" />}
+                  {i.photoRequired && <Camera size={13} color={C.muted} aria-label="Exige foto" />}
                 </span>
               </div>
             ))}
@@ -4857,9 +4918,11 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                         placeholder="Descreva a tarefa"
                         className="flex-1 px-3 py-2"
                         style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', color: C.ink, minWidth: 0 }} />
-                      <label className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: W.semibold, color: item.critical ? C.critical : C.muted, flexShrink: 0 }}>
-                        <input type="checkbox" checked={!!item.critical} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
-                        ⚠
+                      <label className="flex items-center gap-1" title="Item crítico"
+                        style={{ color: item.critical ? C.critical : C.mutedLight, flexShrink: 0, cursor: 'pointer' }}>
+                        <input type="checkbox" aria-label="Item crítico" checked={!!item.critical}
+                          onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
+                        <AlertTriangle size={15} color="currentColor" aria-hidden />
                       </label>
                       {/* Foto e dias são funcionalidades independentes (pedido 18/07):
                           a câmera liga/desliga a exigência direto; o calendário abre só os dias. */}
@@ -4884,8 +4947,8 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                       </button>
                     </div>
                     {item.photoRequired && (
-                      <p style={{ marginTop: 4, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: unit.color }}>
-                        📷 Exigir foto na execução
+                      <p style={{ marginTop: 4, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: unit.color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Camera size={12} aria-hidden /> Exigir foto na execução
                       </p>
                     )}
                     {novoOptsOpen[item.id] && (
@@ -5311,8 +5374,10 @@ function UserEditor({ user, onSave, onCancel }) {
             }}
           >
             <div style={{ textAlign: 'left' }}>
-              <p style={{ fontSize: 13, fontWeight: W.semibold, color: suspended ? C.critical : C.success }}>
-                {suspended ? '🔒 Acesso suspenso' : '✅ Acesso ativo'}
+              <p style={{ fontSize: 13, fontWeight: W.semibold, color: suspended ? C.critical : C.success, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {suspended
+                  ? <><Lock size={13} aria-hidden /> Acesso suspenso</>
+                  : <><CheckCircle2 size={13} aria-hidden /> Acesso ativo</>}
               </p>
               <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                 {suspended
@@ -5367,8 +5432,9 @@ function CopyLinkButton({ url }) {
       cursor: 'pointer', flexShrink: 0,
       transition: 'background 0.2s',
       minWidth: 70,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
     }}>
-      {copied ? '✓ Copiado!' : 'Copiar'}
+      {copied ? <><Check size={13} aria-hidden /> Copiado!</> : 'Copiar'}
     </button>
   );
 }
@@ -5559,7 +5625,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
               method: 'POST',
               headers: { 'Content-Type': 'application/json',
                 Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-              body: JSON.stringify({ subs, title: '✅ ZCheck', body: msg }),
+              body: JSON.stringify({ subs, title: 'ZCheck', body: msg }),
             }).catch(() => {});
           }
         }
@@ -5618,8 +5684,10 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         {/* Tipo badge + cabeçalho */}
         <Ticket accent={isAlteracao ? C.ink : C.warning}>
           <div className="flex items-center gap-2 mb-2">
-            <span style={{ fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '2px 8px', borderRadius: 20 }}>
-              {isAlteracao ? '✎ Alteração de dados' : '+ Novo cadastro'}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '2px 8px', borderRadius: 20 }}>
+              {isAlteracao
+                ? <><Pencil size={10} aria-hidden /> Alteração de dados</>
+                : <><Plus size={10} aria-hidden /> Novo cadastro</>}
             </span>
             <span style={{ fontSize: 11, color: C.muted }}>{new Date(req.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
           </div>
@@ -5721,7 +5789,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                           position: 'relative' }}>
                         {u.name}
                         {isGerencia && selected && (
-                          <span style={{ position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%', background: 'white', border: `2px solid ${u.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: u.color, fontWeight: 900 }}>✓</span>
+                          <span style={{ position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%', background: 'white', border: `2px solid ${u.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: u.color }}><Check size={9} strokeWidth={4} aria-hidden /></span>
                         )}
                       </button>
                     );
@@ -5823,8 +5891,8 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           <Eyebrow>Solicitações pendentes {requests.length > 0 ? `(${requests.length})` : ''}</Eyebrow>
           {requests.length === 0 ? (
             <Ticket accent={C.border}>
-              <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0' }}>
-                Nenhuma solicitação pendente ✓
+              <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <CheckCircle2 size={14} aria-hidden /> Nenhuma solicitação pendente
               </p>
             </Ticket>
           ) : (
@@ -5856,8 +5924,10 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                         )}
                       </div>
                       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                          {isAlteracao ? '✎ Alteração' : '+ Novo cadastro'}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                          {isAlteracao
+                            ? <><Pencil size={10} aria-hidden /> Alteração</>
+                            : <><Plus size={10} aria-hidden /> Novo cadastro</>}
                         </span>
                         <ChevronRight size={16} color={C.muted} />
                       </div>
@@ -6231,7 +6301,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
         {sent ? (
           <div style={{ textAlign: 'center', padding: '28px 24px' }}>
-            <p style={{ fontSize: 40, marginBottom: 10 }}>✅</p>
+            <CheckCircle2 size={40} color={C.success} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 12px' }} />
             <p style={{ fontSize: 15, fontWeight: W.semibold, color: C.success, marginBottom: 6 }}>Solicitação enviada!</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.5 }}>Sua solicitação será analisada em breve. Você será contatado quando houver retorno.</p>
             <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
@@ -6256,8 +6326,9 @@ function UserDataChangeModal({ currentUser, onClose }) {
                     <button key={f.id} onClick={() => toggleField(f.id)}
                       style={{ fontSize: 12, fontWeight: W.semibold, padding: '6px 14px', borderRadius: 20,
                         background: on ? C.ink : 'white', color: on ? 'white' : C.ink,
-                        border: `1.5px solid ${on ? C.ink : C.border}`, cursor: 'pointer' }}>
-                      {on ? '✓ ' : ''}{f.label}
+                        border: `1.5px solid ${on ? C.ink : C.border}`, cursor: 'pointer',
+                        display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {on && <Check size={12} aria-hidden />}{f.label}
                     </button>
                   );
                 })}
@@ -6467,7 +6538,7 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
   );
 }
 
-function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false }) {
+function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false, idSignal = false }) {
   const ALL_ITEMS = BOTTOM_NAV_ORDER.map(id => NAV_ITEMS.find(it => it.id === id)).filter(Boolean);
   const items = ALL_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
@@ -6484,13 +6555,13 @@ function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false }) {
           <button
             key={it.id} onClick={() => setTab(it.id)}
             aria-current={active ? 'page' : undefined}
-            aria-label={it.id === 'jit' && jitSignal ? `${it.label}, há novidades` : undefined}
+            aria-label={(it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal) ? `${it.label}, há novidades` : undefined}
             className="flex-1 flex flex-col items-center gap-1"
             style={{ background: 'none', border: 'none', padding: '10px 4px 12px', minHeight: 56 }}
           >
             <span style={{ position: 'relative', display: 'inline-flex' }}>
               <Icon size={22} color={active ? accent : C.mutedLight} />
-              {it.id === 'jit' && jitSignal && (
+              {((it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal)) && (
                 <span aria-hidden="true" style={{
                   position: 'absolute', top: -1, right: -3, width: 8, height: 8,
                   borderRadius: R.pill, background: C.warning, border: '1.5px solid white',
@@ -6713,7 +6784,7 @@ function InstallPrompt() {
           background: '#063C5C', cursor: 'pointer',
         }}
       >
-        📲 Instalar app na tela inicial
+        <Smartphone size={15} aria-hidden /> Instalar app na tela inicial
       </button>
     </div>
   );
@@ -6727,9 +6798,10 @@ function InstallPrompt() {
           fontSize: 12, fontWeight: W.semibold, color: C.muted,
           background: 'none', border: 'none', cursor: 'pointer',
           textDecoration: 'underline',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
         }}
       >
-        📲 Adicionar à tela inicial
+        <Smartphone size={13} aria-hidden /> Adicionar à tela inicial
       </button>
       {showIosGuide && (
         <div style={{
@@ -6759,9 +6831,9 @@ function InstallPrompt() {
     <div style={{ marginTop: 20, textAlign: 'center' }}>
       <button
         onClick={() => setShowIosGuide(v => !v)}
-        style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
       >
-        📲 Adicionar à tela inicial
+        <Smartphone size={13} aria-hidden /> Adicionar à tela inicial
       </button>
       {showIosGuide && (
         <div style={{ marginTop: 10, padding: '12px 16px', borderRadius: 10, background: 'white', border: '1.5px solid #E2EAF0', textAlign: 'left', maxWidth: 280, margin: '10px auto 0' }}>
@@ -6789,7 +6861,16 @@ function InstallPrompt() {
 // branco sem exigir migração no provisionamento.
 const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
-const VERTICAL_EMOJI = { 'food-service': '🍽️', hotel: '🏨', eventos: '🎪', varejo: '🛍️', academia: '🏋️', petshop: '🐾' };
+// Mesmos ícones que a landing usa para os segmentos (app/page.js), para que
+// quem escolhe "Academia" no site reencontre o mesmo desenho no onboarding.
+const VERTICAL_ICON = {
+  'food-service': UtensilsCrossed,
+  hotel: BedDouble,
+  eventos: Tent,
+  varejo: Store,
+  academia: Dumbbell,
+  petshop: PawPrint,
+};
 
 // Deduz o segmento comparando os setores da empresa com as áreas da biblioteca.
 function guessVertical(units) {
@@ -6876,7 +6957,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
           <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>
             Bem-vindo ao ZCheck
           </p>
-          <p style={{ fontSize: 20, fontWeight: W.bold, color: 'white' }}>{company?.name || 'Sua empresa'} 🎉</p>
+          <p style={{ fontSize: 20, fontWeight: W.bold, color: 'white' }}>{company?.name || 'Sua empresa'}</p>
         </div>
 
         <div style={{ padding: '20px 22px' }}>
@@ -6893,13 +6974,14 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                   const active = vertical === v.id;
                   const count = LIBRARY_TEMPLATES.filter(t => t.vertical === v.id).length;
                   const empty = count === 0; // setor na taxonomia, modelos ainda em curadoria
+                  const VIcon = VERTICAL_ICON[v.id] || ClipboardList;
                   return (
                     <button key={v.id} onClick={() => !empty && setVertical(v.id)} disabled={empty}
                       style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: empty ? 'default' : 'pointer', textAlign: 'left',
                         opacity: empty ? 0.55 : 1,
                         background: active ? `${accent}12` : 'white',
                         border: `1.5px solid ${active ? accent : C.border}` }}>
-                      <span style={{ fontSize: 22 }}>{VERTICAL_EMOJI[v.id] || '📋'}</span>
+                      <VIcon size={20} color={active ? accent : C.muted} strokeWidth={1.75} aria-hidden style={{ flexShrink: 0 }} />
                       <span style={{ flex: 1 }}>
                         <span style={{ display: 'block', fontSize: 14, fontWeight: W.semibold, color: C.ink }}>{v.label}</span>
                         <span style={{ display: 'block', fontSize: 11.5, color: C.muted }}>
@@ -6939,7 +7021,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <Btn primary disabled={creating} onClick={createAll}>
-                  {creating ? 'Criando…' : `Criar ${plan.length} checklists ✓`}
+                  {creating ? 'Criando…' : `Criar ${plan.length} checklists`}
                 </Btn>
                 <Btn onClick={() => setStep(0)}>← Trocar segmento</Btn>
               </div>
@@ -6949,19 +7031,21 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
           {step === 2 && (
             <>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <p style={{ fontSize: 48, marginBottom: 8 }}>✅</p>
+                <CheckCircle2 size={44} color={C.success} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 10px' }} />
                 <p style={{ fontSize: 16, fontWeight: W.semibold, color: C.ink }}>Checklists criados!</p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
                 {[
-                  { icon: '⚙️', text: 'Ajuste itens, fotos e orientações em Gerenciar.' },
-                  { icon: '👥', text: 'Cadastre a equipe em Usuários — cada um com seu PIN.' },
-                  { icon: '☑️', text: 'Execute o primeiro checklist na aba Executar.' },
-                  { icon: '📈', text: 'Os Relatórios e a produtividade aparecem conforme a equipe executa.' },
-                ].map((s, i) => (
+                  // Os ícones são os mesmos das abas correspondentes na navegação
+                  // (NAV_ITEMS): a linha aponta para onde a ação acontece.
+                  { Icon: Settings2,      text: 'Ajuste itens, fotos e orientações em Gerenciar.' },
+                  { Icon: Users,          text: 'Cadastre a equipe em Usuários — cada um com seu PIN.' },
+                  { Icon: ClipboardCheck, text: 'Execute o primeiro checklist na aba Executar.' },
+                  { Icon: BarChart3,      text: 'Os Relatórios e a produtividade aparecem conforme a equipe executa.' },
+                ].map(({ Icon, text }, i) => (
                   <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
-                    <span style={{ fontSize: 18 }}>{s.icon}</span>
-                    <p style={{ fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{s.text}</p>
+                    <Icon size={16} color={C.muted} aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
+                    <p style={{ fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{text}</p>
                   </div>
                 ))}
               </div>
@@ -6982,34 +7066,37 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
 // a tela de verdade aparece atrás (já com os checklists criados no onboarding)
 // e cada passo traz uma orientação prática de primeiro uso. Diferente de um
 // modal estático: o gestor vê exatamente onde cada coisa está.
+// O ícone de cada passo NÃO é declarado aqui: sai de NAV_ITEMS pelo `tab`
+// (ver `tourIcon`). Assim o desenho do passo é sempre o mesmo que o usuário vê
+// na barra de navegação enquanto o tour a percorre.
 const GESTOR_TOUR_STEPS = [
   {
-    tab: 'executar', icon: '☑️', title: 'Executar — onde a equipe trabalha',
+    tab: 'executar', title: 'Executar — onde a equipe trabalha',
     desc: 'Os checklists do dia, por setor e turno. Cada tarefa pode ter orientação, foto de referência, POP e vídeo no botão "Ver mais". Itens críticos ganham destaque; alguns exigem foto.',
     dica: 'Toque num checklist e execute você mesmo — é o jeito mais rápido de entender o que a equipe vai ver.',
   },
   {
-    tab: 'painel', icon: '📊', title: 'Painel — o dia em tempo real',
+    tab: 'painel', title: 'Painel — o dia em tempo real',
     desc: 'Score do dia, o que está pendente, atrasado e concluído — e o comparativo entre lojas quando houver mais de uma.',
     dica: 'Abra o Painel todo início de turno: é a foto instantânea da operação.',
   },
   {
-    tab: 'relatorios', icon: '📈', title: 'Relatórios — histórico e produtividade',
+    tab: 'relatorios', title: 'Relatórios — histórico e produtividade',
     desc: 'Desempenho por período, setor e colaborador, com o score de produtividade (100 = média da empresa) e exportação em PDF ou CSV.',
     dica: 'Os dados aparecem conforme a equipe executa. Use o PDF nas reuniões semanais.',
   },
   {
-    tab: 'gerenciar', icon: '⚙️', title: 'Gerenciar — seus checklists',
+    tab: 'gerenciar', title: 'Gerenciar — seus checklists',
     desc: 'Edite os checklists criados: itens, prazos, dias da semana, críticos e foto obrigatória. Em cada item, anexe orientação, fotos, POP e vídeo — a tarefa vira treinamento.',
     dica: 'Revise os checklists prontos e ajuste ao seu padrão — eles são cópias suas, sem medo de editar.',
   },
   {
-    tab: 'usuarios', icon: '👥', title: 'Usuários — cadastre a equipe',
+    tab: 'usuarios', title: 'Usuários — cadastre a equipe',
     desc: 'Cada pessoa entra com o próprio nome + PIN de 4 dígitos. Solicitações de acesso feitas pelo app chegam aqui para você aprovar.',
     dica: 'Primeiro passo recomendado: cadastre 2–3 colaboradores e peça para executarem um checklist hoje.',
   },
   {
-    tab: 'equipe', icon: '🏅', title: 'Equipe — perfis e reconhecimento',
+    tab: 'equipe', title: 'Equipe — perfis e reconhecimento',
     desc: 'O perfil de cada colaborador: nível, tarefas executadas, sequência de dias e score de produtividade. Daqui você envia reconhecimentos.',
     dica: 'Reconheça um bom resultado por semana — engajamento é o que sustenta a rotina.',
   },
@@ -7025,6 +7112,9 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
   useEffect(() => { if (step) onGoToTab(step.tab); }, [i]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!step) return null;
+
+  // Ícone do passo = ícone da aba que ele está apresentando (fonte: NAV_ITEMS).
+  const StepIcon = NAV_ITEMS.find(it => it.id === step.tab)?.icon || ClipboardList;
 
   const finish = done => {
     track(done ? 'gestor_tour_completed' : 'gestor_tour_skipped', { source: 'onboarding', metadata: { step: i + 1, of: steps.length } });
@@ -7047,10 +7137,12 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
             <div key={x} style={{ flex: 1, height: 3, borderRadius: 999, background: x <= i ? accent : C.border }} />
           ))}
         </div>
-        <p style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>{step.icon} {step.title}</p>
+        <p style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 7 }}>
+          <StepIcon size={17} color={accent} aria-hidden style={{ flexShrink: 0 }} /> {step.title}
+        </p>
         <p style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.55, marginBottom: 8 }}>{step.desc}</p>
-        <p style={{ fontSize: 12, color: accent, lineHeight: 1.5, fontWeight: W.semibold, background: `${accent}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
-          💡 {step.dica}
+        <p style={{ fontSize: 12, color: accent, lineHeight: 1.5, fontWeight: W.semibold, background: `${accent}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+          <Lightbulb size={14} aria-label="Dica" style={{ flexShrink: 0, marginTop: 1 }} /> {step.dica}
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           {i > 0 && (
@@ -7061,7 +7153,7 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
           )}
           <button onClick={() => (isLast ? finish(true) : setI(i + 1))}
             style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 13.5, cursor: 'pointer' }}>
-            {isLast ? 'Concluir tour ✓' : 'Próximo →'}
+            {isLast ? 'Concluir tour' : 'Próximo →'}
           </button>
         </div>
       </div>
@@ -7075,35 +7167,35 @@ function WelcomeScreen({ role, onClose }) {
   const [step, setStep] = useState(0);
 
   const colaboradorSteps = [
-    { icon: '🔐', title: 'Faça login', desc: 'Selecione seu nome na lista e digite seu PIN de 4 dígitos.' },
-    { icon: '📋', title: 'Abra Executar', desc: 'Na aba Executar, veja os checklists do seu setor e turno de hoje.' },
-    { icon: '☑️', title: 'Marque os itens', desc: 'Toque em cada item para marcar como concluído. Itens críticos aparecem destacados — priorize-os.' },
-    { icon: '📸', title: 'Tire fotos', desc: 'Itens com câmera exigem foto como comprovação. Toque no ícone 📷 e registre.' },
-    { icon: '✅', title: 'Conclua o checklist', desc: 'Quando todos os itens estiverem marcados, toque em "Concluir" para registrar.' },
-    { icon: '🏆', title: 'Veja seu Painel', desc: 'Na aba Painel, acompanhe seu score e compare com a equipe.' },
+    { Icon: KeyRound,       title: 'Faça login', desc: 'Selecione seu nome na lista e digite seu PIN de 4 dígitos.' },
+    { Icon: ClipboardCheck, title: 'Abra Executar', desc: 'Na aba Executar, veja os checklists do seu setor e turno de hoje.' },
+    { Icon: CheckCircle2,   title: 'Marque os itens', desc: 'Toque em cada item para marcar como concluído. Itens críticos aparecem destacados — priorize-os.' },
+    { Icon: Camera,         title: 'Tire fotos', desc: 'Itens com câmera exigem foto como comprovação. Toque no ícone da câmera e registre.' },
+    { Icon: CheckCheck,     title: 'Conclua o checklist', desc: 'Quando todos os itens estiverem marcados, toque em "Concluir" para registrar.' },
+    { Icon: LayoutGrid,     title: 'Veja seu Painel', desc: 'Na aba Painel, acompanhe seu score e compare com a equipe.' },
   ];
 
   const liderSteps = [
-    { icon: '📈', title: 'Relatórios', desc: 'Acesse a aba Relatórios para ver o desempenho da equipe por período, setor e colaborador. Exporte em PDF ou CSV.' },
-    { icon: '📊', title: 'Painel', desc: 'Acompanhe o score diário, ranking da equipe e o comparativo entre lojas com tendência dos últimos 7 dias.' },
-    { icon: '☑️', title: 'Executar', desc: 'Você também pode executar checklists e ver o progresso de todos os setores da sua loja.' },
-    { icon: '📅', title: 'Filtros de período', desc: 'Nos relatórios, filtre por dia, semana, mês completo ou período personalizado.' },
-    { icon: '👥', title: 'Ranking de equipe', desc: 'Veja quem está se destacando no Painel — ranking por % de realização nos últimos 7 dias.' },
-    { icon: '⚙️', title: 'Solicitar alterações', desc: 'Use o ícone ⚙️ no cabeçalho para solicitar alteração dos seus dados cadastrais.' },
+    { Icon: BarChart3,      title: 'Relatórios', desc: 'Acesse a aba Relatórios para ver o desempenho da equipe por período, setor e colaborador. Exporte em PDF ou CSV.' },
+    { Icon: LayoutGrid,     title: 'Painel', desc: 'Acompanhe o score diário, ranking da equipe e o comparativo entre lojas com tendência dos últimos 7 dias.' },
+    { Icon: ClipboardCheck, title: 'Executar', desc: 'Você também pode executar checklists e ver o progresso de todos os setores da sua loja.' },
+    { Icon: Calendar,       title: 'Filtros de período', desc: 'Nos relatórios, filtre por dia, semana, mês completo ou período personalizado.' },
+    { Icon: Users,          title: 'Ranking de equipe', desc: 'Veja quem está se destacando no Painel — ranking por % de realização nos últimos 7 dias.' },
+    { Icon: Settings2,      title: 'Solicitar alterações', desc: 'Use a engrenagem no cabeçalho para solicitar alteração dos seus dados cadastrais.' },
   ];
 
   const steps = isLider ? liderSteps : colaboradorSteps;
   const isLast = step === steps.length - 1;
 
   const tips = isLider ? [
-    { icon: '📶', text: 'Funciona offline. Sincroniza quando voltar a internet.' },
-    { icon: '🔔', text: 'Ative as notificações para alertas de checklists atrasados.' },
-    { icon: '📱', text: 'Adicione à tela inicial para acesso rápido como app.' },
+    { Icon: WifiOff,    text: 'Funciona offline. Sincroniza quando voltar a internet.' },
+    { Icon: Bell,       text: 'Ative as notificações para alertas de checklists atrasados.' },
+    { Icon: Smartphone, text: 'Adicione à tela inicial para acesso rápido como app.' },
   ] : [
-    { icon: '📶', text: 'Funciona offline. Sincroniza quando voltar a internet.' },
-    { icon: '🔔', text: 'Ative as notificações para receber alertas de atraso.' },
-    { icon: '📱', text: 'Adicione à tela inicial para acesso rápido como app.' },
-    { icon: '⚠️', text: 'Não compartilhe seu PIN com ninguém.' },
+    { Icon: WifiOff,       text: 'Funciona offline. Sincroniza quando voltar a internet.' },
+    { Icon: Bell,          text: 'Ative as notificações para receber alertas de atraso.' },
+    { Icon: Smartphone,    text: 'Adicione à tela inicial para acesso rápido como app.' },
+    { Icon: AlertTriangle, text: 'Não compartilhe seu PIN com ninguém.' },
   ];
 
   const accentColor = isLider ? '#35577A' : '#2F6F5E';
@@ -7146,7 +7238,9 @@ function WelcomeScreen({ role, onClose }) {
         {/* Step content */}
         <div style={{ padding: '20px 24px' }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <p style={{ fontSize: 48, marginBottom: 10 }}>{steps[step].icon}</p>
+            {(() => { const S = steps[step].Icon; return (
+              <S size={40} color={accentColor} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 12px' }} />
+            ); })()}
             <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColor, marginBottom: 6 }}>
               Passo {step + 1} de {steps.length}
             </p>
@@ -7165,10 +7259,10 @@ function WelcomeScreen({ role, onClose }) {
                 Dicas importantes
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {tips.map((t, i) => (
+                {tips.map(({ Icon, text }, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0 }}>{t.icon}</span>
-                    <p style={{ fontSize: 12, color: '#555', lineHeight: 1.4 }}>{t.text}</p>
+                    <Icon size={15} color={C.muted} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />
+                    <p style={{ fontSize: 12, color: '#555', lineHeight: 1.4 }}>{text}</p>
                   </div>
                 ))}
               </div>
@@ -7187,7 +7281,7 @@ function WelcomeScreen({ role, onClose }) {
               onClick={() => isLast ? onClose() : setStep(s => s + 1)}
               style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: accentColor, color: 'white', fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}
             >
-              {isLast ? '🚀 Começar!' : 'Próximo →'}
+              {isLast ? 'Começar!' : 'Próximo →'}
             </button>
           </div>
 
@@ -7211,7 +7305,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.error) {
       return (
         <div style={{ minHeight: '100vh', background: '#F7F9FB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui' }}>
-          <p style={{ fontSize: 32, marginBottom: 16 }}>⚠️</p>
+          <AlertTriangle size={34} color="#063C5C" strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
           <p style={{ fontSize: 18, fontWeight: W.semibold, color: '#063C5C', marginBottom: 8 }}>Algo deu errado</p>
           <p style={{ fontSize: 12, color: C.muted, textAlign: 'center', maxWidth: 340, marginBottom: 8, fontFamily: 'monospace', background: '#fff', padding: 8, borderRadius: 6 }}>
             {this.state.error?.message}
@@ -7228,6 +7322,20 @@ class ErrorBoundary extends React.Component {
 }
 
 /* --------------------------------- J.I.T. (H1) --------------------------------- */
+
+/**
+ * Ícone de cada recomendação, por `type`. Fica FORA dos objetos de dados de
+ * propósito: `buildJit` é lógica pura e testável (tests/), e devolver componente
+ * React de lá misturaria dado com apresentação. A chave é o `type`, então uma
+ * recomendação nova sem entrada aqui cai no genérico em vez de quebrar.
+ */
+const RECOMMENDATION_ICON = {
+  critical_hotspot: AlertTriangle,
+  overdue_today: Clock,
+  low_adherence: TrendingDown,
+  all_good: CheckCircle2,
+};
+
 // Deriva o J.I.T. 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
 export function buildJit(completions, templates, closures, units, scopeUnitId) {
@@ -7273,7 +7381,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   [...hotspot.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([k, n]) => {
     const [uid, iid] = k.split('|');
     recs.push({
-      id: `hotspot_${k}`, type: 'critical_hotspot', icon: '⚠️',
+      id: `hotspot_${k}`, type: 'critical_hotspot',
       text: `${unitName(uid)}: "${truncName(itemText.get(iid) || 'item crítico', 40)}" ficou pendente ${n}× nos últimos 7 dias. Priorize hoje.`,
       unitId: uid, tab: 'painel',
     });
@@ -7283,7 +7391,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   if (overdue.length > 0) {
     const u0 = overdue[0];
     recs.push({
-      id: 'overdue_today', type: 'overdue_today', icon: '⏰',
+      id: 'overdue_today', type: 'overdue_today',
       text: overdue.length === 1
         ? `"${truncName(u0.name, 36)}" está atrasado em ${unitName(u0.unitId)}.`
         : `${overdue.length} checklists estão atrasados agora. Acompanhe as equipes.`,
@@ -7296,7 +7404,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
     const worst = groupStats(yFiltered, 'loja', units).filter(g => g.checklists > 0).sort((a, b) => a.rate - b.rate)[0];
     if (worst && worst.rate < 80) {
       recs.push({
-        id: 'low_adherence', type: 'low_adherence', icon: '📉',
+        id: 'low_adherence', type: 'low_adherence',
         text: `${worst.key} fechou ontem com ${Math.round(worst.rate)}% de conclusão. Reforce a rotina hoje.`,
         tab: 'relatorios',
       });
@@ -7306,7 +7414,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   // Fallback positivo — nunca deixar o J.I.T. vazio.
   if (recs.length === 0) {
     recs.push({
-      id: 'all_good', type: 'all_good', icon: '✅',
+      id: 'all_good', type: 'all_good',
       text: yAdherence != null && yAdherence >= 90
         ? `Ontem fechou com ${yAdherence}% de aderência. Mantenha o ritmo hoje.`
         : 'Sem alertas críticos. Comece o dia acompanhando as aberturas.',
@@ -7463,7 +7571,7 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
   });
   if (worstDrop) {
     return {
-      id: `trend_${worstDrop.unitId}`, type: 'trend_decline', icon: '📉',
+      id: `trend_${worstDrop.unitId}`, type: 'trend_decline',
       headline: `${unitName(worstDrop.unitId)} está caindo de rendimento`,
       evidence: `A conclusão passou de ${worstDrop.rp}% na semana passada para ${worstDrop.rt}% esta semana (−${worstDrop.drop} p.p.). Vale entender o que mudou na operação e agir hoje, antes de virar hábito.`,
       unitId: worstDrop.unitId,
@@ -7477,7 +7585,7 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
   });
   if (topHot) {
     return {
-      id: `crit_${topHot.unitId}_${topHot.iid}`, type: 'recurring_critical', icon: '🔁',
+      id: `crit_${topHot.unitId}_${topHot.iid}`, type: 'recurring_critical',
       headline: `Falha crítica que se repete em ${unitName(topHot.unitId)}`,
       evidence: `"${truncName(itemText.get(topHot.iid) || 'item crítico', 44)}" ficou pendente ${topHot.n}× nos últimos 7 dias. É um risco recorrente — ataque a causa, não só a tarefa do dia.`,
       unitId: topHot.unitId,
@@ -7491,7 +7599,7 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
     const best = [...groups].sort((a, b) => b.rate - a.rate)[0];
     if (worst && best && best.rate - worst.rate >= 25) {
       return {
-        id: `outlier_${worst.key}`, type: 'sector_outlier', icon: '⚖️',
+        id: `outlier_${worst.key}`, type: 'sector_outlier',
         headline: `${worst.key} destoa das outras lojas`,
         evidence: `Ontem ${worst.key} fechou com ${Math.round(worst.rate)}% enquanto ${best.key} fez ${Math.round(best.rate)}%. A diferença sugere um problema local, não geral — olhe o que a ${best.key} faz diferente.`,
       };
@@ -7503,7 +7611,6 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
   return {
     id: lowActivity ? 'low_activity' : 'stable',
     type: lowActivity ? 'low_activity' : 'stable',
-    icon: lowActivity ? '⚠️' : '🧭',
     headline: yAdherence != null && yAdherence >= 85
       ? 'Operação saudável e estável'
       : lowActivity ? 'Baixa atividade registrada ontem' : 'Sem padrões críticos hoje',
@@ -7801,9 +7908,12 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
           {/* Follow-up (H1) — o que foi marcado "Tratar" volta até ser resolvido */}
           {pendingPlans.length > 0 && (
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.warning}40`, borderLeft: `4px solid ${C.warning}`, padding: 14 }}>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-                ⏳ Você marcou para tratar
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <SectionMark color={C.warning} />
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  Você marcou para tratar
+                </p>
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {pendingPlans.map(plan => (
                   <div key={plan.id}>
@@ -7813,14 +7923,16 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
                         {planAgeDays(plan) === 1 ? 'ontem' : `há ${planAgeDays(plan)} dias`}
                       </span>
                       {planAnswers[plan.id] === 'done' ? (
-                        <span style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginLeft: 'auto' }}>Resolvido ✓</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginLeft: 'auto' }}>
+                          <Check size={13} aria-hidden /> Resolvido
+                        </span>
                       ) : planAnswers[plan.id] === 'kept' ? (
                         <span style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.warning, marginLeft: 'auto' }}>Fica para hoje</span>
                       ) : (
                         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                           <button onClick={() => resolvePlan(plan)}
-                            style={{ padding: '6px 12px', borderRadius: R.sm, border: 'none', background: C.success, color: 'white', fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
-                            ✓ Resolvido
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: R.sm, border: 'none', background: C.success, color: 'white', fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
+                            <Check size={12} aria-hidden /> Resolvido
                           </button>
                           <button onClick={() => keepPlan(plan)}
                             style={{ padding: '6px 12px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: C.muted, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
@@ -7839,10 +7951,7 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
           {insight && (
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                {/* Sem emoji: num painel de gestão o emoji como DADO custa mais
-                    credibilidade que erro de layout. Um traço na cor do acento
-                    marca a seção sem fingir que é informação. */}
-                <span aria-hidden="true" style={{ width: 14, height: 2, borderRadius: 2, background: accent, flexShrink: 0 }} />
+                <SectionMark color={accent} />
                 <p style={{ fontSize: 10.5, fontWeight: W.semibold, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Leitura da operação</p>
               </div>
               <p className="font-display" style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
@@ -7850,8 +7959,8 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {insight.unitId && (
                   <button onClick={actOnInsight}
-                    style={{ padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: W.semibold, cursor: 'pointer' }}>
-                    {insightActioned ? '✓ Vou agir nisso' : 'Agir sobre isso →'}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: W.semibold, cursor: 'pointer' }}>
+                    {insightActioned ? <><Check size={14} aria-hidden /> Vou agir nisso</> : 'Agir sobre isso →'}
                   </button>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
@@ -7860,8 +7969,7 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
                   ) : (
                     <>
                       <span style={{ fontSize: 11.5, color: C.mutedLight, fontWeight: W.semibold }}>Foi útil?</span>
-                      <button onClick={() => rateInsight('yes')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👍</button>
-                      <button onClick={() => rateInsight('no')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👎</button>
+                      <FeedbackThumbs onRate={rateInsight} size={14} />
                     </>
                   )}
                 </div>
@@ -7894,19 +8002,25 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
           <div>
             <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades agora</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {jit.recommendations.map(rec => (
+              {jit.recommendations.map(rec => {
+                const RecIcon = RECOMMENDATION_ICON[rec.type] || Circle;
+                // A cor carrega a urgência; o desenho, a natureza do alerta.
+                const recColor = rec.type === 'all_good' ? C.success
+                  : rec.type === 'critical_hotspot' ? C.critical : C.warning;
+                return (
                 <div key={rec.id} onClick={() => clickRec(rec)}
                   style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 12px', cursor: rec.tab || rec.unitId ? 'pointer' : 'default' }}>
-                  <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{rec.icon}</span>
+                  <RecIcon size={17} color={recColor} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />
                   <p style={{ flex: 1, fontSize: 13.5, color: C.ink, lineHeight: 1.45 }}>{rec.text}</p>
                   {rec.type !== 'all_good' && (
                     <button onClick={e => actionRec(rec, e)}
-                      style={{ flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: W.semibold, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      {actioned[rec.id] ? '✓ No plano' : 'Tratar'}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: W.semibold, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {actioned[rec.id] ? <><Check size={11} aria-hidden /> No plano</> : 'Tratar'}
                     </button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -7952,13 +8066,12 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
           {/* Micro-pergunta qualitativa (§10) */}
           <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
             {survey ? (
-              <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno! 🙌</p>
+              <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno!</p>
             ) : (
               <>
                 <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>O J.I.T. te ajudou a priorizar?</p>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                  <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
-                  <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
+                  <FeedbackThumbs onRate={answerSurvey} size={17} />
                 </div>
               </>
             )}
@@ -8061,14 +8174,14 @@ function computeOperationalProfile(completions, userId, userName) {
   const intoLevel = checklists % perLevel;
 
   const achievements = [
-    { id: 'first', icon: '🌱', title: 'Primeiro passo', desc: 'Concluiu o primeiro checklist', earned: checklists >= 1 },
-    { id: 'ten', icon: '💪', title: 'Pegando o ritmo', desc: '10 checklists concluídos', earned: checklists >= 10 },
-    { id: 'fifty', icon: '🔥', title: 'Veterano', desc: '50 checklists concluídos', earned: checklists >= 50 },
-    { id: 'streak5', icon: '📆', title: 'Constância', desc: '5 dias seguidos em operação', earned: bestStreak >= 5 },
-    { id: 'quality', icon: '⭐', title: 'Caprichoso', desc: 'Média de conclusão ≥ 90%', earned: avgRate >= 90 && checklists >= 5 },
-    { id: 'critical', icon: '🛡️', title: 'Guardião do crítico', desc: 'Itens críticos ≥ 95% em dia', earned: criticalRate != null && criticalRate >= 95 && checklists >= 5 },
-    { id: 'evidence', icon: '📸', title: 'Provas em dia', desc: '20+ evidências enviadas', earned: evidences >= 20 },
-    { id: 'perfectweek', icon: '🏆', title: 'Semana perfeita', desc: 'Uma semana inteira a 100%', earned: weekly.some(w => w.rate === 100 && w.checklists >= 3) },
+    { id: 'first', Icon: Sprout, title: 'Primeiro passo', desc: 'Concluiu o primeiro checklist', earned: checklists >= 1 },
+    { id: 'ten', Icon: TrendingUp, title: 'Pegando o ritmo', desc: '10 checklists concluídos', earned: checklists >= 10 },
+    { id: 'fifty', Icon: Flame, title: 'Veterano', desc: '50 checklists concluídos', earned: checklists >= 50 },
+    { id: 'streak5', Icon: CalendarCheck, title: 'Constância', desc: '5 dias seguidos em operação', earned: bestStreak >= 5 },
+    { id: 'quality', Icon: Star, title: 'Caprichoso', desc: 'Média de conclusão ≥ 90%', earned: avgRate >= 90 && checklists >= 5 },
+    { id: 'critical', Icon: ShieldCheck, title: 'Guardião do crítico', desc: 'Itens críticos ≥ 95% em dia', earned: criticalRate != null && criticalRate >= 95 && checklists >= 5 },
+    { id: 'evidence', Icon: Camera, title: 'Provas em dia', desc: '20+ evidências enviadas', earned: evidences >= 20 },
+    { id: 'perfectweek', Icon: Trophy, title: 'Semana perfeita', desc: 'Uma semana inteira a 100%', earned: weekly.some(w => w.rate === 100 && w.checklists >= 3) },
   ];
 
   /**
@@ -8293,7 +8406,7 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
     return (
       <div style={{ padding: 20 }}>
         <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, padding: '28px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 44, marginBottom: 10 }}>🌱</div>
+          <Sprout size={40} color={C.mutedLight} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 12px' }} />
           <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
             {isSelf ? 'Seu ID Operacional começa aqui' : `${firstName} ainda não tem histórico`}
           </p>
@@ -8368,14 +8481,16 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
       {!isSelf && (
         <button onClick={() => onRecognize && onRecognize(p)}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 14.5, cursor: 'pointer' }}>
-          🏅 Reconhecer {firstName}
+          <Award size={17} aria-hidden /> Reconhecer {firstName}
         </button>
       )}
 
       {/* Reconhecimentos recebidos (visão do próprio colaborador) */}
       {isSelf && recognitions.length > 0 && (
         <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.success}55`, padding: 14 }}>
-          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>🏅 Reconhecimentos recebidos</p>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+            <Award size={13} aria-hidden /> Reconhecimentos recebidos
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {recognitions.slice(0, 5).map(r => (
               <div key={r.id} style={{ borderLeft: `3px solid ${C.success}`, paddingLeft: 10 }}>
@@ -8395,7 +8510,12 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
         <Metric value={p.criticalDone} label="Críticas feitas" color={p.criticalDone > 0 ? C.success : C.ink} />
         <Metric value={`${p.avgRate}%`} label="Conclusão" color={p.avgRate >= 80 ? C.success : p.avgRate >= 50 ? C.warning : C.critical} />
         <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos em dia" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
-        <Metric value={`${p.streak}${p.streak ? '🔥' : ''}`} label="Sequência" />
+        <Metric label="Sequência" value={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            {p.streak}
+            {p.streak > 0 && <Flame size={17} color={C.warning} aria-hidden />}
+          </span>
+        } />
       </div>
 
       {/* Score de produtividade — mesma régua do Relatórios (100 = média da empresa) */}
@@ -8455,8 +8575,11 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {p.achievements.map(a => (
+            // Conquistada vs. bloqueada é só cor — o `filter: grayscale(1)` que
+            // dessaturava o emoji não é mais necessário num ícone de traço.
             <div key={a.id} style={{ background: 'white', borderRadius: 12, border: `1px solid ${a.earned ? `${C.success}55` : C.border}`, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', opacity: a.earned ? 1 : 0.5 }}>
-              <span style={{ fontSize: 22, filter: a.earned ? 'none' : 'grayscale(1)' }}>{a.icon}</span>
+              <a.Icon size={20} strokeWidth={1.75} aria-hidden
+                color={a.earned ? C.success : C.mutedLight} style={{ flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 12.5, fontWeight: W.semibold, color: C.ink }}>{a.title}</p>
                 <p style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.3 }}>{a.desc}</p>
@@ -8492,13 +8615,12 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
       {isSelf && (
         <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
           {survey ? (
-            <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno! 🙌</p>
+            <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno!</p>
           ) : (
             <>
               <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>Ver sua evolução aqui te motiva?</p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
-                <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
+                <FeedbackThumbs onRate={answerSurvey} size={17} />
               </div>
             </>
           )}
@@ -8547,7 +8669,7 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
     <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>🏅 Reconhecer {firstName}</p>
+          <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, display: 'flex', alignItems: 'center', gap: 7 }}><Award size={18} aria-hidden /> Reconhecer {firstName}</p>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
@@ -8581,15 +8703,17 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
 
 // Medalha de posição sem emoji: emoji como DADO em painel de gestão custa mais
 // credibilidade que qualquer erro de layout (ver docs/REVISAO_DESKTOP_v1.md §8).
-function RankBadge({ pos }) {
+// `size` porque o Painel também passou a usar esta medalha (antes 🥇🥈🥉) em
+// listas mais densas que o ranking de unidades, onde 28px não cabem.
+function RankBadge({ pos, size = 28 }) {
   const tone = pos === 1 ? C.ink : pos === 2 ? C.muted : C.mutedLight;
   return (
     <span className="font-display" aria-hidden="true" style={{
-      width: 28, height: 28, borderRadius: R.pill, flexShrink: 0,
+      width: size, height: size, borderRadius: R.pill, flexShrink: 0,
       display: 'grid', placeItems: 'center',
       background: pos <= 3 ? `${tone}14` : 'transparent',
       border: `1px solid ${pos <= 3 ? `${tone}40` : C.border}`,
-      color: tone, fontSize: T.caption, fontWeight: W.bold,
+      color: tone, fontSize: size <= 20 ? T.label : T.caption, fontWeight: W.bold,
     }}>{pos}</span>
   );
 }
@@ -8944,7 +9068,7 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
             target={recognizeFor.user} profile={recognizeFor.profile}
             currentUser={currentUser} unitId={selected.unitId} companyId={currentUser.companyId} accent={accent}
             onClose={() => setRecognizeFor(null)}
-            onSent={ok => { setRecognizeFor(null); setToast(ok ? 'Reconhecimento enviado 🏅' : 'Não foi possível enviar agora.'); setTimeout(() => setToast(''), 2500); }}
+            onSent={ok => { setRecognizeFor(null); setToast(ok ? 'Reconhecimento enviado' : 'Não foi possível enviar agora.'); setTimeout(() => setToast(''), 2500); }}
           />
         )}
         {toast && (
@@ -9044,6 +9168,11 @@ function AppInner() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [showRequestsPopup, setShowRequestsPopup] = useState(false);
+  // Reconhecimentos recebidos e ainda não vistos. Mesma ideia do aviso de
+  // solicitação pendente do gestor, do outro lado da relação: o gestor é
+  // avisado de quem quer entrar, o colaborador de quem o elogiou.
+  const [newRecognitions, setNewRecognitions] = useState([]);
+  const [showRecognitionPopup, setShowRecognitionPopup] = useState(false);
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showCompanyOnboarding, setShowCompanyOnboarding] = useState(false);
@@ -9348,6 +9477,42 @@ function AppInner() {
     setShowJit(false);
   };
   const openJit = () => { setJitSource('manual'); setShowJit(true); };
+
+  /**
+   * Reconhecimento recebido → aviso na entrada do app.
+   *
+   * O dado e a noção de "não visto" já existiam, mas só DENTRO do Meu ID: quem
+   * não abrisse a aba nunca sabia que tinha sido reconhecido — e um elogio que
+   * ninguém vê não fecha o laço que ele existe para fechar.
+   *
+   * Reaproveita a mesma chave que o OperationalIdView já grava
+   * (`zc_seen_recognitions_<id>`), então abrir o Meu ID continua sendo o que
+   * marca como lido. Uma fonte de verdade, não duas.
+   */
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (!ROLE_TABS[currentUser.role]?.includes('id')) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const { fetchRecognitions } = await import('../../lib/sync');
+        const list = await fetchRecognitions(currentUser.id);
+        if (cancel || !list.length) return;
+        const key = `zc_seen_recognitions_${currentUser.id}`;
+        let seen = new Set();
+        try { seen = new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch (_) {}
+        const fresh = list.filter(r => !seen.has(r.id));
+        if (!fresh.length) return;
+        setNewRecognitions(fresh);
+        setShowRecognitionPopup(true);
+        track('recognition_notified', {
+          source: 'app_open',
+          metadata: { count: fresh.length },
+        });
+      } catch (e) { console.warn('[recognitions] check failed', e); }
+    })();
+    return () => { cancel = true; };
+  }, [currentUser?.id, currentUser?.role]);
 
   // Check for pending requests when gestao logs in
   useEffect(() => {
@@ -9758,6 +9923,7 @@ function AppInner() {
         tab={activeTab} setTab={setTab} allowedTabs={allowedTabs}
         pendingCount={pendingRequestsCount}
         jitSignal={MANAGER_ROLES.includes(currentUser.role) && jitHasSignal && !jitSeenToday}
+        idSignal={newRecognitions.length > 0}
         unitName={unit?.name} dateLabel={sideNavDate}
       />
 
@@ -9829,7 +9995,7 @@ function AppInner() {
           boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
           display: 'flex', alignItems: 'flex-start', gap: 12,
         }}>
-          <span style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>🔔</span>
+          <Bell size={20} color="#fff" aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 14, fontWeight: W.semibold, color: 'white', marginBottom: 3 }}>
               {pendingRequestsCount === 1
@@ -9865,6 +10031,53 @@ function AppInner() {
         </div>
       )}
 
+      {/* Aviso de reconhecimento — espelha o popup de solicitação do gestor.
+          Fica na mesma âncora e usa `zc-requests-popup`, então também some no
+          desktop, onde o badge do rail já cumpre o papel. */}
+      {showRecognitionPopup && newRecognitions.length > 0 && (
+        <div className="zc-on-dark zc-requests-popup" style={{
+          position: 'fixed', bottom: 'calc(var(--zc-nav-h) + 8px + env(safe-area-inset-bottom, 0px))',
+          left: 12, right: 12, zIndex: 100,
+          background: C.ink, borderRadius: 14, padding: '14px 16px',
+          boxShadow: '0 4px 24px rgba(8,20,30,0.28)',
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <span aria-hidden="true" style={{
+            width: 34, height: 34, borderRadius: R.pill, flexShrink: 0, marginTop: 1,
+            background: 'rgba(74,222,128,0.18)', display: 'grid', placeItems: 'center',
+          }}>
+            <Award size={18} color={greenOnDark} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: 'white', marginBottom: 3 }}>
+              {newRecognitions.length === 1
+                ? 'Você recebeu um reconhecimento'
+                : `Você recebeu ${newRecognitions.length} reconhecimentos`}
+            </p>
+            <p style={{ fontSize: T.caption, color: C.inkMuted, marginBottom: 10, lineHeight: 1.4 }}>
+              {newRecognitions.length === 1 && newRecognitions[0].fromUserName
+                ? `${truncName(newRecognitions[0].fromUserName, 24)} reconheceu seu trabalho.`
+                : 'Sua liderança reconheceu seu trabalho.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setTab('id'); setShowRecognitionPopup(false); }}
+                style={{ flex: 1, padding: '8px 0', borderRadius: R.sm, background: 'white', color: C.ink, border: 'none', fontWeight: W.semibold, fontSize: T.caption, cursor: 'pointer' }}
+              >
+                Ver no meu ID
+              </button>
+              <button
+                onClick={() => setShowRecognitionPopup(false)}
+                aria-label="Fechar aviso de reconhecimento"
+                style={{ padding: '8px 12px', borderRadius: R.sm, background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', fontWeight: W.semibold, fontSize: T.bodyLg, cursor: 'pointer', lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Badge minimizado */}
       {showRequestsPopup && currentUser?.role === 'gestao' && popupMinimized && (
         <button
@@ -9880,7 +10093,7 @@ function AppInner() {
             display: 'flex', alignItems: 'center', gap: 6,
           }}
         >
-          🔔 <span style={{ background: C.warning, borderRadius: 999, padding: '1px 6px', fontSize: 11 }}>{pendingRequestsCount}</span>
+          <Bell size={15} aria-hidden /> <span style={{ background: C.warning, borderRadius: 999, padding: '1px 6px', fontSize: 11 }}>{pendingRequestsCount}</span>
         </button>
       )}
 
@@ -9961,7 +10174,8 @@ function AppInner() {
       </main>
 
       <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs}
-        jitSignal={MANAGER_ROLES.includes(currentUser.role) && jitHasSignal && !jitSeenToday} />
+        jitSignal={MANAGER_ROLES.includes(currentUser.role) && jitHasSignal && !jitSeenToday}
+        idSignal={newRecognitions.length > 0} />
       </div>
     </div>
     </SectorsContext.Provider>
@@ -10089,8 +10303,8 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
                     : <> · sem fidelidade, cancele quando quiser</>}
                 </p>
                 {annual && (
-                  <p style={{ fontSize: 11.5, fontWeight: W.semibold, color: C.success, marginTop: 6 }}>
-                    ✓ Implantação assistida incluída — nossa equipe configura com você.
+                  <p style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 11.5, fontWeight: W.semibold, color: C.success, marginTop: 6 }}>
+                    <Check size={13} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> Implantação assistida incluída — nossa equipe configura com você.
                   </p>
                 )}
               </div>
@@ -10177,7 +10391,7 @@ function Step({ n, label, active, done }) {
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
       }}>
-        {done ? '✓' : n}
+        {done ? <Check size={14} strokeWidth={3} aria-label="concluído" /> : n}
       </div>
       <span style={{ fontSize: 8, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.04em', color: active ? C.ink : C.muted, textAlign: 'center' }}>{label}</span>
     </div>

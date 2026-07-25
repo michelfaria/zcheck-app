@@ -56,7 +56,7 @@ export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'jit', 'relatorios', 'ger
  * pelo gestor e é cor não medida; o item ativo usa `greenOnDark` (6.66:1).
  */
 export default function SideNav({
-  tab, setTab, allowedTabs, pendingCount = 0, jitSignal = false, unitName, dateLabel,
+  tab, setTab, allowedTabs, pendingCount = 0, jitSignal = false, idSignal = false, unitName, dateLabel,
 }) {
   const items = NAV_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
@@ -102,7 +102,7 @@ export default function SideNav({
               const Icon = it.icon;
               const active = tab === it.id;
               const showBadge = it.id === 'usuarios' && pendingCount > 0;
-              const showDot = it.id === 'jit' && jitSignal;
+              const showDot = (it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal);
               return (
                 <button
                   key={it.id}

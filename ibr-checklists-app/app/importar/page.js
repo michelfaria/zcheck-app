@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, Check, FolderOpen } from 'lucide-react';
 import { authedSupabase, setSessionToken } from '../../lib/supabase';
 import { validatePin, fetchPublicUsers, fetchCompany } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
@@ -298,8 +299,8 @@ export default function ImportarPage() {
           <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Arquivo CSV</p>
           <div className="flex gap-3" style={{ marginBottom: 12 }}>
             <button onClick={() => fileRef.current?.click()}
-              style={{ padding: '10px 20px', borderRadius: 8, background: 'white', color: C.ink, border: `1.5px solid ${C.border}`, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-              📂 Selecionar arquivo
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 8, background: 'white', color: C.ink, border: `1.5px solid ${C.border}`, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              <FolderOpen size={15} aria-hidden /> Selecionar arquivo
             </button>
             <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFile} />
             <span style={{ fontSize: 12, color: C.muted, alignSelf: 'center' }}>ou cole o conteúdo abaixo</span>
@@ -317,7 +318,7 @@ export default function ImportarPage() {
         {/* Parse error */}
         {parseError && (
           <div style={{ background: '#FFF3F0', border: `1px solid ${C.critical}`, borderRadius: 10, padding: '12px 16px', marginBottom: 24 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: C.critical }}>⚠ {parseError}</p>
+            <p style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 13, fontWeight: 700, color: C.critical }}><AlertTriangle size={14} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> {parseError}</p>
           </div>
         )}
 
@@ -352,8 +353,11 @@ export default function ImportarPage() {
                   {tpl.items.length > 0 && (
                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                       {tpl.items.slice(0, 3).map(item => (
-                        <p key={item.id} style={{ fontSize: 12, color: item.critical ? C.critical : C.muted, marginBottom: 3 }}>
-                          {item.critical ? '⚠ ' : '· '}{item.text}
+                        <p key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12, color: item.critical ? C.critical : C.muted, marginBottom: 3 }}>
+                          {item.critical
+                            ? <AlertTriangle size={12} aria-label="Crítico" style={{ flexShrink: 0, marginTop: 2 }} />
+                            : <span aria-hidden style={{ flexShrink: 0 }}>·</span>}
+                          {item.text}
                         </p>
                       ))}
                       {tpl.items.length > 3 && (
@@ -377,13 +381,15 @@ export default function ImportarPage() {
         {importResult && (
           <div style={{ background: (importResult.error || !importResult.created) ? '#FFF3F0' : '#F0FAF4', border: `1px solid ${(importResult.error || !importResult.created) ? C.critical : C.success}`, borderRadius: 12, padding: 20 }}>
             {importResult.error
-              ? <p style={{ fontSize: 14, fontWeight: 700, color: C.critical }}>⚠ {importResult.error}</p>
+              ? <p style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 14, fontWeight: 700, color: C.critical }}><AlertTriangle size={15} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> {importResult.error}</p>
               : (
                 <>
                   {/* "Concluída!" só quando algo entrou de fato — antes dizia isso
                       mesmo com 0 criados, contradizendo o próprio número abaixo. */}
-                  <p style={{ fontSize: 16, fontWeight: 600, color: importResult.created ? C.success : C.critical, marginBottom: 8 }}>
-                    {importResult.created ? '✓ Importação concluída!' : 'Nenhum checklist foi importado'}
+                  <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 600, color: importResult.created ? C.success : C.critical, marginBottom: 8 }}>
+                    {importResult.created
+                      ? <><Check size={17} aria-hidden /> Importação concluída!</>
+                      : 'Nenhum checklist foi importado'}
                   </p>
                   <p style={{ fontSize: 13, color: C.muted }}>
                     <strong style={{ color: C.ink }}>{importResult.created}</strong> checklist{importResult.created !== 1 ? 's' : ''} criado{importResult.created !== 1 ? 's' : ''}

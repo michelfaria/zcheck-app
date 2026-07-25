@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Check, CheckCircle2, Lightbulb } from 'lucide-react';
 
 import { C } from '../../lib/tokens';
 // Esta página não fala mais com o Supabase. Criar empresa é operação de
@@ -58,7 +59,7 @@ function Step({ n, label, active, done }) {
         color: done || active ? 'white' : C.muted,
         transition: 'all 0.2s',
       }}>
-        {done ? '✓' : n}
+        {done ? <Check size={15} strokeWidth={3} aria-label="concluído" /> : n}
       </div>
       <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? C.ink : C.muted }}>{label}</span>
     </div>
@@ -189,7 +190,7 @@ export default function OnboardingPage() {
 
   if (done) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ fontSize: 72, marginBottom: 16 }}>🎉</div>
+      <CheckCircle2 size={60} color={C.success} strokeWidth={1.5} aria-hidden style={{ marginBottom: 16 }} />
       <h1 style={{ fontSize: 26, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Empresa criada!</h1>
       <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 320, lineHeight: 1.6, marginBottom: 32 }}>
         <strong>{companyName}</strong> está pronta no ZCheck. Acesse o app com o PIN do gestor e comece a configurar seus checklists.
@@ -242,8 +243,8 @@ export default function OnboardingPage() {
                 ))}
               </div>
               {segment && segment !== 'personalizado' && (
-                <p style={{ fontSize: 11, color: C.success, marginTop: 8, fontWeight: 700 }}>
-                  ✓ Estrutura de {segment} pré-carregada — você pode ajustar nos próximos passos
+                <p style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.success, marginTop: 8, fontWeight: 700 }}>
+                  <Check size={12} aria-hidden /> Estrutura de {segment} pré-carregada — você pode ajustar nos próximos passos
                 </p>
               )}
             </div>
@@ -348,7 +349,7 @@ export default function OnboardingPage() {
               + Adicionar tipo
             </button>
             <div style={{ background: '#F0FAF4', borderRadius: 10, padding: '12px 16px', border: `1px solid ${C.success}30` }}>
-              <p style={{ fontSize: 12, color: C.success, fontWeight: 700 }}>💡 Exemplos por segmento</p>
+              <p style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.success, fontWeight: 700 }}><Lightbulb size={13} aria-hidden /> Exemplos por segmento</p>
               <p style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.6 }}>
                 Restaurante: Abertura · Mise en place · Pré-serviço · Fechamento<br/>
                 Hotel: Abertura · Check-in · Vistoria · Manutenção · Fechamento<br/>

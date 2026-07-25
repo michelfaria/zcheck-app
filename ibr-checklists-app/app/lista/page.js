@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { CheckCircle2, MailCheck } from 'lucide-react';
 // Cliente anônimo de propósito: quem entra na lista ainda não tem conta.
 // A tabela `waitlist` aceita só INSERT do anon — ninguém lê os leads pelo app.
 import { supabase } from '../../lib/supabase';
@@ -66,7 +67,9 @@ export default function ListaPage() {
   if (state) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'Inter', system-ui, sans-serif", textAlign: 'center' }}>
-        <p style={{ fontSize: 56, marginBottom: 12 }} aria-hidden>{state === 'done' ? '✅' : '👋'}</p>
+        {state === 'done'
+          ? <CheckCircle2 size={52} color={C.success} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
+          : <MailCheck size={52} color={C.muted} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />}
         <h1 style={{ fontSize: T.h2, fontWeight: W.bold, color: C.ink, marginBottom: 10 }}>
           {state === 'done' ? 'Você está na lista!' : 'Você já está na lista'}
         </h1>

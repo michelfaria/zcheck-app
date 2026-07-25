@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { Check, CheckCircle2 } from 'lucide-react';
 
 import { C } from '../../lib/tokens';
 // Cadastro self-service ENXUTO. Só o mínimo para criar a conta: e-mail (OTP) →
@@ -23,7 +24,7 @@ function Step({ n, label, active, done }) {
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
       }}>
-        {done ? '✓' : n}
+        {done ? <Check size={15} strokeWidth={3} aria-label="concluído" /> : n}
       </div>
       <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: active ? C.ink : C.muted, textAlign: 'center' }}>{label}</span>
     </div>
@@ -195,7 +196,7 @@ export default function ComecarPage() {
     const appUrl = `https://${createdSlug}.zcheckapp.com/app`;
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ fontSize: 64, marginBottom: 12 }}>🎉</div>
+        <CheckCircle2 size={56} color={C.success} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
         <h1 style={{ fontSize: 26, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Conta criada!</h1>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 360, lineHeight: 1.6, marginBottom: 20 }}>
           Entre com o nome <strong>{gestorName}</strong> e o PIN que você definiu. No primeiro acesso você configura
@@ -209,8 +210,8 @@ export default function ComecarPage() {
               try { await navigator.clipboard.writeText(appUrl); } catch (_) {}
               setCopied(true); setTimeout(() => setCopied(false), 2000);
             }}
-            style={{ width: '100%', padding: '9px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: copied ? '#F0FAF4' : 'white', color: copied ? C.success : C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            {copied ? '✓ Link copiado' : 'Copiar link'}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, width: '100%', padding: '9px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: copied ? '#F0FAF4' : 'white', color: copied ? C.success : C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            {copied ? <><Check size={14} aria-hidden /> Link copiado</> : 'Copiar link'}
           </button>
         </div>
         <a href={appUrl} style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 600, fontSize: 15, textDecoration: 'none' }}>

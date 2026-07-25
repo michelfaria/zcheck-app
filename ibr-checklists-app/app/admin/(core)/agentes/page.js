@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { ThumbsUp, ThumbsDown, AlertTriangle } from 'lucide-react';
 import { C } from '../../../../lib/tokens';
 import {
   useAdminData, Card, SectionTitle, UpdatedAt, ErrorBox, Loading, Empty, timeAgo,
@@ -31,11 +32,11 @@ function Rating({ reportId, current, onRate }) {
       title={val === 1 ? 'útil' : 'não foi útil'}
       style={{ background: current === val ? C.ink : 'none', color: current === val ? 'white' : C.muted,
                border: `1px solid ${current === val ? C.ink : C.border}`, borderRadius: 6,
-               padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>
+               padding: '4px 8px', fontSize: 13, cursor: 'pointer', display: 'inline-grid', placeItems: 'center' }}>
       {icon}
     </button>
   );
-  return <span style={{ display: 'inline-flex', gap: 4 }}>{btn(1, '👍')}{btn(-1, '👎')}</span>;
+  return <span style={{ display: 'inline-flex', gap: 4 }}>{btn(1, <ThumbsUp size={13} aria-hidden />)}{btn(-1, <ThumbsDown size={13} aria-hidden />)}</span>;
 }
 
 // Renderizador mínimo de markdown (títulos, negrito, listas) — sem HTML bruto.
@@ -221,10 +222,10 @@ export default function AgentsPage() {
                   </p>
                 )}
                 {a.action_type === 'send_followup' && a.payload?.company_id && (
-                  <p style={{ fontSize: 12, color: C.muted, margin: '4px 0' }}>
+                  <p style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12, color: C.muted, margin: '4px 0' }}>
                     {contacts[a.payload.company_id]?.email
                       ? `Será enviado por e-mail para ${contacts[a.payload.company_id].email}`
-                      : '⚠ Empresa sem e-mail de contato — cadastre em Empresas → detalhar antes de aprovar.'}
+                      : <><AlertTriangle size={13} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> Empresa sem e-mail de contato — cadastre em Empresas → detalhar antes de aprovar.</>}
                   </p>
                 )}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

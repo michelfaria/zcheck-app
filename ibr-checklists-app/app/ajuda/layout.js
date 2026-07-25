@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { headers } from 'next/headers';
+import { MessagesSquare } from 'lucide-react';
 import { C } from '../../lib/tokens';
 import { BRAND } from '../../lib/brand';
 
@@ -50,7 +51,7 @@ export default async function AjudaLayout({ children }) {
             Pergunte ao Zeca, o assistente do {BRAND.name} — ele conhece todos os artigos desta central e vai direto ao ponto.
           </p>
           <Link href="/ajuda/assistente" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: 'white', background: C.ink, padding: '12px 24px', borderRadius: 10, textDecoration: 'none' }}>
-            💬 Falar com o Zeca
+            <MessagesSquare size={17} aria-hidden /> Falar com o Zeca
           </Link>
           <p style={{ fontSize: 12, color: C.mutedLight, marginTop: 28 }}>
             © {BRAND.year} {BRAND.name} · {BRAND.tagline}

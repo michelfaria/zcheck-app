@@ -3,9 +3,11 @@
  * Breadcrumb e renderização do markdown do artigo com os tokens do produto.
  */
 
+import { cloneElement, isValidElement } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Lightbulb, AlertTriangle, Info } from 'lucide-react';
 import { C } from '../../lib/tokens';
 
 export function Breadcrumb({ items }) {
@@ -23,14 +25,25 @@ export function Breadcrumb({ items }) {
   );
 }
 
-// Callouts por convenção no markdown: blockquote iniciando com 💡 (dica),
-// ⚠️ (atenção) ou ℹ️ (nota). Qualquer outro blockquote fica neutro.
+/**
+ * Callouts por convenção no markdown: blockquote iniciando com 💡 (dica),
+ * ⚠️ (atenção) ou ℹ️/👀 (nota). Qualquer outro blockquote fica neutro.
+ *
+ * O emoji continua sendo o marcador NO ARQUIVO — é o jeito mais direto de
+ * escrever um aviso em markdown, e mexer nisso significaria reescrever os 27
+ * artigos. O que mudou é a renderização: o marcador é retirado do texto e vira
+ * ícone de traço, no mesmo sistema visual do resto do produto. Emoji renderiza
+ * colorido e com desenho diferente em cada sistema operacional; o ícone não.
+ */
+const CALLOUTS = [
+  { re: /^\s*💡\s*/u,        Icon: Lightbulb,     border: '#15803D', bg: '#F0F7F2', label: 'Dica' },
+  { re: /^\s*⚠️?\s*/u,       Icon: AlertTriangle, border: '#B45309', bg: '#FBF3EA', label: 'Atenção' },
+  { re: /^\s*(?:ℹ️?|👀)\s*/u, Icon: Info,          border: C.ink,     bg: '#EDF3F7', label: 'Nota' },
+];
+
 function calloutKind(children) {
   const text = extractText(children);
-  if (text.startsWith('💡')) return { border: '#15803D', bg: '#F0F7F2' };
-  if (text.startsWith('⚠️') || text.startsWith('⚠')) return { border: '#B45309', bg: '#FBF3EA' };
-  if (text.startsWith('ℹ️') || text.startsWith('ℹ')) return { border: C.ink, bg: '#EDF3F7' };
-  return { border: C.border, bg: 'white' };
+  return CALLOUTS.find(c => c.re.test(text)) || null;
 }
 
 function extractText(node) {
@@ -38,6 +51,25 @@ function extractText(node) {
   if (Array.isArray(node)) return node.map(extractText).join('').trim();
   if (node?.props?.children) return extractText(node.props.children);
   return '';
+}
+
+/**
+ * Remove o marcador do PRIMEIRO nó de texto da árvore, preservando o resto
+ * (negrito, links) intacto. `state.done` garante que só a primeira ocorrência
+ * saia — um "⚠️" legítimo no meio da frase continua lá.
+ */
+function stripMarker(node, re, state) {
+  if (state.done) return node;
+  if (typeof node === 'string') {
+    if (!node.trim()) return node;
+    state.done = true;
+    return node.replace(re, '');
+  }
+  if (Array.isArray(node)) return node.map(c => stripMarker(c, re, state));
+  if (isValidElement(node) && node.props?.children != null) {
+    return cloneElement(node, undefined, stripMarker(node.props.children, re, state));
+  }
+  return node;
 }
 
 const mdComponents = {
@@ -61,9 +93,27 @@ const mdComponents = {
   ),
   blockquote: ({ children }) => {
     const kind = calloutKind(children);
+    if (!kind) {
+      return (
+        <blockquote style={{ margin: '16px 0', padding: '4px 16px', background: 'white', borderLeft: `3px solid ${C.border}`, borderRadius: '0 10px 10px 0' }}>
+          {children}
+        </blockquote>
+      );
+    }
+    const { Icon } = kind;
     return (
-      <blockquote style={{ margin: '16px 0', padding: '4px 16px', background: kind.bg, borderLeft: `3px solid ${kind.border}`, borderRadius: '0 10px 10px 0' }}>
-        {children}
+      <blockquote style={{
+        margin: '16px 0', padding: '10px 16px', background: kind.bg,
+        borderLeft: `3px solid ${kind.border}`, borderRadius: '0 10px 10px 0',
+        display: 'flex', gap: 10, alignItems: 'flex-start',
+      }}>
+        {/* O rótulo ("Dica", "Atenção") existe só para leitor de tela: na tela,
+            cor + desenho já dizem a natureza do aviso sem gastar uma linha. */}
+        <Icon size={17} color={kind.border} aria-label={kind.label}
+          style={{ flexShrink: 0, marginTop: 13 }} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          {stripMarker(children, kind.re, { done: false })}
+        </div>
       </blockquote>
     );
   },

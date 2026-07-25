@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { C } from '../../lib/tokens';
 import { track } from '../../lib/track';
@@ -177,7 +178,9 @@ export function FeedbackWidget({ category, slug }) {
   };
 
   const btn = active => ({
-    fontSize: 22, lineHeight: 1, padding: '10px 18px', borderRadius: 10, cursor: voted ? 'default' : 'pointer',
+    display: 'inline-grid', placeItems: 'center', lineHeight: 1,
+    padding: '10px 18px', borderRadius: 10, cursor: voted ? 'default' : 'pointer',
+    color: active ? C.ink : C.muted,
     border: `1.5px solid ${active ? C.ink : C.border}`, background: active ? '#EDF3F7' : 'white',
     opacity: voted && !active ? 0.4 : 1,
   });
@@ -186,8 +189,8 @@ export function FeedbackWidget({ category, slug }) {
     <div style={{ marginTop: 36, padding: '20px 16px', background: 'white', border: `1px solid ${C.border}`, borderRadius: 12, textAlign: 'center' }}>
       <p style={{ fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 12 }}>Este artigo ajudou?</p>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <button onClick={() => vote('up')} aria-label="Sim, ajudou" style={btn(voted === 'up')}>👍</button>
-        <button onClick={() => vote('down')} aria-label="Não ajudou" style={btn(voted === 'down')}>👎</button>
+        <button onClick={() => vote('up')} aria-label="Sim, ajudou" style={btn(voted === 'up')}><ThumbsUp size={20} aria-hidden /></button>
+        <button onClick={() => vote('down')} aria-label="Não ajudou" style={btn(voted === 'down')}><ThumbsDown size={20} aria-hidden /></button>
       </div>
       {voted === 'up' && (
         <p style={{ fontSize: 13, color: C.muted, marginTop: 12 }}>Obrigado pelo feedback!</p>

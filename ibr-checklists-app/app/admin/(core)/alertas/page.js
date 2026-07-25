@@ -112,7 +112,7 @@ export default function AlertsPage() {
           Abertos ({open.length})
         </SectionTitle>
         {open.length === 0
-          ? <Empty>Nenhum alerta aberto. Tudo operando dentro das regras. ✔</Empty>
+          ? <Empty>Nenhum alerta aberto. Tudo operando dentro das regras.</Empty>
           : <ul style={{ display: 'grid', gap: 8 }}>{open.map(a => AlertRow(a, true))}</ul>}
       </Card>
 

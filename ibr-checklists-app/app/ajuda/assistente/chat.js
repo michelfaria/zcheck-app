@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { C } from '../../../lib/tokens';
 import { track } from '../../../lib/track';
 import { Breadcrumb } from '../article-ui';
@@ -123,9 +124,9 @@ export function Chat() {
                   ) : (
                     <>
                       <button onClick={() => voteReply(i, true)} aria-label="Resposta ajudou"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, opacity: 0.6 }}>👍</button>
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: 2, opacity: 0.6 }}><ThumbsUp size={14} aria-hidden /></button>
                       <button onClick={() => voteReply(i, false)} aria-label="Resposta não ajudou"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, opacity: 0.6 }}>👎</button>
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: 2, opacity: 0.6 }}><ThumbsDown size={14} aria-hidden /></button>
                     </>
                   )}
                 </div>
