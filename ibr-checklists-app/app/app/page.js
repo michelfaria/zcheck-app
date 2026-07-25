@@ -4426,6 +4426,21 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       else porSetor.push({ setor: t.sector, items: [t] });
     }
 
+    // Sem nada para listar (loja recém-criada, ou tipo ainda sem checklist), a
+    // coluna de 360px fica vazia e só empurra o editor para o lado. Nesse caso
+    // não há mestre-detalhe a fazer: o editor ocupa a largura, como no celular.
+    if (porSetor.length === 0) {
+      return (
+        <TemplateEditor
+          unit={unit} sector={activeSector}
+          template={editing === 'new' ? null : editing}
+          checklistType={checklistType}
+          allTemplates={templates}
+          onSave={handleSave} onCancel={() => { setMdQuery(''); setEditing(null); }}
+        />
+      );
+    }
+
     return (
       <div className="zc-md">
         <aside className="zc-md-list" aria-label="Checklists desta unidade">
