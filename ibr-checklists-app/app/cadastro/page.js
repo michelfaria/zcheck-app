@@ -71,6 +71,7 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
   const selfieRef = useRef(null);
+  const galeriaRef = useRef(null);
   const turnstileRef = useRef(null);
 
   // Load Cloudflare Turnstile script
@@ -93,9 +94,24 @@ export default function CadastroPage() {
     };
   }, []);
 
+  // Teto do bucket `colaboradores` (ver 20260724_fix_cadastro_anonimo.sql).
+  // Barrar aqui dá uma mensagem clara; deixar passar só produz um 413 opaco no
+  // envio — e foto de galeria costuma ser bem maior que selfie de câmera.
+  const MAX_SELFIE_MB = 5;
+
   const handleSelfie = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // permite reescolher o MESMO arquivo depois de refazer
     if (!file) return;
+    if (file.type && !file.type.startsWith('image/')) {
+      setError('O arquivo precisa ser uma imagem (JPG, PNG, WEBP ou HEIC).');
+      return;
+    }
+    if (file.size > MAX_SELFIE_MB * 1024 * 1024) {
+      setError(`A imagem tem ${(file.size / 1024 / 1024).toFixed(1)} MB e o limite é ${MAX_SELFIE_MB} MB. Escolha outra ou tire uma foto pela câmera.`);
+      return;
+    }
+    setError('');
     setSelfie(file);
     const reader = new FileReader();
     reader.onload = () => setSelfiePreview(reader.result);
@@ -268,7 +284,8 @@ export default function CadastroPage() {
             Foto selfie — obrigatória
           </p>
           <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 16 }}>
-            Tire uma selfie para confirmar sua identidade. Ela será analisada pela gestão na aprovação.
+            Tire uma selfie ou escolha uma foto sua da galeria para confirmar sua identidade.
+            Ela será analisada pela gestão na aprovação.
           </p>
           {selfiePreview ? (
             <div style={{ position: 'relative', marginBottom: 0 }}>
@@ -280,16 +297,30 @@ export default function CadastroPage() {
               }}>Refazer</button>
             </div>
           ) : (
-            <button onClick={() => selfieRef.current?.click()} style={{
-              width: '100%', padding: '24px 0', borderRadius: 10, border: '2px dashed ' + C.border,
-              background: 'none', fontSize: 14, fontWeight: 800, color: C.ink, cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
-            }}>
-              <span style={{ fontSize: 40 }}>📷</span>
-              Tirar selfie
-            </button>
+            /* Dois caminhos: `capture="user"` abre a câmera frontal direto e, por
+               isso mesmo, NÃO deixa escolher da galeria — daí o segundo input,
+               sem `capture`, que abre o seletor de fotos do aparelho. */
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => selfieRef.current?.click()} style={{
+                flex: 1, padding: '24px 8px', borderRadius: 10, border: '2px dashed ' + C.border,
+                background: 'none', fontSize: 13, fontWeight: 800, color: C.ink, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
+              }}>
+                <span style={{ fontSize: 34 }}>📷</span>
+                Tirar selfie
+              </button>
+              <button onClick={() => galeriaRef.current?.click()} style={{
+                flex: 1, padding: '24px 8px', borderRadius: 10, border: '2px dashed ' + C.border,
+                background: 'none', fontSize: 13, fontWeight: 800, color: C.ink, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
+              }}>
+                <span style={{ fontSize: 34 }}>🖼️</span>
+                Escolher da galeria
+              </button>
+            </div>
           )}
           <input ref={selfieRef} type="file" accept="image/*" capture="user" onChange={handleSelfie} style={{ display: 'none' }} />
+          <input ref={galeriaRef} type="file" accept="image/*" onChange={handleSelfie} style={{ display: 'none' }} />
         </div>
 
         {/* Cloudflare Turnstile captcha */}
