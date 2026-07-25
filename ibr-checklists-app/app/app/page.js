@@ -129,7 +129,7 @@ const ROLE_TABS = {
   gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
 };
 
-// Papéis de gestão que recebem o Daily Briefing (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
+// Papéis de gestão que recebem o J.I.T. (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
 const MANAGER_ROLES = ['lideranca', 'gerencia', 'gestao'];
 
 // unitId === null means "todas as lojas" (gerência / gestão).
@@ -1043,7 +1043,7 @@ function Eyebrow({ children }) {
 }
 
 function Ticket({ accent, children, style, ...rest }) {
-  // Barra lateral sólida e fina, igual à dos cards do briefing do dia
+  // Barra lateral sólida e fina, igual à dos cards do J.I.T.
   // (a versão anterior tinha 10px com círculos perfurados — pedido de 18/07).
   return (
     <div {...rest} style={{ display: 'flex', background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden', ...style }}>
@@ -6302,7 +6302,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
+function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -6417,14 +6417,30 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
 
       {canSwitchUnit ? (
         <div className="zc-unitpicker flex gap-2">
+          {/* "Todas" existia no modelo (unitId nulo = visão consolidada) mas não
+              tinha botão: uma vez escolhida uma loja, não havia como voltar à
+              visão geral. */}
+          <button
+            onClick={() => onSelectUnit(null)}
+            className="flex-1 py-2"
+            aria-pressed={allSelected}
+            style={{
+              borderRadius: 6, fontSize: 14, fontWeight: W.semibold,
+              background: allSelected ? C.ink : 'white',
+              color: allSelected ? C.bg : C.ink,
+              border: `1.5px solid ${C.ink}`,
+            }}
+          >
+            Todas
+          </button>
           {unitList.map(u => (
             <button
               key={u.id} onClick={() => onSelectUnit(u.id)}
               className="flex-1 py-2"
               style={{
                 borderRadius: 6, fontSize: 14, fontWeight: W.semibold,
-                background: u.id === unit.id ? u.color : 'white',
-                color: u.id === unit.id ? C.bg : u.color,
+                background: !allSelected && u.id === unit.id ? u.color : 'white',
+                color: !allSelected && u.id === unit.id ? C.bg : u.color,
                 border: `1.5px solid ${u.color}`,
               }}
             >
@@ -7194,10 +7210,10 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/* ------------------------------ Daily Briefing (H1) ------------------------------ */
-// Deriva o briefing operacional 100% dos dados existentes (completions + templates + closures).
+/* --------------------------------- J.I.T. (H1) --------------------------------- */
+// Deriva o J.I.T. 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
-export function buildBriefing(completions, templates, closures, units, scopeUnitId) {
+export function buildJit(completions, templates, closures, units, scopeUnitId) {
   const today = todayStr();
   const yStr = yesterdayStr();
   const unitIds = scopeUnitId ? [scopeUnitId] : units.map(u => u.id);
@@ -7270,7 +7286,7 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
     }
   }
 
-  // Fallback positivo — nunca deixar o briefing vazio.
+  // Fallback positivo — nunca deixar o J.I.T. vazio.
   if (recs.length === 0) {
     recs.push({
       id: 'all_good', type: 'all_good', icon: '✅',
@@ -7317,8 +7333,8 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
   // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
   const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
 
-  // ── Blocos extras, para a versão PÁGINA do briefing (coluna lateral) ──────
-  // Não entram no pop-up: ali a tela é estreita e o briefing precisa ser curto.
+  // ── Blocos extras, para a versão PÁGINA do J.I.T. (coluna lateral) ──────
+  // Não entram no pop-up: ali a tela é estreita e o J.I.T. precisa ser curto.
   // Numa página de desktop, sobra largura — e o gestor já pediu "setor" e
   // gráfico. Tudo derivado dos MESMOS dados; nenhuma consulta nova.
 
@@ -7483,14 +7499,14 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
 }
 
 /**
- * `asPage` renderiza o MESMO conteúdo sem o overlay fixo, para o briefing virar
- * um destino de navegação (menu lateral > Operação > Briefing) além de continuar
+ * `asPage` renderiza o MESMO conteúdo sem o overlay fixo, para o J.I.T. virar
+ * um destino de navegação (menu lateral > Operação > J.I.T.) além de continuar
  * abrindo sozinho no início do dia. O gestor pedia poder voltar nele quando
- * quisesse; antes, fechado o pop-up, o briefing do dia sumia até amanhã.
+ * quisesse; antes, fechado o pop-up, o J.I.T. do dia sumia até amanhã.
  */
-export function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate, asPage = false }) {
+export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate, asPage = false }) {
   const startRef = useRef(Date.now());
-  // A memória do briefing: recomendações que já têm plano aberto nascem marcadas
+  // A memória do J.I.T.: recomendações que já têm plano aberto nascem marcadas
   // — fechar e reabrir o modal não "desfaz" mais o compromisso.
   const [actioned, setActioned] = useState(() =>
     Object.fromEntries((actionPlans || []).map(p => [p.recId, true])));
@@ -7506,22 +7522,22 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  // Follow-up: planos abertos de dias ANTERIORES, cobrados no topo do briefing.
-  const pendingPlans = (actionPlans || []).filter(p => p.briefingDate !== briefing.date);
+  // Follow-up: planos abertos de dias ANTERIORES, cobrados no topo do J.I.T.
+  const pendingPlans = (actionPlans || []).filter(p => p.jitDate !== jit.date);
   const [planAnswers, setPlanAnswers] = useState({}); // planId → 'done' | 'kept'
   const [survey, setSurvey] = useState(null);
   const [insightFeedback, setInsightFeedback] = useState(null);
   const [insightActioned, setInsightActioned] = useState(false);
-  const insight = briefing.insight;
+  const insight = jit.insight;
 
-  const planAgeDays = p => Math.max(1, Math.round((new Date(`${briefing.date}T00:00:00`) - new Date(`${p.briefingDate}T00:00:00`)) / 86400000));
+  const planAgeDays = p => Math.max(1, Math.round((new Date(`${jit.date}T00:00:00`) - new Date(`${p.jitDate}T00:00:00`)) / 86400000));
 
   const resolvePlan = async plan => {
     if (planAnswers[plan.id]) return;
     setPlanAnswers(a => ({ ...a, [plan.id]: 'done' }));
     const ok = await onCompletePlan(plan);
     if (ok) {
-      track('action_plan_completed', { source: 'briefing', unitId: plan.unitId || undefined,
+      track('action_plan_completed', { source: 'jit', unitId: plan.unitId || undefined,
         metadata: { plan_id: plan.id, rec_id: plan.recId, rec_type: plan.recType, age_days: planAgeDays(plan) } });
     }
   };
@@ -7532,11 +7548,11 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
 
   // Instrumentação de abertura + tempo em tela (dwell consolidado em 1 evento — §8).
   useEffect(() => {
-    track('briefing_opened', { source: openSource, metadata: { recommendations: briefing.recommendations.length } });
-    if (insight) track('ai_insight_viewed', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
+    track('jit_opened', { source: openSource, metadata: { recommendations: jit.recommendations.length } });
+    if (insight) track('ai_insight_viewed', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
     const start = startRef.current;
     return () => {
-      track('briefing_dwell', { source: openSource, metadata: { seconds: Math.round((Date.now() - start) / 1000) } });
+      track('jit_dwell', { source: openSource, metadata: { seconds: Math.round((Date.now() - start) / 1000) } });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -7544,48 +7560,48 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   const rateInsight = ans => {
     if (insightFeedback || !insight) return;
     setInsightFeedback(ans);
-    track('ai_insight_feedback', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type, answer: ans } });
+    track('ai_insight_feedback', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type, answer: ans } });
   };
   const actOnInsight = () => {
     if (!insight) return;
     if (!insightActioned) {
       setInsightActioned(true);
-      track('ai_insight_actioned', { source: 'briefing', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
+      track('ai_insight_actioned', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
     }
     if (insight.unitId) onNavigate(insight.unitId, 'painel');
   };
 
   const clickRec = rec => {
-    track('recommendation_clicked', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
+    track('recommendation_clicked', { source: 'jit', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
     if (rec.tab || rec.unitId) onNavigate(rec.unitId, rec.tab);
   };
   const actionRec = async (rec, e) => {
     e.stopPropagation();
     if (actioned[rec.id]) return;
     setActioned(a => ({ ...a, [rec.id]: true }));
-    track('recommendation_actioned', { source: 'briefing', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
-    // Persiste o compromisso: é isso que faz o briefing de amanhã cobrar.
+    track('recommendation_actioned', { source: 'jit', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
+    // Persiste o compromisso: é isso que faz o J.I.T. cobrar depois.
     const plan = await onCreatePlan(rec);
     if (plan) {
-      track('action_plan_created', { source: 'briefing', unitId: rec.unitId || undefined,
+      track('action_plan_created', { source: 'jit', unitId: rec.unitId || undefined,
         metadata: { plan_id: plan.id, rec_id: rec.id, rec_type: rec.type } });
     }
   };
   const answerSurvey = ans => {
     if (survey) return;
     setSurvey(ans);
-    track('survey_answered', { source: 'briefing', metadata: { question: 'briefing_helped_prioritize', answer: ans } });
+    track('survey_answered', { source: 'jit', metadata: { question: 'briefing_helped_prioritize', answer: ans } });
   };
 
-  const y = briefing.yesterday, t = briefing.today;
-  const dateLabel = new Date(`${briefing.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const y = jit.yesterday, t = jit.today;
+  const dateLabel = new Date(`${jit.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
   const firstName = (currentUser?.name || '').split(' ')[0];
-  const scopeLabel = briefing.scopeLabel || '';
+  const scopeLabel = jit.scopeLabel || '';
 
   /**
    * Carimbo de frescor. O J.I.T. não é um resumo de manhã que envelhece durante
    * o dia: `completions` chega por realtime (subscribeToCompletions) e o
-   * briefing é um useMemo sobre ele, então o conteúdo já se refaz sozinho a cada
+   * J.I.T. é um useMemo sobre ele, então o conteúdo já se refaz sozinho a cada
    * execução registrada. O relógio existe para o gestor VER isso — sem ele, um
    * painel ao vivo é indistinguível de um painel parado.
    */
@@ -7594,7 +7610,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
     setTick(new Date());
     const id = setInterval(() => setTick(new Date()), 60000);
     return () => clearInterval(id);
-  }, [briefing]);
+  }, [jit]);
   const updatedAt = tick.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const Stat = ({ label, value, sub, color }) => (
@@ -7606,9 +7622,9 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   );
 
   // ── Painéis laterais: só na versão PÁGINA ────────────────────────────────
-  // No pop-up a tela é estreita e o briefing tem de ser curto. Numa página de
+  // No pop-up a tela é estreita e o J.I.T. tem de ser curto. Numa página de
   // desktop sobrava metade do monitor em branco — o que lê como "falta coisa",
-  // não como respiro. Tudo aqui vem do mesmo `briefing`; nenhuma consulta nova.
+  // não como respiro. Tudo aqui vem do mesmo `J.I.T.`; nenhuma consulta nova.
   const Card = ({ title, children, sub }) => (
     <section style={{
       background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16,
@@ -7637,10 +7653,10 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
     </div>
   );
 
-  const trend = briefing.trend7 || [];
+  const trend = jit.trend7 || [];
   const maxTrend = Math.max(100, ...trend.map(d => d.rate));
 
-  const b = briefing.base;
+  const b = jit.base;
   const BaseCell = ({ label, value, tone }) => (
     <div style={{ padding: '8px 0' }}>
       <p className="font-display" style={{ fontSize: 'calc(20px * var(--zc-t-scale))', fontWeight: W.bold, color: tone || C.ink, lineHeight: 1.1 }}>{value}</p>
@@ -7649,7 +7665,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   );
 
   const sidePanels = (
-    <aside className="zc-briefing-aside">
+    <aside className="zc-jit-aside">
       {b && (
         <Card title="Base da operação · agora" sub={scopeLabel}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0 16px' }}>
@@ -7661,8 +7677,8 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
             <BaseCell label="evidências hoje" value={b.evidencesToday} />
             <BaseCell label="críticos abertos hoje" value={b.criticalOpenToday}
               tone={b.criticalOpenToday ? C.critical : C.success} />
-            <BaseCell label="atrasados agora" value={briefing.today.overdue}
-              tone={briefing.today.overdue ? C.warning : C.success} />
+            <BaseCell label="atrasados agora" value={jit.today.overdue}
+              tone={jit.today.overdue ? C.warning : C.success} />
           </div>
         </Card>
       )}
@@ -7690,9 +7706,9 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
         </Card>
       )}
 
-      {(briefing.sectors || []).length > 0 && (
+      {(jit.sectors || []).length > 0 && (
         <Card title="Por setor · hoje" sub="conclusão de tarefas no setor">
-          {briefing.sectors.map(sc => (
+          {jit.sectors.map(sc => (
             <Row key={sc.name} label={sc.name} right={`${sc.rate}%`} rate={sc.rate}
               tone={sc.rate >= 80 ? C.success : sc.rate >= 50 ? C.warning : C.critical}
               meta={`${sc.checklists} checklist${sc.checklists > 1 ? 's' : ''}${sc.criticalPending ? ` · ${sc.criticalPending} crítico${sc.criticalPending > 1 ? 's' : ''} pendente${sc.criticalPending > 1 ? 's' : ''}` : ''}`} />
@@ -7700,18 +7716,18 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
         </Card>
       )}
 
-      {(briefing.criticalTop || []).length > 0 && (
+      {(jit.criticalTop || []).length > 0 && (
         <Card title="Críticos recorrentes" sub="pendentes 2× ou mais nos últimos 7 dias">
-          {briefing.criticalTop.map((c, i) => (
+          {jit.criticalTop.map((c, i) => (
             <Row key={`${c.unitId}-${i}`} label={truncName(c.text, 44)} right={`${c.count}×`} tone={C.critical}
               meta={c.unitName} />
           ))}
         </Card>
       )}
 
-      {(briefing.peopleToday || []).length > 0 && (
+      {(jit.peopleToday || []).length > 0 && (
         <Card title="Quem executou hoje">
-          {briefing.peopleToday.map(pp => (
+          {jit.peopleToday.map(pp => (
             <Row key={pp.key} label={truncName(pp.name, 26)} right={`${pp.tasksDone}`}
               meta={`${pp.checklists} checklist${pp.checklists > 1 ? 's' : ''} · ${pp.tasksDone} tarefa${pp.tasksDone > 1 ? 's' : ''}`} />
           ))}
@@ -7721,8 +7737,8 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   );
 
   const Shell = ({ children }) => (asPage ? (
-    <div className="zc-briefing-page">
-      <div className="zc-briefing-panel">{children}</div>
+    <div className="zc-jit-page">
+      <div className="zc-jit-panel">{children}</div>
       {sidePanels}
     </div>
   ) : (
@@ -7740,7 +7756,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   return (
     <Shell>
       <>
-        {/* Cabeçalho — sticky: o briefing é longo e o X ficava rolando para fora
+        {/* Cabeçalho — sticky: o J.I.T. é longo e o X ficava rolando para fora
             da tela junto com ele. */}
         <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'sticky', top: 0, zIndex: 2 }}>
           {/* Alvo de toque de 40px (era 30, abaixo do mínimo de acessibilidade) e
@@ -7802,7 +7818,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
             </div>
           )}
 
-          {/* Insight do dia (H4) — análise automática no topo do briefing */}
+          {/* Insight do dia (H4) — análise automática no topo do J.I.T. */}
           {insight && (
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -7861,7 +7877,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
           <div>
             <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades agora</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {briefing.recommendations.map(rec => (
+              {jit.recommendations.map(rec => (
                 <div key={rec.id} onClick={() => clickRec(rec)}
                   style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 12px', cursor: rec.tab || rec.unitId ? 'pointer' : 'default' }}>
                   <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{rec.icon}</span>
@@ -7878,11 +7894,11 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
           </div>
 
           {/* Prioridades por loja — só na visão multi-loja. Onde olhar primeiro. */}
-          {briefing.stores && briefing.stores.length > 0 && (
+          {jit.stores && jit.stores.length > 0 && (
             <div>
               <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades por loja</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {briefing.stores.map(s => {
+                {jit.stores.map(s => {
                   const critico = s.overdue > 0 || s.criticalHotspots > 0;
                   const barra = critico ? C.critical : s.pendingToday > 0 ? C.warning : C.success;
                   const sinais = [];
@@ -9015,8 +9031,8 @@ function AppInner() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showCompanyOnboarding, setShowCompanyOnboarding] = useState(false);
   const [showTour, setShowTour] = useState(false); // tour guiado pós-onboarding
-  const [showBriefing, setShowBriefing] = useState(false);
-  const [briefingSource, setBriefingSource] = useState('auto');
+  const [showJit, setShowJit] = useState(false);
+  const [jitSource, setJitSource] = useState('auto');
 
   // ── Multi-tenant company data ──────────────────────────────────────────────
   const [company, setCompany] = useState(null);
@@ -9200,15 +9216,19 @@ function AppInner() {
     setShowCompanyOnboarding(true);
   }, [currentUser, templates]);
 
-  // ── Daily Briefing (H1) ────────────────────────────────────────────────────
-  const briefing = useMemo(() => {
+  // ── Daily J.I.T. (H1) ────────────────────────────────────────────────────
+  const jit = useMemo(() => {
     if (!templates || !completions) return null;
     const activeUnits = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
-    const scope = currentUser?.unitId ?? null;
-    return buildBriefing(completions, templates, closures || [], activeUnits, scope);
-  }, [templates, completions, closures, dynamicUnits, currentUser?.unitId]);
+    // Segue a unidade SELECIONADA no cabeçalho, não a do cadastro do usuário.
+    // Antes era `currentUser.unitId`, que para gestão é sempre nulo — por isso
+    // clicar numa loja não mudava nada: o J.I.T. seguia mostrando a empresa
+    // toda. Quem é preso a uma unidade (liderança) continua preso a ela.
+    const scope = currentUser?.unitId ?? unitId ?? null;
+    return buildJit(completions, templates, closures || [], activeUnits, scope);
+  }, [templates, completions, closures, dynamicUnits, currentUser?.unitId, unitId]);
 
-  // ── Action plans (H1) — a memória do briefing entre dias ──────────────────
+  // ── Action plans (H1) — a memória do J.I.T. entre dias ──────────────────
   // Declarado ANTES do efeito de auto-abertura, que decide com base nos planos.
   const [actionPlans, setActionPlans] = useState([]);
   const [plansLoaded, setPlansLoaded] = useState(false);
@@ -9219,7 +9239,7 @@ function AppInner() {
 
   const handleCreatePlan = async rec => {
     const plan = await createActionPlan({
-      briefingDate: todayStr(),
+      jitDate: todayStr(),
       recId: rec.id, recType: rec.type, recText: rec.text,
       unitId: rec.unitId || null,
       createdBy: currentUser.id, createdByName: currentUser.name,
@@ -9236,19 +9256,19 @@ function AppInner() {
   // Sinal real = recomendação além do fallback, insight não-estável, ou plano
   // aberto cobrando resolução. Recalcula ao vivo (completions chegam por
   // realtime), então sinal que surge no meio do dia acende o badge do botão.
-  const briefingHasSignal = useMemo(() => {
-    if (!briefing) return false;
-    return briefing.recommendations.some(r => r.type !== 'all_good') ||
-      (!!briefing.insight && briefing.insight.type !== 'stable') ||
-      actionPlans.some(p => p.briefingDate !== briefing.date);
-  }, [briefing, actionPlans]);
+  const jitHasSignal = useMemo(() => {
+    if (!jit) return false;
+    return jit.recommendations.some(r => r.type !== 'all_good') ||
+      (!!jit.insight && jit.insight.type !== 'stable') ||
+      actionPlans.some(p => p.jitDate !== jit.date);
+  }, [jit, actionPlans]);
 
-  // "Já viu o briefing hoje?" — espelha o marcador de localStorage em estado,
+  // "Já viu o J.I.T. hoje?" — espelha o marcador de localStorage em estado,
   // para o badge do botão apagar assim que o gestor fechar o modal.
-  const [briefingSeenToday, setBriefingSeenToday] = useState(false);
+  const [jitSeenToday, setBriefingSeenToday] = useState(false);
   useEffect(() => {
     if (!currentUser) { setBriefingSeenToday(false); return; }
-    try { setBriefingSeenToday(!!localStorage.getItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`)); }
+    try { setBriefingSeenToday(!!localStorage.getItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`)); }
     catch (_) { setBriefingSeenToday(false); }
   }, [currentUser?.id]);
 
@@ -9273,36 +9293,36 @@ function AppInner() {
   const autoOpenChecked = useRef(null);
   useEffect(() => {
     if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
-    if (!briefing || !plansLoaded) return;
+    if (!jit || !plansLoaded) return;
     // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
     // do trabalho — acende o badge do botão manual em vez de interromper.
     if (autoOpenChecked.current === currentUser.id) return;
     autoOpenChecked.current = currentUser.id;
     try {
-      const key = `zc_briefing_seen_${currentUser.id}_${todayStr()}`;
+      const key = `zc_jit_seen_${currentUser.id}_${todayStr()}`;
       if (localStorage.getItem(key)) return;
-      if (briefingHasSignal) {
-        setBriefingSource('auto');
-        setShowBriefing(true);
+      if (jitHasSignal) {
+        setJitSource('auto');
+        setShowJit(true);
       } else {
         // Takeover evitado. Sem este evento, a análise do H1 não distingue
         // "dia quieto" de "gestor abandonou" — e não mede a taxa de takeover.
         // 1× por dia por gestor, com o mesmo padrão de marcador do "seen".
-        const skipKey = `zc_briefing_skip_${currentUser.id}_${todayStr()}`;
+        const skipKey = `zc_jit_skip_${currentUser.id}_${todayStr()}`;
         if (!localStorage.getItem(skipKey)) {
           localStorage.setItem(skipKey, '1');
-          track('briefing_skipped', { source: 'auto', metadata: { reason: 'no_signal' } });
+          track('jit_skipped', { source: 'auto', metadata: { reason: 'no_signal' } });
         }
       }
     } catch (_) {}
-  }, [currentUser?.id, briefing, plansLoaded, briefingHasSignal]);
+  }, [currentUser?.id, jit, plansLoaded, jitHasSignal]);
 
-  const closeBriefing = () => {
-    try { if (currentUser) localStorage.setItem(`zc_briefing_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+  const closeJit = () => {
+    try { if (currentUser) localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
     setBriefingSeenToday(true);
-    setShowBriefing(false);
+    setShowJit(false);
   };
-  const openBriefing = () => { setBriefingSource('manual'); setShowBriefing(true); };
+  const openJit = () => { setJitSource('manual'); setShowJit(true); };
 
   // Check for pending requests when gestao logs in
   useEffect(() => {
@@ -9718,7 +9738,7 @@ function AppInner() {
       {/* `display: contents` no celular — este div não existe para o layout. */}
       <div className="zc-main">
       <Header
-        unit={unit} onSelectUnit={setUnitId} allUnits={ACTIVE_UNITS}
+        unit={unit} onSelectUnit={setUnitId} allSelected={unitId == null} allUnits={ACTIVE_UNITS}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
         onLogout={doLogout}
         isOnline={isOnline} syncing={syncing} pendingSync={pendingSync}
@@ -9726,7 +9746,7 @@ function AppInner() {
         trialDaysLeft={billing.state === 'trialing' && currentUser.role === 'gestao' ? billing.daysLeft : null}
         onOpenPlans={() => setShowPlans(true)}
         company={company}
-        onStartTour={() => { setShowBriefing(false); setShowTour(true); }}
+        onStartTour={() => { setShowJit(false); setShowTour(true); }}
       />
 
       {/* Onboarding guiado — primeiro acesso da gestão de empresa nova */}
@@ -9757,21 +9777,21 @@ function AppInner() {
         <WelcomeScreen role={currentUser.role} onClose={() => setShowWelcome(false)} />
       )}
 
-      {/* Daily Briefing (H1) — primeira tela do dia para gestão */}
-      {showBriefing && !showWelcome && !showCompanyOnboarding && !showTour && briefing && (
-        <DailyBriefing
-          briefing={briefing}
+      {/* Daily J.I.T. (H1) — primeira tela do dia para gestão */}
+      {showJit && !showWelcome && !showCompanyOnboarding && !showTour && jit && (
+        <JitPanel
+          jit={jit}
           currentUser={currentUser}
           accent={unit.color}
-          openSource={briefingSource}
+          openSource={jitSource}
           actionPlans={actionPlans}
           onCreatePlan={handleCreatePlan}
           onCompletePlan={handleCompletePlan}
-          onClose={closeBriefing}
+          onClose={closeJit}
           onNavigate={(targetUnitId, targetTab) => {
             if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);
             if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
-            closeBriefing();
+            closeJit();
           }}
         />
       )}
@@ -9841,17 +9861,17 @@ function AppInner() {
 
 
       <main id="zc-main-content" tabIndex={-1} className="zc-content" style={{ flex: 1 }} key={unitId}>
-        {MANAGER_ROLES.includes(currentUser.role) && !showBriefing && (
+        {MANAGER_ROLES.includes(currentUser.role) && !showJit && (
           <div style={{ padding: '10px 14px 0' }}>
             {/* Badge = há sinal que você ainda não viu. É como sinal de meio de
                 dia chega ao gestor sem takeover (anti-fadiga). */}
             {/* Destaque deliberado (pedido 18/07): é a porta de entrada do dia do
                 gestor — botão cheio, não mais um contorno discreto. */}
-            <button onClick={openBriefing} className="font-display zc-briefing-cta"
+            <button onClick={openJit} className="font-display zc-jit-cta"
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 12px', borderRadius: R.md, border: 'none', background: C.ink, color: 'white', fontWeight: W.semibold, fontSize: T.bodySm, cursor: 'pointer', boxShadow: '0 2px 10px rgba(8,20,30,0.18)' }}>
               <BarChart3 size={17} color="white" />
               Ver o J.I.T.
-              {briefingHasSignal && !briefingSeenToday && (
+              {jitHasSignal && !jitSeenToday && (
                 <span aria-label="Há novidades no J.I.T." style={{ width: 9, height: 9, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
               )}
             </button>
@@ -9861,14 +9881,14 @@ function AppInner() {
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />}
-        {/* Briefing como DESTINO, não só pop-up de abertura. Mesmo componente,
+        {/* J.I.T. como DESTINO, não só pop-up de abertura. Mesmo componente,
             sem o overlay fixo (`asPage`) — não existe segunda implementação para
             divergir da primeira. */}
         {activeTab === 'jit' && (
-          briefing ? (
-            <DailyBriefing
+          jit ? (
+            <JitPanel
               asPage
-              briefing={briefing}
+              jit={jit}
               currentUser={currentUser}
               accent={unit.color}
               openSource="menu"

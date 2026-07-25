@@ -14,7 +14,7 @@ import { TRIAL_DAYS, PRICE_PER_UNIT } from '../lib/plans';
 // lib/plans.js (fonte única): faixas por loja com desconto progressivo, e a
 // TRANSPARÊNCIA (preço público + calculadora, sem reunião comercial) é a
 // premissa de posicionamento — o mercado esconde preço; o ZCheck publica.
-// O hero mostra um EXEMPLO ILUSTRATIVO do briefing, rotulado — nunca dados
+// O hero mostra um EXEMPLO ILUSTRATIVO do J.I.T., rotulado — nunca dados
 // falsos apresentados como reais.
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
@@ -30,22 +30,22 @@ const Eyebrow = ({ color = C.muted, children }) => (
   </p>
 );
 
-function BriefingExample() {
+function JitExample() {
   return (
-    <div aria-label="Exemplo ilustrativo do briefing diário">
+    <div aria-label="Exemplo ilustrativo do J.I.T.">
       <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, marginBottom: 8, textAlign: 'center' }}>
-        Exemplo ilustrativo do briefing
+        Exemplo ilustrativo do J.I.T.
       </p>
       {/* O card é a assinatura do hero: a mensagem que chega toda manhã.
           Carimbo de hora, profundidade e entrada sutil (lp-hero-card no CSS). */}
       <div className="lp-hero-card" style={{ background: 'white', borderRadius: R.lg, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
         <div style={{ background: C.ink, color: 'white', padding: '16px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
-            <p style={{ fontSize: T.h3, fontWeight: W.semibold, marginTop: 4 }}>Bom dia, Ana</p>
+            <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>J.I.T. · Just In Time</p>
+            <p style={{ fontSize: T.h3, fontWeight: W.semibold, marginTop: 4 }}>Sua operação agora</p>
           </div>
           <span style={{ fontSize: T.label, fontWeight: W.semibold, background: 'rgba(255,255,255,0.12)', borderRadius: R.pill, padding: '4px 12px', whiteSpace: 'nowrap' }}>
-            Hoje · 07:00
+            ao vivo · 14:32
           </span>
         </div>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -91,7 +91,7 @@ function BriefingExample() {
 
 // Mockups de uso do app (notebook = gestão, celular = execução), em CSS puro
 // com os tokens do site — sem screenshot real e sem imagem de banco. Sempre
-// rotulados como exemplo ilustrativo, como o briefing do hero.
+// rotulados como exemplo ilustrativo, como o J.I.T. do hero.
 function AppShowcase() {
   const statCard = { background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '8px 12px', flex: 1, minWidth: 0 };
   const checkRow = (done) => ({ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: done ? '#F4FAF6' : 'white' });
@@ -131,7 +131,7 @@ function AppShowcase() {
               </div>
               <div style={{ flex: 1, minHeight: 0, padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingRight: 56 }}>
-                  <p style={{ fontSize: T.body, fontWeight: W.bold, color: C.ink }}>Briefing do dia</p>
+                  <p style={{ fontSize: T.body, fontWeight: W.bold, color: C.ink }}>J.I.T. · Just In Time</p>
                   <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>3 lojas · hoje</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -236,7 +236,7 @@ const SEGMENTS = [
 // Os cinco pilares — a narrativa de posicionamento.
 const PILLARS = [
   { Icon: Eye, title: 'Você enxerga a operação inteira',
-    text: 'Um briefing por dia com o que caiu, o que atrasou e o que priorizar. Sem garimpar planilha nem rolar o grupo do WhatsApp.' },
+    text: 'O J.I.T. mostra em tempo real o que caiu, o que atrasou e o que priorizar. Sem garimpar planilha nem rolar o grupo do WhatsApp.' },
   { Icon: MapPin, title: 'Acompanhe de qualquer lugar',
     text: 'Uma loja ou cinco: você não precisa estar presente para saber como cada unidade abriu, rodou e fechou.' },
   { Icon: Target, title: 'Aja no que importa',
@@ -259,7 +259,7 @@ export default function LandingPage() {
         .lp-btn-primary:hover { background: ${C.inkHover}; }
         .lp-nav-links { transition: color .15s; }
         .lp-nav-links:hover { color: ${C.ink}; }
-        /* Hero: o card de briefing "chega" como a mensagem da manhã — entrada
+        /* Hero: o card do J.I.T. "chega" como o estado da operação — entrada
            única no load, profundidade em camadas. Sublinha só na palavra-tese. */
         .lp-hero-card { box-shadow: 0 1px 2px rgba(8,20,30,0.06), 0 16px 40px -16px rgba(8,20,30,0.22);
           animation: lp-card-in .6s cubic-bezier(.22,1,.36,1) both; }
@@ -342,7 +342,7 @@ export default function LandingPage() {
       </header>
 
       {/* 1 · HERO — gradiente em duas camadas: branco → bg → tom azulado do ink
-          no pé da dobra, com um halo verde suave atrás do card de briefing.
+          no pé da dobra, com um halo verde suave atrás do card do J.I.T.
           Tudo derivado dos tokens; o tom mais escuro (#EFF4F8) mantém o muted
           acima de 4.5:1 (AA). */}
       <section style={{
@@ -358,7 +358,7 @@ export default function LandingPage() {
             </h1>
             <p style={{ fontSize: T.bodyLg, color: C.muted, lineHeight: 1.7, maxWidth: 460, marginBottom: 32 }}>
               Sua equipe executa os checklists pelo celular. Você acompanha de onde
-              estiver — e todo dia recebe um briefing com o que caiu, onde, e o que priorizar.
+              estiver — e o J.I.T. mostra, em tempo real, o que caiu, onde, e o que priorizar.
             </p>
             <div className="lp-hero-ctas" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
               <a href={SIGNUP} className="lp-btn lp-btn-primary">Começar teste grátis</a>
@@ -368,7 +368,7 @@ export default function LandingPage() {
               {TRIAL_DAYS} dias grátis · sem cartão para começar · cancele quando quiser
             </p>
           </div>
-          <BriefingExample />
+          <JitExample />
         </div>
       </section>
 
@@ -452,14 +452,14 @@ export default function LandingPage() {
           <div style={{ maxWidth: 620, marginBottom: 40 }}>
             <Eyebrow>Como funciona</Eyebrow>
             <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: W.bold, lineHeight: 1.2 }}>
-              Da conta criada ao briefing em três passos.
+              Da conta criada ao J.I.T. em três passos.
             </h2>
           </div>
           <div className="lp-grid-3">
             {[
               ['Crie sua conta e adote um modelo', 'Em minutos: escolha seu setor e a biblioteca traz os checklists prontos — food service (de bar a pizzaria), hotel e varejo, com mais setores a caminho. Ajuste ao seu jeito.'],
               ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só o que é do seu turno e setor. Foto onde importa, e funciona sem internet.'],
-              ['Você recebe o briefing e age', 'O que caiu, o que atrasou, o que priorizar. E o que você marcar para tratar volta até ser resolvido.'],
+              ['Você abre o J.I.T. e age', 'O que caiu, o que atrasou, o que priorizar — atualizado em tempo real. E o que você marcar para tratar volta até ser resolvido.'],
             ].map(([t, d], i) => (
               <div key={t} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
                 <p style={{ width: 34, height: 34, borderRadius: R.pill, background: C.ink, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: W.bold, fontSize: T.body, marginBottom: 14 }}>{i + 1}</p>
@@ -509,7 +509,7 @@ export default function LandingPage() {
           <div className="lp-grid-4">
             {[
               { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, rotina e fechamento. Cada equipe vê só o que é dela.' },
-              { Icon: Bell, title: 'Briefing diário para a gestão', text: 'Prioridades e cobranças do dia, direto de quem executou.' },
+              { Icon: Bell, title: 'J.I.T. para a gestão', text: 'O estado da operação agora, direto de quem executou.' },
               { Icon: Camera, title: 'Evidência com foto', text: 'Itens críticos podem exigir foto. Histórico completo por período, loja e setor.' },
               { Icon: WifiOff, title: 'Funciona offline', text: 'Instala como app no celular. Sem sinal, registra local e sincroniza depois.' },
             ].map(({ Icon, title, text }) => (
@@ -551,7 +551,7 @@ export default function LandingPage() {
               {[
                 { Icon: Trash2, t: 'Menos perdas', d: 'Validade, temperatura e porcionamento sob controle.' },
                 { Icon: ShieldCheck, t: 'Vigilância sem susto', d: 'A RDC 216 exige registros — foto, hora e responsável.' },
-                { Icon: RotateCcw, t: 'Padrão entre turnos', d: 'Briefing diário sem depender do WhatsApp.' },
+                { Icon: RotateCcw, t: 'Padrão entre turnos', d: 'J.I.T. em tempo real, sem depender do WhatsApp.' },
               ].map(({ Icon, t, d }) => (
                 <div key={t} style={{ textAlign: 'center', padding: '8px 12px' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: R.md, background: C.bg, marginBottom: 10 }}>
@@ -662,7 +662,7 @@ export default function LandingPage() {
       <section style={{ background: C.ink, color: 'white', padding: '96px 0', textAlign: 'center' }}>
         <div className="lp-container" style={{ maxWidth: 660 }}>
           <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
-            O briefing diário mostra sua operação sem filtro — o mesmo princípio do
+            O J.I.T. mostra sua operação sem filtro, em tempo real — o mesmo princípio do
             nosso preço: você vê tudo, todos os dias.
           </p>
           <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: W.bold, marginBottom: 14 }}>

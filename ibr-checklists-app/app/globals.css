@@ -192,21 +192,21 @@ input, textarea, button, select {
 
 .zc-sidenav { display: none; }
 
-/* Briefing como PÁGINA (menu lateral > Operação > Briefing do dia). Mesmo
+/* J.I.T. como PÁGINA (menu lateral > Operação > J.I.T.). Mesmo
    conteúdo do pop-up, sem overlay: o gestor pedia poder voltar nele quando
-   quisesse — antes, fechado o pop-up, o briefing sumia até o dia seguinte.
-   `--zc-briefing-max` acompanha a medida de leitura: é um documento, não um
+   quisesse — antes, fechado o pop-up, ele sumia até o dia seguinte.
+   A largura acompanha a medida de leitura: é um documento, não um
    painel, e esticar até 1120px daria linha de texto longa demais. */
-.zc-briefing-page { padding: var(--zc-pad-view); }
-.zc-briefing-panel {
+.zc-jit-page { padding: var(--zc-pad-view); }
+.zc-jit-panel {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;              /* R.md */
   overflow: hidden;
 }
-/* No celular os painéis laterais entram DEPOIS do briefing, empilhados —
+/* No celular os painéis laterais entram DEPOIS do J.I.T., empilhados —
    a informação não se perde, só muda de lugar. */
-.zc-briefing-aside {
+.zc-jit-aside {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -259,31 +259,31 @@ input, textarea, button, select {
      celular e desperdício em 1440px. */
   .zc-unit-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-  /* Briefing em duas colunas: uma coluna de 720px num monitor largo deixava
+  /* J.I.T. em duas colunas: uma coluna de 720px num monitor largo deixava
      metade da tela em branco, e branco desse tamanho não lê como respiro — lê
      como "falta coisa". A esquerda continua com medida de leitura; a direita
      recebe gráfico e recortes (setor, críticos recorrentes, quem executou). */
-  .zc-briefing-page {
+  .zc-jit-page {
     display: grid;
     grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
     gap: 24px;
     align-items: start;
   }
-  .zc-briefing-panel { max-width: 720px; }
+  .zc-jit-panel { max-width: 720px; }
   /* Sem `sticky`: a coluna passa de 1200px de altura e um elemento sticky mais
      alto que a viewport prende o topo e deixa o último card inalcançável. */
-  .zc-briefing-aside { margin-top: 0; gap: 16px; }
+  .zc-jit-aside { margin-top: 0; gap: 16px; }
 
   /* O seletor de loja usava `flex: 1` por botão: com 3 lojas em 1677px cada
-     botão virava 463px de largura — e o "Ver briefing do dia" ocupava 1409px.
+     botão virava 463px de largura — e o "Ver o J.I.T." ocupava 1409px.
      Juntos, empurravam o conteúdo 133px para baixo. Enquanto a topbar de
      verdade não existe (fase 7), pelo menos param de esticar. */
   .zc-unitpicker > button { flex: 0 1 auto !important; min-width: 120px; }
-  /* O botão "Ver briefing do dia" some no desktop: o rail lateral já tem o
+  /* O botão "Ver o J.I.T." some no desktop: o rail lateral já tem o
      destino em Operação, e repetir a mesma porta em toda aba era ruído no topo
      de todas as telas. No CELULAR ele fica — lá não existe rail, e sem ele o
-     briefing só apareceria no pop-up automático da abertura do dia. */
-  .zc-briefing-cta { display: none !important; }
+     J.I.T. só apareceria no pop-up automático da abertura do dia. */
+  .zc-jit-cta { display: none !important; }
 
   /* ── Overlays: bottom sheet deixa de existir no desktop ──────────────────
      Uma gaveta de 480px colada na borda de baixo de um monitor de 1440px é
@@ -301,7 +301,7 @@ input, textarea, button, select {
     box-shadow: 0 1px 2px rgba(8, 20, 30, .06), 0 16px 40px -16px rgba(8, 20, 30, .22) !important;
     padding-bottom: 20px !important;              /* safe-area é irrelevante aqui */
   }
-  /* Leitura longa vira gaveta lateral, não modal: o briefing navega para abas,
+  /* Leitura longa vira gaveta lateral, não modal: o J.I.T. navega para abas,
      e ver o Painel atrás enquanto se lê é o ponto. */
   .zc-sheet--drawer {
     align-items: stretch !important;
@@ -314,7 +314,7 @@ input, textarea, button, select {
     height: 100vh;
     max-width: 480px !important;
   }
-  /* O cabeçalho colorido do briefing tinha raio de sheet. */
+  /* O cabeçalho colorido do J.I.T. tinha raio de sheet. */
   .zc-sheet--drawer > .zc-sheet-panel > div:first-child { border-radius: 0 !important; }
 
   /* ── Relatórios ──────────────────────────────────────────────────────────

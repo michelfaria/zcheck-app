@@ -72,7 +72,7 @@ export const EVENT_LABELS = {
   photo_uploaded: 'enviou foto', pwa_installed: 'instalou o app (PWA)',
   company_code_entered: 'digitou código da empresa', onboarding_shown: 'viu o onboarding',
   onboarding_completed: 'concluiu o onboarding', onboarding_skipped: 'pulou o onboarding',
-  template_adopted: 'adotou checklist pronto', briefing_opened: 'abriu o briefing',
+  template_adopted: 'adotou checklist pronto', jit_opened: 'abriu o J.I.T.',
   recognition_sent: 'enviou reconhecimento', login_success: 'fez login',
 };
 

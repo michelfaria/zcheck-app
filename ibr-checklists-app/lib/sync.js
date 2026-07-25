@@ -745,7 +745,7 @@ export async function fetchRecognitions(toUserId) {
 const mapPlan = r => ({
   id: r.id,
   createdAt: r.created_at,
-  briefingDate: r.briefing_date,
+  jitDate: r.briefing_date,
   recId: r.rec_id,
   recType: r.rec_type,
   recText: r.rec_text,
@@ -778,7 +778,7 @@ export async function fetchActionPlans(userId) {
 export async function createActionPlan(plan) {
   try {
     const { data, error } = await db().from('action_plans').insert({
-      briefing_date: plan.briefingDate,
+      briefing_date: plan.jitDate,
       rec_id: plan.recId,
       rec_type: plan.recType ?? null,
       rec_text: plan.recText ?? null,
