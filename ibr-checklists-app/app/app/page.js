@@ -6538,6 +6538,46 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
   );
 }
 
+/**
+ * Por que o push pode não estar disponível — e o que o usuário faz a respeito.
+ *
+ * Separado do componente porque o auto-pedido no login (que também falhava em
+ * silêncio) precisa da mesma leitura, e duas cópias divergiriam na primeira
+ * mudança de regra da Apple.
+ */
+function pushDiagnosis() {
+  if (typeof window === 'undefined') return { blocked: true, message: '', failMessage: '' };
+  const ua = navigator.userAgent || '';
+  const isIOS = /iphone|ipad|ipod/i.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches
+    || window.navigator.standalone === true;
+  const instalar = 'No iPhone, as notificações só funcionam com o app instalado: toque em Compartilhar e depois em "Adicionar à Tela de Início".';
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return {
+      blocked: true,
+      supported: false,
+      message: isIOS && !standalone ? instalar : 'Este navegador não suporta notificações.',
+      failMessage: '',
+    };
+  }
+  if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+    return {
+      blocked: true,
+      supported: true,
+      message: 'As notificações estão bloqueadas para este site nos ajustes do navegador.',
+      failMessage: '',
+    };
+  }
+  return {
+    blocked: false,
+    supported: true,
+    message: '',
+    failMessage: isIOS && !standalone ? instalar : 'Não foi possível ativar as notificações agora.',
+  };
+}
+
 function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false, idSignal = false }) {
   const ALL_ITEMS = BOTTOM_NAV_ORDER.map(id => NAV_ITEMS.find(it => it.id === id)).filter(Boolean);
   const items = ALL_ITEMS.filter(it => allowedTabs.includes(it.id));
@@ -9236,7 +9276,12 @@ function AppInner() {
     }
     // Request push permission directly — OS shows its own native prompt
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      setTimeout(() => requestPushPermission(u).then(sub => setPushEnabled(!!sub)), 1000);
+      // Só tenta se o navegador puder — no iOS em aba normal isso lançava um
+      // pedido que morria em silêncio a cada login.
+      setTimeout(() => {
+        if (pushDiagnosis().blocked) return;
+        requestPushPermission(u).then(sub => setPushEnabled(!!sub));
+      }, 1000);
     }
     // Track presence
     import('../../lib/supabase').then(({ supabase }) => {
@@ -9558,10 +9603,27 @@ function AppInner() {
     });
   }, [currentUser?.id]);
 
+  /**
+   * Antes: `requestPushPermission()` e pronto. Quando o navegador não suportava,
+   * a função devolvia `null` em silêncio (lib/sync.js) e o botão parecia
+   * quebrado — nada acontecia, nenhuma explicação.
+   *
+   * No iPhone isso é o caso COMUM, não a exceção: o Safari só expõe Web Push
+   * quando o site está instalado na Tela de Início (iOS 16.4+). Em aba normal
+   * `PushManager` nem existe. O usuário tocava, não acontecia nada, e não havia
+   * como descobrir o porquê.
+   *
+   * A limitação do iOS continua — o que muda é que cada caminho de falha agora
+   * diz o que fazer.
+   */
   const enablePush = async () => {
     if (!currentUser) return;
+    const diag = pushDiagnosis();
+    if (diag.blocked) { showToast(diag.message); return; }
+
     const sub = await requestPushPermission(currentUser);
     setPushEnabled(!!sub);
+    if (!sub) showToast(diag.failMessage);
   };
 
   const disablePush = async () => {
