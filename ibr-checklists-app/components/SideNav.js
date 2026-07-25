@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star,
+  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Sunrise,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 
@@ -18,6 +18,9 @@ import { C, R, W, T, greenOnDark } from '../lib/tokens';
 export const NAV_ITEMS = [
   { id: 'executar', label: 'Executar', icon: ClipboardCheck, group: 'Operação' },
   { id: 'painel', label: 'Painel', icon: LayoutGrid, group: 'Operação' },
+  // O briefing também é destino, não só pop-up de abertura: fechado o pop-up,
+  // ele sumia até o dia seguinte. Só papéis de gestão o recebem (MANAGER_ROLES).
+  { id: 'briefing', label: 'Briefing do dia', icon: Sunrise, group: 'Operação' },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart3, group: 'Análise' },
   { id: 'equipe', label: 'Equipe', icon: Star, group: 'Pessoas' },
   { id: 'id', label: 'Meu ID', icon: Award, group: 'Pessoas' },

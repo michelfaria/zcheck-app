@@ -124,9 +124,9 @@ const ROLE_COLORS = {
 // Which bottom-nav tabs each role can see, in order.
 const ROLE_TABS = {
   colaborador: ['executar', 'painel', 'id'],
-  lideranca: ['executar', 'painel', 'relatorios', 'id', 'equipe'],
-  gerencia: ['executar', 'painel', 'relatorios', 'gerenciar', 'equipe'],
-  gestao: ['executar', 'painel', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
+  lideranca: ['executar', 'painel', 'briefing', 'relatorios', 'id', 'equipe'],
+  gerencia: ['executar', 'painel', 'briefing', 'relatorios', 'gerenciar', 'equipe'],
+  gestao: ['executar', 'painel', 'briefing', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
 };
 
 // Papéis de gestão que recebem o Daily Briefing (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
@@ -6416,7 +6416,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       </div>
 
       {canSwitchUnit ? (
-        <div className="flex gap-2">
+        <div className="zc-unitpicker flex gap-2">
           {unitList.map(u => (
             <button
               key={u.id} onClick={() => onSelectUnit(u.id)}
@@ -7197,7 +7197,7 @@ class ErrorBoundary extends React.Component {
 /* ------------------------------ Daily Briefing (H1) ------------------------------ */
 // Deriva o briefing operacional 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
-function buildBriefing(completions, templates, closures, units, scopeUnitId) {
+export function buildBriefing(completions, templates, closures, units, scopeUnitId) {
   const today = todayStr();
   const yStr = yesterdayStr();
   const unitIds = scopeUnitId ? [scopeUnitId] : units.map(u => u.id);
@@ -7413,7 +7413,13 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
   };
 }
 
-function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate }) {
+/**
+ * `asPage` renderiza o MESMO conteúdo sem o overlay fixo, para o briefing virar
+ * um destino de navegação (menu lateral > Operação > Briefing) além de continuar
+ * abrindo sozinho no início do dia. O gestor pedia poder voltar nele quando
+ * quisesse; antes, fechado o pop-up, o briefing do dia sumia até amanhã.
+ */
+export function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate, asPage = false }) {
   const startRef = useRef(Date.now());
   // A memória do briefing: recomendações que já têm plano aberto nascem marcadas
   // — fechar e reabrir o modal não "desfaz" mais o compromisso.
@@ -7516,13 +7522,25 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
     </div>
   );
 
-  return (
+  const Shell = ({ children }) => (asPage ? (
+    <div className="zc-briefing-page">
+      <div className="zc-briefing-panel">{children}</div>
+    </div>
+  ) : (
     <div onClick={onClose}
       className="zc-sheet zc-sheet--drawer"
       style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
       <div onClick={e => e.stopPropagation()}
         className="zc-sheet-panel"
         style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+        {children}
+      </div>
+    </div>
+  ));
+
+  return (
+    <Shell>
+      <>
         {/* Cabeçalho — sticky: o briefing é longo e o X ficava rolando para fora
             da tela junto com ele. */}
         <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'sticky', top: 0, zIndex: 2 }}>
@@ -7530,10 +7548,12 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
               flex de verdade, para o × ficar no centro do alvo e não só perto dele.
               O padding-box inteiro clica: o raio arredondado antes recortava os
               cantos do alvo. */}
-          <button type="button" onClick={onClose} aria-label="Fechar briefing"
+          {/* Numa PÁGINA não existe "fechar": o destino é o próprio menu. O × só
+              faz sentido no pop-up de abertura. */}
+          {!asPage && <button type="button" onClick={onClose} aria-label="Fechar briefing"
             style={{ position: 'absolute', top: 12, right: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999,
-              width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>
+              width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>}
           <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
           <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
           <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
@@ -7707,8 +7727,8 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
             Começar o dia →
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Shell>
   );
 }
 
@@ -9070,7 +9090,7 @@ function AppInner() {
                 dia chega ao gestor sem takeover (anti-fadiga). */}
             {/* Destaque deliberado (pedido 18/07): é a porta de entrada do dia do
                 gestor — botão cheio, não mais um contorno discreto. */}
-            <button onClick={openBriefing} className="font-display"
+            <button onClick={openBriefing} className="font-display zc-briefing-cta"
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 12px', borderRadius: R.md, border: 'none', background: C.ink, color: 'white', fontWeight: W.semibold, fontSize: T.bodySm, cursor: 'pointer', boxShadow: '0 2px 10px rgba(8,20,30,0.18)' }}>
               <BarChart3 size={17} color="white" />
               Ver briefing do dia
@@ -9084,6 +9104,33 @@ function AppInner() {
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />}
+        {/* Briefing como DESTINO, não só pop-up de abertura. Mesmo componente,
+            sem o overlay fixo (`asPage`) — não existe segunda implementação para
+            divergir da primeira. */}
+        {activeTab === 'briefing' && (
+          briefing ? (
+            <DailyBriefing
+              asPage
+              briefing={briefing}
+              currentUser={currentUser}
+              accent={unit.color}
+              openSource="menu"
+              actionPlans={actionPlans}
+              onCreatePlan={handleCreatePlan}
+              onCompletePlan={handleCompletePlan}
+              onClose={() => setTab('painel')}
+              onNavigate={(targetUnitId, targetTab) => {
+                if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);
+                if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
+              }}
+            />
+          ) : (
+            <div className="zc-view">
+              <EmptyState title="Briefing indisponível"
+                desc="O briefing do dia é montado a partir das execuções e ainda não há dados suficientes hoje." />
+            </div>
+          )
+        )}
         {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} />}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (

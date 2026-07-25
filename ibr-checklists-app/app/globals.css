@@ -192,6 +192,20 @@ input, textarea, button, select {
 
 .zc-sidenav { display: none; }
 
+/* Briefing como PÁGINA (menu lateral > Operação > Briefing do dia). Mesmo
+   conteúdo do pop-up, sem overlay: o gestor pedia poder voltar nele quando
+   quisesse — antes, fechado o pop-up, o briefing sumia até o dia seguinte.
+   `--zc-briefing-max` acompanha a medida de leitura: é um documento, não um
+   painel, e esticar até 1120px daria linha de texto longa demais. */
+.zc-briefing-page { padding: var(--zc-pad-view); }
+.zc-briefing-panel {
+  max-width: 720px;                 /* CT.prose */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;              /* R.md */
+  overflow: hidden;
+}
+
 /* Raiz de view. Substitui o `p-4` do Tailwind nas 19 raízes: no celular vale
    exatamente os mesmos 16px, no desktop respira. Os `p-4` que sobraram no app
    são CARDS — dar 32px de padding a um card seria o oposto de densidade. */
@@ -233,6 +247,13 @@ input, textarea, button, select {
   /* O badge de pendências no rail SUBSTITUI o popup de takeover — era esse o
      ponto: interrupção vira status permanente. Mostrar os dois é o oposto. */
   .zc-requests-popup { display: none !important; }
+
+  /* O seletor de loja usava `flex: 1` por botão: com 3 lojas em 1677px cada
+     botão virava 463px de largura — e o "Ver briefing do dia" ocupava 1409px.
+     Juntos, empurravam o conteúdo 133px para baixo. Enquanto a topbar de
+     verdade não existe (fase 7), pelo menos param de esticar. */
+  .zc-unitpicker > button { flex: 0 1 auto !important; min-width: 120px; }
+  .zc-briefing-cta { width: auto !important; align-self: flex-start; }
 
   /* ── Overlays: bottom sheet deixa de existir no desktop ──────────────────
      Uma gaveta de 480px colada na borda de baixo de um monitor de 1440px é
