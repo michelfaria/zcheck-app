@@ -14,9 +14,21 @@ import { C, R, W, T, greenOnDark } from '../lib/tokens';
  *
  * `group` só é usado pelo rail: com 3 destinos (colaborador) cabeçalho de grupo
  * é ruído; a partir de 5 a ausência dele é lista indiferenciada.
+ *
+ * `short` é o rótulo da BARRA INFERIOR; `label` segue valendo no rail, onde há
+ * 240px e nada precisa ser abreviado.
+ *
+ * Por que encurtar: a barra tem 6 destinos em 390px = 65px por alvo, ~57px
+ * úteis. Medido com a Inter real a 12px, "RELATÓRIOS" ocupa 82px, "GERENCIAR"
+ * 76 e "EXECUTAR" 70 — nenhum cabe. Era por isso que o rótulo vivia em 9px,
+ * abaixo do piso de 12px que o próprio tokens.js define, e ainda assim quebrava
+ * em duas linhas. Encolher a fonte disfarçava; encurtar o texto resolve.
+ *
+ * As três escolhas também alinham o padrão: todo rótulo vira substantivo, como
+ * Painel, Equipe e Unidades já eram — "Executar" era o único verbo.
  */
 export const NAV_ITEMS = [
-  { id: 'executar', label: 'Executar', icon: ClipboardCheck, group: 'Operação' },
+  { id: 'executar', label: 'Executar', short: 'Rotina', icon: ClipboardCheck, group: 'Operação' },
   { id: 'painel', label: 'Painel', icon: LayoutGrid, group: 'Operação' },
   // J.I.T. (Just In Time): o resumo do que importa na operação AGORA. Também é
   // destino, não só pop-up de abertura — fechado o pop-up, ele sumia até o dia
@@ -25,10 +37,10 @@ export const NAV_ITEMS = [
   // Ranking das unidades. Cada loja tem seu ID Operacional, como o colaborador
   // tem o dele em "Meu ID" — mesma ideia de identidade, outra escala.
   { id: 'unidades', label: 'Unidades', icon: Store, group: 'Operação' },
-  { id: 'relatorios', label: 'Relatórios', icon: BarChart3, group: 'Análise' },
+  { id: 'relatorios', label: 'Relatórios', short: 'Dados', icon: BarChart3, group: 'Análise' },
   { id: 'equipe', label: 'Equipe', icon: Star, group: 'Pessoas' },
   { id: 'id', label: 'Meu ID', icon: Award, group: 'Pessoas' },
-  { id: 'gerenciar', label: 'Gerenciar', icon: Settings2, group: 'Configuração' },
+  { id: 'gerenciar', label: 'Gerenciar', short: 'Config', icon: Settings2, group: 'Configuração' },
   { id: 'usuarios', label: 'Usuários', icon: Users, group: 'Configuração' },
 ];
 
@@ -38,8 +50,8 @@ export const NAV_ITEMS = [
  * `usuarios` NÃO está aqui: no celular ele passou a viver dentro de Gerenciar,
  * como sub-aba. Isso abriu o lugar que o J.I.T. ocupa agora — antes o acesso
  * a ele era um botão de largura inteira repetido no topo de TODAS as abas.
- * Seis é o teto real: com 390px de tela cada alvo fica com 65px, e "RELATÓRIOS"
- * já ocupa 61px a 9px de fonte.
+ * Seis é o teto real: com 390px cada alvo fica com ~57px úteis, e é o que os
+ * rótulos `short` foram medidos para caber — ver NAV_ITEMS.
  */
 export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'jit', 'relatorios', 'gerenciar', 'id', 'equipe'];
 

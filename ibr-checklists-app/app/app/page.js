@@ -6756,8 +6756,8 @@ function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false, idSign
                 }} />
               )}
             </span>
-            <span style={{ fontSize: 9, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? accent : C.mutedLight }}>
-              {it.label}
+                        <span style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? accent : C.mutedLight, whiteSpace: 'nowrap' }}>
+              {it.short || it.label}
             </span>
           </button>
         );

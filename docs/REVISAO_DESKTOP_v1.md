@@ -1,7 +1,9 @@
 # Revisão de Layout Desktop — ZCheck (v1)
 
-> **Estado: fases 1–2 implementadas + metade da fase 3.** Ver §11 no fim deste
-> documento para o que entrou, o que não entrou e o que ficou pendente de decisão.
+> **Estado: estudo CONCLUÍDO — os 12 itens implementados e em produção.**
+> Ver §11 para o que foi entregue, o que mudou de rumo no caminho e o que ficou
+> em aberto. As seções 1–10 são o estudo original de 24/07 e descrevem o app
+> ANTES da revisão; ficam como registro do diagnóstico, não do estado atual.
 
 
 > Data: 2026-07-24 · Escopo: `ibr-checklists-app/app/app/page.js` (9.500 linhas)
@@ -398,82 +400,86 @@ Nada de UI desktop avança antes destas seis:
 
 ---
 
-## 11. Estado da implementação (24/07/2026)
+## 11. Estado da implementação (25/07/2026)
 
-Implementado, revisado por agente de acessibilidade e por crítica adversarial,
-e corrigido em cima dos achados das duas revisões.
+**Os 12 itens do plano estão concluídos e em produção.** Abaixo o que foi
+entregue, o que mudou de rumo, e o que se descobriu no caminho.
 
-### O que entrou
+### Os 12 itens
 
-**Tipografia (afeta mobile de propósito — decisão §9.2 aprovada)**
-- Inter carregada de verdade via `next/font` em `app/layout.js`, como **fonte
-  variável** (um arquivo, faixa 100–900) — antes nenhuma fonte era carregada e o
-  Windows renderizava Segoe UI.
-- O `<style>` inline em `app/app/page.js` que forçava `system-ui` **e reimpunha
-  `font-weight: 800`** foi removido. A classe não era morta — era nociva.
-- `.font-display` passa a ser papel óptico real (`tabular-nums`). Sem tracking
-  negativo: a classe é usada de 13 a 56px e em rótulos maiúsculos, onde apertar
-  é errado. O tracking entra junto com a escala tipográfica, por elemento.
-- **Peso normalizado em 348 pontos**: 231 `800`, 86 `700` literais e 11 `600`
-  literais viraram `W.semibold` (600) ou `W.bold` (700), pela regra do próprio
-  `tokens.js`. A segunda passada (nos `700` literais) foi necessária porque
-  migrar só os 800 **inverteu hierarquias** — um banner de trial em 700 passava
-  a pesar mais que "Sem conexão" em 600.
+| # | Item | Como ficou |
+|---|---|---|
+| 1 | Carregar a fonte | Inter via `next/font` como fonte **variável**. Antes nenhuma fonte era carregada e o Windows renderizava Segoe UI |
+| 2 | Roteamento por URL | `lib/appUrlState.js`, History API. Destrava deep link, botão voltar e duas janelas lado a lado. `/app` continua estática |
+| 3 | Extrair a altura da BottomNav | As 9 barras fixas leem `var(--zc-nav-h)` |
+| 4 | Baseline + tokens + shell | `tests/visual-baseline.spec.js` (27 estados), `shell`/`inkMuted`/`BP`/`TD`/`S`/`E`/`CT`, rail de 240px em `ink` |
+| 5 | Relatórios | Filtro fixo de 280px + resultado, 4 KPIs em linha, **paginação real** no lugar do corte em 20 |
+| 6 | Escala tipográfica desktop | Por multiplicador (`--zc-t-scale`), preservando a hierarquia relativa. Mobile = ×1 |
+| 7 | Baseline determinístico | 27 estados; `waitForStableHeight` eliminou a instabilidade do Turnstile |
+| 8 | Relatórios (2ª metade) | idem item 5 |
+| 9 | Gerenciar mestre-detalhe | Lista de 360px + editor, **com busca** por nome ou setor |
+| 10 | CSV | Virou modal centrado no desktop (não página — ver "mudou de rumo") |
+| 11 | `Sheet` unificado | Bottom sheets viram modal; o J.I.T. vira drawer lateral |
+| 12 | Header → topbar | Uma linha. **133px de cromo caíram para 57px** |
 
-**Tokens** — `shell` #E8EFF5 e `inkMuted` #9FB8C8 (ambos com contraste medido e
-regra de proibição), mais `BP`, `TD`, `S`, `E`, `CT`.
+### O que mudou de rumo
 
-**Shell desktop (≥1024px, aditivo)**
-- `components/SideNav.js` novo: rail de 240px em `ink`, agrupado (só onde o
-  grupo tem 2+ itens), badge de pendências, bloco de contexto para papéis com
-  poucos destinos. `NAV_ITEMS` virou fonte única das duas navegações.
-- `.zc-root` / `.zc-main` / `.zc-content` / `.zc-view` em `globals.css`.
-  `.zc-main` usa `display: contents` — some do layout no celular, por construção.
-- Canvas `shell`, coluna com teto (1120px, 1440px acima de 1440), padding de
-  view 16→32→40px, faixa do logo ZCheck oculta (o rail já o exibe).
-- **As 9 barras fixas** deixaram de depender do número 56 e passam a ler
-  `var(--zc-nav-h)`; overlays reancorados para não cobrir o rail; o popup de
-  solicitações some no desktop, porque o badge do rail o substitui.
+**O item 2 do diagnóstico estava errado.** O estudo dizia que `font-display` era
+"classe morta". Não era — era **nociva**: um `<style>` inline forçava
+`system-ui` e reimpunha `font-weight: 800` em 59 elementos. A correção do texto
+está na §1.
 
-**Acessibilidade**
-- `:focus-visible` com `!important` — necessário: **58 `outline: 'none'` inline**
-  venciam a folha de estilo e nenhum campo de texto mostrava foco (WCAG 2.4.7).
-  Escopado em `(min-width:1024px), (pointer:fine)` para não pintar contorno ao
-  toque no iPhone.
-- Cor do anel por variável (`--zc-focus`), verde sobre superfícies `ink`.
-- Link "Pular para o conteúdo"; `role="group"` + `aria-labelledby` no rail;
-  `aria-label`/`aria-current` na `BottomNav`, que não tinha nenhum dos dois.
-- Contrastes reprovados corrigidos: "Sincronizando…" (2,11:1 → 5,02:1),
-  `#6B8299` (3,98:1) → `C.muted`, `#C6842A` (2,95:1) → `C.warning`.
+**O peso precisou de duas passadas.** Migrar só os 231 `800` inverteu
+hierarquias — um banner de trial em `700` passou a pesar mais que "Sem conexão"
+em `600`. A segunda passada pegou os 86 `700` literais. Total: 453 pesos
+normalizados em 19 arquivos.
 
-### O que NÃO entrou
+**O item 10 ficou pela metade, de propósito.** O CSV virou modal centrado, não
+página. O ganho real (preview em tabela) exigiria refazer a view; o modal já
+resolve o pior — a gaveta de 560px colada no rodapé.
 
-- **Escala tipográfica desktop.** `TD` e as vars `--zc-t-*` existem e estão
-  ligadas ao `:root`, mas **nenhum elemento do app as consome ainda** — o `h1`
-  segue em 24px no desktop. Consumi-las exige tocar `fontSize` inline view a
-  view, e isso não é verificável localmente (ver limitação abaixo).
-- **Fases 4–7**: `Sheet` unificado, `DataTable`, `SplitView`, topbar. Consequência
-  visível hoje: `.zc-content` capa só o `<main>` — o header e os banners seguem
-  full-bleed, e em 1920px o cromo vai até a borda enquanto o conteúdo para antes.
-  É esperado e some na fase 7.
-- **Peso 800 em `/importar`, `/admin/*` e `/entrar`** — fora do escopo do app.
-  Não quebra: a fonte variável cobre 800 nativamente.
+### O que nasceu da validação, fora do plano
 
-### Limitação de verificação — importante
+Coisas que só apareceram olhando dado real em produção:
 
-O login depende de PIN validado no servidor e os segredos são Sensitive (só
-produção), então **não foi possível chegar às telas logadas em ambiente local**.
-O que foi verificado: build limpo, todas as rotas públicas em 200, console sem
-erros, e o shell em 1440px e 402px por rota temporária de verificação (já
-removida), conferindo valor computado de cada variável nos dois viewports.
+- **J.I.T.** — o "Briefing do dia" virou *Just In Time*: estado da operação
+  agora, não resumo matinal. Ganhou página no menu, dashboard de duas colunas
+  (aderência 7 dias, por setor, críticos recorrentes, quem executou) e escopo
+  por unidade. O dado já era ao vivo por realtime; faltava dizer isso.
+- **Unidades** — ranking de lojas, cada uma com seu ID Operacional. Índice
+  ponderado: aderência 50%, tarefas 30%, críticos 20%.
+- **Equipe** — o mesmo conceito de ranking, com índice adaptado (a pessoa não
+  tem "esperado"): conclusão 50%, críticos 30%, constância 20%. Agrupa por
+  unidade ou por setor.
+- **Aviso de reconhecimento** — o colaborador é avisado ao entrar; antes o
+  elogio ficava escondido dentro do Meu ID.
+- **Busca no Gerenciar** — o IBR1 tem 10 checklists por tipo, não os 4 dos dados
+  de teste.
+- **Rótulos da barra inferior** — encurtados (Rotina, Dados, Config) para a
+  fonte subir de 9px ao piso de 12px. Medido com a Inter real: "RELATÓRIOS"
+  ocupa 82px num alvo de 57px úteis.
 
-**O que falta verificar em produção:** Painel, Relatórios, Gerenciar, Usuários e
-Equipe logados — em especial se a mudança de peso (800→600) enfraqueceu alguma
-âncora visual em lista densa no celular. A fase 0 do plano (baseline Playwright
-de 14 estados × 3 viewports) **não foi executada**; a garantia de "mobile não
-mudou" aqui é estrutural (media query) mais inspeção de valor computado, não
-diff de pixel.
+### Bugs que a validação em produção pegou
 
-Um bug real foi pego exatamente por essa lacuna e corrigido: duas barras
-flutuantes que eram `64px` viraram `72px` no celular numa substituição em bloco.
-As nove barras hoje batem com o original: 3 em +16px, 2 em +8px, 4 em +0.
+Nenhum destes apareceu em harness — todos precisaram de app logado e dado real:
+
+1. **Dois J.I.T. na tela.** Abrir `?aba=jit` renderizava a página *e* o pop-up
+   por cima. As duas condições eram independentes.
+2. **O seletor de unidade não mudava o J.I.T.** O escopo vinha de
+   `currentUser.unitId`, que para gestão é sempre nulo.
+3. **Não havia botão "Todas".** O estado existia no modelo (`unitId` nulo) mas a
+   UI não o alcançava — e o seletor destacava IBR1 como se estivesse escolhida.
+4. **Coluna vazia desconfigurava o Gerenciar** em loja recém-criada.
+5. **Duas barras flutuantes moveram 8px no celular** — pegas por comparação com
+   o original, não a olho.
+
+### Limitações conhecidas
+
+- **`docs/` descreve o diagnóstico, não o estado.** As seções 1–10 valem como
+  registro do que se encontrou em 24/07.
+- **Notificação no iPhone só com o app instalado** na Tela de Início. É
+  restrição do iOS; o app agora explica em vez de falhar em silêncio.
+- **O baseline visual cobre só rotas públicas.** As telas logadas dependem de
+  PIN validado no servidor, e os segredos são Sensitive.
+- **Emoji como dado** foi removido em 12 arquivos por trabalho paralelo, mas
+  restam 2 ocorrências no app.
