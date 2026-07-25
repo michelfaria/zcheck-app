@@ -7968,11 +7968,33 @@ function computeOperationalProfile(completions, userId, userName) {
     { id: 'perfectweek', icon: '🏆', title: 'Semana perfeita', desc: 'Uma semana inteira a 100%', earned: weekly.some(w => w.rate === 100 && w.checklists >= 3) },
   ];
 
+  /**
+   * Índice operacional da PESSOA — a mesma régua do ID da unidade, adaptada.
+   *
+   * A unidade tem "esperado" (quantos checklists eram previstos no dia) e por
+   * isso a métrica-mãe dela é aderência. A pessoa não tem: ninguém sabe quantos
+   * checklists eram "dela". O que dá para medir com honestidade é a QUALIDADE do
+   * que ela executou e a CONSTÂNCIA com que apareceu.
+   *
+   * Pesos explícitos, como no ID da unidade — um lugar só para mudar.
+   */
+  const CONSISTENCY_WINDOW = 30;
+  const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
+  const parts = [
+    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.5, value: totalItems ? avgRate : null },
+    { key: 'criticos', label: 'Críticos em dia', weight: 0.3, value: criticalRate },
+    { key: 'constancia', label: 'Constância', weight: 0.2, value: checklists ? consistency : null },
+  ];
+  const usable = parts.filter(x => x.value != null);
+  const wsum = usable.reduce((a, x) => a + x.weight, 0);
+  const index = usable.length ? Math.round(usable.reduce((a, x) => a + x.value * x.weight, 0) / wsum) : null;
+
   return {
     checklists, avgRate, criticalRate, evidences,
     tasksDone, criticalDone,
     streak, bestStreak, activeDays: days.length,
     level, intoLevel, perLevel, weekly, achievements,
+    index, parts, consistency, consistencyWindow: CONSISTENCY_WINDOW,
     recent: mine.slice(-8).reverse(),
   };
 }
@@ -8206,6 +8228,38 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
           </div>
         </div>
       </div>
+
+      {/* Índice operacional — o mesmo número que ordena o ranking da Equipe.
+          Um ranking cujo número não dá para inspecionar é só uma opinião: aqui
+          o colaborador vê exatamente o que compõe a posição dele. Mesma
+          estrutura do ID da unidade, com os pesos que fazem sentido para uma
+          pessoa (ela não tem "esperado" — ver computeOperationalProfile). */}
+      {p.index != null && (
+        <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <IndexRing value={p.index} accent={accent} size={72} />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
+                Índice operacional
+              </p>
+              <div style={{ marginTop: 8 }}>
+                {p.parts.map(part => (
+                  <div key={part.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                    <span style={{ fontSize: T.caption, color: C.ink, flex: 1 }}>{part.label}</span>
+                    <span style={{ fontSize: T.label, color: C.mutedLight }}>{Math.round(part.weight * 100)}%</span>
+                    <span className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, width: 44, textAlign: 'right' }}>
+                      {part.value == null ? '—' : `${part.value}%`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 6 }}>
+                Constância = dias com atividade nos últimos {p.consistencyWindow} dias.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Reconhecer (visão do líder — H3) */}
       {!isSelf && (
@@ -8678,7 +8732,11 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
     const scoped = canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
     return scoped
       .map(u => ({ user: u, profile: computeOperationalProfile(completions, u.id, u.name) }))
-      .sort((a, b) => b.profile.tasksDone - a.profile.tasksDone || b.profile.checklists - a.profile.checklists);
+      // Ordena pelo ÍNDICE, não por volume: quem faz mais não é necessariamente
+      // quem faz melhor, e ordenar por tarefas premiava só quem pegou mais turno.
+      .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
+        || b.profile.tasksDone - a.profile.tasksDone
+        || b.profile.checklists - a.profile.checklists);
   }, [users, completions, currentUser, canSeeAllUnits]);
 
   // Perfil do colaborador selecionado (visão do líder)
@@ -8708,26 +8766,54 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   // Lista da equipe
   return (
     <div style={{ padding: '14px 14px 28px' }}>
-      <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-        Sua equipe · reconheça pelo desempenho
+      <Eyebrow>Ranking da equipe · reconheça pelo desempenho</Eyebrow>
+      <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 12px' }}>
+        Ordenado pelo índice operacional: conclusão de tarefas (50%), críticos em dia (30%) e constância (20%).
       </p>
       {team.length === 0 ? (
         <EmptyState title="Nenhum colaborador" desc="Não há colaboradores ativos no seu escopo." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {team.map(({ user, profile }) => (
+          {team.map(({ user, profile }, i) => (
             <button key={user.id} onClick={() => { setSelected(user); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 999, background: `${accent}18`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: W.semibold, flexShrink: 0 }}>
-                {(user.name || '?').trim().charAt(0).toUpperCase()}
+              aria-label={`Abrir ID operacional de ${user.name}`}
+              style={{
+                width: '100%', textAlign: 'left', background: 'white', borderRadius: R.md,
+                border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`,
+                padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'block',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <RankBadge pos={i + 1} />
+                <div style={{
+                  width: 36, height: 36, borderRadius: R.pill, background: `${accent}18`, color: accent,
+                  display: 'grid', placeItems: 'center', fontSize: T.bodyLg, fontWeight: W.semibold, flexShrink: 0,
+                }}>{(user.name || '?').trim().charAt(0).toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                  <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                    Nível {profile.level} · {profile.checklists} checklists · {profile.tasksDone} tarefas
+                    {profile.streak ? ` · ${profile.streak} dia${profile.streak === 1 ? '' : 's'} seguidos` : ''}
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink }}>
+                    {profile.index == null ? '—' : profile.index}
+                  </p>
+                  <p style={{ fontSize: T.label, color: C.mutedLight }}>índice</p>
+                </div>
+                <ChevronRight size={18} color={C.mutedLight} style={{ flexShrink: 0 }} />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
-                <p style={{ fontSize: 11.5, color: C.muted }}>
-                  {profile.checklists} checklists · {profile.tasksDone} tarefas · {profile.avgRate}% conclusão{profile.streak ? ` · ${profile.streak}🔥` : ''}
-                </p>
+
+              <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+                {[['Conclusão', profile.avgRate], ['Críticos', profile.criticalRate], ['Constância', profile.checklists ? profile.consistency : null]].map(([label, v]) => (
+                  <div key={label} style={{ flex: 1, minWidth: 88 }}>
+                    <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
+                    <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>
+                      {v == null ? '—' : `${v}%`}
+                    </p>
+                  </div>
+                ))}
               </div>
-              <ChevronRight size={18} color={C.mutedLight} />
             </button>
           ))}
         </div>
