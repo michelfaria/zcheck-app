@@ -5647,7 +5647,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // Cria o usuário server-side copiando o PIN da solicitação (ou o
         // override digitado pela gestão). Roda ANTES do onSaveUsers para que o
         // upsert-sem-pin que vem depois preserve o PIN no ON CONFLICT.
-        await supabase.rpc('create_user_from_request', {
+        const { error: rpcErr } = await supabase.rpc('create_user_from_request', {
           p_request_id: req.id,
           p_user_id: newUser.id,
           p_name: newUser.name,
@@ -5656,6 +5656,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           p_sector_id: newUser.sectorId ?? null,
           p_pin: finalPin || null,
         });
+        // Sem esta checagem, a RPC podia falhar (falhava: uuid = text, ver
+        // 20260724_fix_aprovacao_uuid.sql) e o fluxo seguia marcando a
+        // solicitação como aprovada. A pessoa ficava aprovada sem existir em
+        // `users` — fora da lista de login e fora da fila de aprovação.
+        if (rpcErr) throw new Error(`Não foi possível criar o acesso de ${newUser.name}: ${rpcErr.message}`);
         onSaveUsers([...users, newUser]);
       } else {
         // Apply changes to existing user
@@ -5729,7 +5734,14 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       setRequests(r => r.filter(x => x.id !== req.id));
       setReviewingRequest(null);
       setEditingReq({});
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      // Silenciar aqui foi o que deixou o bug da aprovação invisível por
+      // semanas: a solicitação sumia da fila e ninguém sabia que o acesso não
+      // tinha sido criado. Falhou, a gestão precisa ver — e a solicitação
+      // continua na fila para tentar de novo.
+      showToast(e?.message || 'Não foi possível aprovar. Tente de novo.');
+    }
     setProcessingId(null);
   };
 
@@ -5744,7 +5756,10 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       }).eq('id', req.id);
       setRequests(r => r.filter(x => x.id !== req.id));
       setReviewingRequest(null);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      showToast(e?.message || 'Não foi possível concluir. Tente de novo.');
+    }
     setProcessingId(null);
   };
 
