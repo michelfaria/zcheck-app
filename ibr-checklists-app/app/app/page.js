@@ -3853,9 +3853,10 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
  * checagem antiga era igualdade exata, então "Abertura" e "abertura " entravam
  * como dois checklists distintos.
  */
-function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_TYPE_ORDER, onClose, onImported }) {
+function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_TYPE_ORDER, onSaveSector, onClose, onImported }) {
   const [csvText, setCsvText] = useState('');
-  const [preview, setPreview] = useState(null);
+  const [rawPreview, setRawPreview] = useState(null); // lista crua do arquivo
+  const [criandoSetores, setCriandoSetores] = useState(false);
   const [warnings, setWarnings] = useState([]);
   const [loaded, setLoaded] = useState([]);
   const [reading, setReading] = useState(false);
@@ -3876,12 +3877,20 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   const existentes = useMemo(
     () => new Set((templates || []).map(t => dupKey(t.unitId, t.sector, t.name))), [templates]);
 
-  /** Marca loja inexistente, repetido no banco e repetido dentro do lote. */
+  /** Loja inexistente, setor inexistente, repetido no banco e repetido no lote. */
   const classificar = (lista) => {
     const noLote = new Set();
     return lista.map(c => {
       const unitRow = unitByName.get(csvNorm(c.unitName));
       if (!unitRow) return { ...c, status: 'sem-loja' };
+      // O app casa setor por igualdade exata (`t.sector === s`) contra os setores
+      // da loja. Importar num setor que não existe cria um checklist ÓRFÃO: ele
+      // conta no total do tipo mas não aparece em Gerenciar nem em Executar.
+      // Antes isso era só um aviso DEPOIS de criar — agora barra antes.
+      const setores = unitRow.sectors || [];
+      if (setores.length && !setores.some(s => csvNorm(s) === csvNorm(c.sector))) {
+        return { ...c, unitRow, status: 'sem-setor' };
+      }
       const k = dupKey(unitRow.id, c.sector, c.name);
       if (existentes.has(k)) return { ...c, unitRow, key: k, status: 'ja-existe' };
       if (noLote.has(k)) return { ...c, unitRow, key: k, status: 'repetido-no-lote' };
@@ -3890,12 +3899,18 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
     });
   };
 
+  // Derivado, não estado: reclassifica sozinho quando um setor ou uma loja é
+  // criada durante a importação, sem depender de closure atualizado.
+  const preview = useMemo(
+    () => (rawPreview ? classificar(rawPreview) : null),
+    [rawPreview, allUnits, templates]);
+
   const parse = (text) => {
-    setError(''); setResult(null); setPreview(null); setWarnings([]); setLoaded([]);
+    setError(''); setResult(null); setRawPreview(null); setWarnings([]); setLoaded([]);
     const r = parseImportCSV(text ?? csvText);
     setWarnings(r.warnings || []);
     if (r.error) { setError(r.error); return; }
-    setPreview(classificar(r.checklists.map(c => ({ ...c, source: null }))));
+    setRawPreview(r.checklists.map(c => ({ ...c, source: null })));
   };
 
   /**
@@ -3906,7 +3921,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
     const files = Array.from(e.target.files || []);
     e.target.value = ''; // permite reescolher os mesmos arquivos depois
     if (!files.length) return;
-    setError(''); setResult(null); setPreview(null); setWarnings([]); setCsvText('');
+    setError(''); setResult(null); setRawPreview(null); setWarnings([]); setCsvText('');
     setReading(true);
     const todos = []; const avisos = []; const falhas = []; const lidos = [];
     for (const f of files) {
@@ -3928,7 +3943,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
         : (falhas[0] || 'Nenhum checklist encontrado.'));
       return;
     }
-    setPreview(classificar(todos));
+    setRawPreview(todos);
   };
 
   // O modelo sai com a loja e o setor REAIS da empresa: baixar e importar sem
@@ -3948,6 +3963,29 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   };
 
   const novos = (preview || []).filter(c => c.status === 'novo');
+  // Setores que o CSV pede e a empresa não tem — viram um botão de criar.
+  const setoresFaltantes = [...new Map(
+    (preview || [])
+      .filter(c => c.status === 'sem-setor')
+      .map(c => [`${c.unitRow.id}|${csvNorm(c.sector)}`, { unit: c.unitRow, nome: c.sector }])
+  ).values()];
+
+  const criarSetoresFaltantes = async () => {
+    if (!setoresFaltantes.length || !onSaveSector) return;
+    setCriandoSetores(true);
+    try {
+      for (const s of setoresFaltantes) {
+        await onSaveSector({ id: uid(), companyId: company.id, unitId: s.unit.id, name: s.nome });
+      }
+      showToast(`${setoresFaltantes.length} setor${setoresFaltantes.length > 1 ? 'es criados' : ' criado'}!`);
+      // Nada de reclassificar à mão: `preview` é derivado de allUnits, então
+      // o setor novo entra sozinho no próximo render (a prop chega do pai).
+    } catch (e) {
+      console.error(e);
+      showToast(`Não foi possível criar o setor: ${e?.message || 'tente de novo.'}`);
+    }
+    setCriandoSetores(false);
+  };
 
   const doImport = async () => {
     if (!novos.length) return;
@@ -3991,7 +4029,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
       if (created > 0) {
         // Some o CSV da tela: sem isso o botão "Importar" continuava armado e
         // dava para reimportar o mesmo arquivo por engano.
-        setCsvText(''); setPreview(null); setWarnings([]); setLoaded([]);
+        setCsvText(''); setRawPreview(null); setWarnings([]); setLoaded([]);
         await onImported?.();
         showToast(`${created} checklist${created > 1 ? 's' : ''} importado${created > 1 ? 's' : ''}!`);
         // Deu tudo certo e não há aviso para ler: confirma e fecha sozinho.
@@ -4010,6 +4048,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
     'ja-existe':        { texto: 'já existe — ignorado', cor: C.muted },
     'repetido-no-lote': { texto: 'repetido no lote',     cor: C.warning },
     'sem-loja':         { texto: 'loja não encontrada',  cor: C.critical },
+    'sem-setor':        { texto: 'setor não existe',      cor: C.critical },
   };
   const bloqueados = (preview || []).length - novos.length;
 
@@ -4081,6 +4120,23 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
                 </div>
               );
             })}
+            {/* Setor inexistente é o único bloqueio que dá para resolver aqui
+                mesmo — sem isso o gestor teria de sair, criar em Estrutura e
+                recomeçar a importação. */}
+            {setoresFaltantes.length > 0 && onSaveSector && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 8 }}>
+                  {setoresFaltantes.length === 1
+                    ? `O setor "${setoresFaltantes[0].nome}" não existe em ${setoresFaltantes[0].unit.name}.`
+                    : `${setoresFaltantes.length} setores do arquivo não existem: ${setoresFaltantes.map(s => `"${s.nome}"`).join(', ')}.`}
+                  {' '}Sem ele o checklist seria criado mas não apareceria em lugar nenhum.
+                </p>
+                <button onClick={criarSetoresFaltantes} disabled={criandoSetores}
+                  style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: criandoSetores ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 13, cursor: criandoSetores ? 'not-allowed' : 'pointer' }}>
+                  {criandoSetores ? 'Criando…' : setoresFaltantes.length === 1 ? `Criar setor "${setoresFaltantes[0].nome}"` : `Criar os ${setoresFaltantes.length} setores`}
+                </button>
+              </div>
+            )}
             {bloqueados > 0 && (
               <p style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
                 Checklist repetido não é importado de novo — a comparação ignora maiúsculas e acentos.
@@ -4693,6 +4749,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       </div>
       {showImport && (
         <ImportCsvModal company={company} allUnits={allUnits} templates={templates} activeTypes={activeTypes}
+          onSaveSector={onSaveSector}
           onClose={() => setShowImport(false)} onImported={onReloadTemplates} />
       )}
 
