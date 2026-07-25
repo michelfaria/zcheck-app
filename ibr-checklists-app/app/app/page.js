@@ -8011,10 +8011,10 @@ function computeOperationalProfile(completions, userId, userName) {
  *
  * `days` é a janela de análise (30 por padrão).
  */
-function computeUnitProfile(completions, templates, closures, unit, days = 30) {
+function computeUnitProfile(completions, templates, closures, unit, days = 30, sector = null) {
   const uid = unit.id;
   const mine = (completions || [])
-    .filter(c => c.unitId === uid)
+    .filter(c => c.unitId === uid && (!sector || c.sector === sector))
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
   // Janela de datas, do mais antigo ao mais recente.
@@ -8028,7 +8028,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30) {
   let expected = 0, doneChecklists = 0;
   const daily = dates.map(ds => {
     const closed = isUnitClosed(closures, uid, ds);
-    const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, { unitId: uid }, ds);
+    const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, sector ? { unitId: uid, sector } : { unitId: uid }, ds);
     const done = mine.filter(c => c.date === ds).length;
     expected += exp; doneChecklists += done;
     return { date: ds, expected: exp, done, closed, rate: exp ? Math.round((done / exp) * 100) : null };
@@ -8100,7 +8100,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30) {
   ];
 
   return {
-    unit, index, parts,
+    unit, sector, index, parts,
     adherence, taskRate, criticalRate, criticalPending,
     checklists: mine.length, expected, evidences,
     operators: operators.size,
@@ -8516,7 +8516,7 @@ function IndexRing({ value, accent, size = 84 }) {
  * (`OperationalIdView`), aplicado à loja: identidade, nível, índice, o que
  * compõe o índice, evolução e conquistas.
  */
-function UnitIdView({ profile, position, total, accent }) {
+function UnitIdView({ profile, position, total, accent, sectorRanking = [] }) {
   const p = profile;
   const u = p.unit;
   const color = u.color || accent;
@@ -8617,6 +8617,44 @@ function UnitIdView({ profile, position, total, accent }) {
         </section>
       )}
 
+      {sectorRanking.length > 0 && (
+        <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
+          <h3 style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
+            Ranking dos setores
+          </h3>
+          <p style={{ fontSize: T.caption, color: C.mutedLight, marginTop: 2 }}>
+            Mesma régua da unidade, aplicada dentro dela — aderência, tarefas e críticos por setor.
+          </p>
+          <div style={{ marginTop: 12 }}>
+            {sectorRanking.map((sp, i) => (
+              <div key={sp.sector} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 0', borderBottom: i < sectorRanking.length - 1 ? `1px solid ${C.border}` : 'none',
+              }}>
+                <RankBadge pos={i + 1} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{sp.sector}</p>
+                  <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                    {sp.checklists} checklists · aderência {sp.adherence == null ? '—' : `${sp.adherence}%`} ·
+                    {' '}tarefas {sp.taskRate}% · críticos {sp.criticalRate == null ? '—' : `${sp.criticalRate}%`}
+                  </p>
+                  <div style={{ height: 5, borderRadius: R.pill, background: C.bg, marginTop: 6, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', width: `${Math.max(2, Math.min(100, sp.index ?? 0))}%`,
+                      background: (sp.index ?? 0) >= 80 ? successBright : (sp.index ?? 0) >= 50 ? C.warning : C.critical,
+                      borderRadius: R.pill,
+                    }} />
+                  </div>
+                </div>
+                <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, flexShrink: 0 }}>
+                  {sp.index == null ? '—' : sp.index}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
         <h3 style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
           Conquistas da unidade
@@ -8661,10 +8699,22 @@ export function UnidadesView({ units, templates, completions, closures, currentU
     const idx = ranking.findIndex(r => r.unit.id === selected);
     const prof = ranking[idx];
     if (!prof) return null;
+    // Setores da unidade, com a MESMA régua da unidade (computeUnitProfile
+    // aceita escopo de setor). Sem componente novo, sem métrica paralela.
+    const sectorRanking = (prof.unit.sectors || [])
+      .map(sec => computeUnitProfile(completions, templates, closures, prof.unit, 30, sec))
+      .filter(sp => sp.checklists > 0 || sp.expected > 0)
+      .map(sp => ({
+        sector: sp.sector, index: sp.index, adherence: sp.adherence,
+        taskRate: sp.taskRate, criticalRate: sp.criticalRate, checklists: sp.checklists,
+      }))
+      .sort((a, b) => (b.index ?? -1) - (a.index ?? -1));
+
     return (
       <div>
         <BackBar onBack={() => setSelected(null)} label="Voltar para unidades" accent={accent} />
-        <UnitIdView profile={prof} position={idx + 1} total={ranking.length} accent={accent} />
+        <UnitIdView profile={prof} position={idx + 1} total={ranking.length} accent={accent}
+          sectorRanking={sectorRanking} />
       </div>
     );
   }
@@ -8727,17 +8777,55 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   const [recognizeFor, setRecognizeFor] = useState(null);
   const [toast, setToast] = useState('');
 
-  const team = useMemo(() => {
+  const units = useUnits();
+  const [groupBy, setGroupBy] = useState('unidade'); // 'unidade' | 'setor'
+
+  const people = useMemo(() => {
     const list = (users || []).filter(u => u.role === 'colaborador' && !u.suspended);
-    const scoped = canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
-    return scoped
-      .map(u => ({ user: u, profile: computeOperationalProfile(completions, u.id, u.name) }))
-      // Ordena pelo ÍNDICE, não por volume: quem faz mais não é necessariamente
-      // quem faz melhor, e ordenar por tarefas premiava só quem pegou mais turno.
-      .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
-        || b.profile.tasksDone - a.profile.tasksDone
-        || b.profile.checklists - a.profile.checklists);
-  }, [users, completions, currentUser, canSeeAllUnits]);
+    return canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
+  }, [users, canSeeAllUnits, currentUser]);
+
+  // Ordena pelo ÍNDICE, não por volume: quem faz mais não é necessariamente quem
+  // faz melhor, e ordenar por tarefas premiava só quem pegou mais turno.
+  /**
+   * `onlyActive` distingue os dois agrupamentos, e a diferença é de significado:
+   * a UNIDADE é um quadro de pessoas — quem não executou nada no período precisa
+   * aparecer, porque "quem não apareceu" é informação de gestão. O SETOR não é
+   * quadro nenhum: listar ali quem nunca trabalhou naquele setor seria ruído.
+   */
+  const rank = (scopeCompletions, candidates, onlyActive) => candidates
+    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name) }))
+    .filter(x => !onlyActive || x.profile.checklists > 0 || x.profile.tasksDone > 0)
+    .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
+      || b.profile.tasksDone - a.profile.tasksDone
+      || b.profile.checklists - a.profile.checklists);
+
+  /**
+   * Os grupos saem de ONDE a pessoa executou, não do `sectorId` cadastrado.
+   * Dois motivos: o cadastro raramente tem setor preenchido, e uma pessoa
+   * executa em mais de um setor no mesmo turno — o dado real está em
+   * `completion.sector`.
+   */
+  const groups = useMemo(() => {
+    const unitsInScope = canSeeAllUnits ? units : units.filter(u => u.id === currentUser?.unitId);
+    const out = [];
+    unitsInScope.forEach(u => {
+      const ofUnit = (completions || []).filter(c => c.unitId === u.id);
+      if (groupBy === 'unidade') {
+        const rows = rank(ofUnit, people.filter(pp => !pp.unitId || pp.unitId === u.id), false);
+        if (rows.length) out.push({ key: u.id, title: u.name, sub: 'todos os setores', color: u.color, rows });
+        return;
+      }
+      const seen = [...new Set(ofUnit.map(c => c.sector).filter(Boolean))];
+      const order = (u.sectors || []).filter(sec => seen.includes(sec)).concat(seen.filter(sec => !(u.sectors || []).includes(sec)));
+      order.forEach(sec => {
+        const ofSector = ofUnit.filter(c => c.sector === sec);
+        const rows = rank(ofSector, people.filter(pp => !pp.unitId || pp.unitId === u.id), true);
+        if (rows.length) out.push({ key: `${u.id}|${sec}`, title: sec, sub: u.name, color: u.color, rows });
+      });
+    });
+    return out;
+  }, [units, people, completions, groupBy, canSeeAllUnits, currentUser]);
 
   // Perfil do colaborador selecionado (visão do líder)
   if (selected) {
@@ -8767,19 +8855,31 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   return (
     <div style={{ padding: '14px 14px 28px' }}>
       <Eyebrow>Ranking da equipe · reconheça pelo desempenho</Eyebrow>
-      <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 12px' }}>
+      <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
         Ordenado pelo índice operacional: conclusão de tarefas (50%), críticos em dia (30%) e constância (20%).
       </p>
-      {team.length === 0 ? (
-        <EmptyState title="Nenhum colaborador" desc="Não há colaboradores ativos no seu escopo." />
-      ) : (
+
+      <div className="flex gap-2" style={{ marginBottom: 12 }}>
+        <PillButton active={groupBy === 'unidade'} accent={accent} onClick={() => setGroupBy('unidade')}>Por unidade</PillButton>
+        <PillButton active={groupBy === 'setor'} accent={accent} onClick={() => setGroupBy('setor')}>Por setor</PillButton>
+      </div>
+
+      {groups.length === 0 ? (
+        <EmptyState title="Nenhum colaborador" desc="Não há colaboradores ativos com execuções no seu escopo." />
+      ) : groups.map(g => (
+        <div key={g.key} style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: R.pill, background: g.color || accent, flexShrink: 0 }} />
+            <h3 className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{g.title}</h3>
+            <span style={{ fontSize: T.label, color: C.mutedLight }}>{g.sub} · {g.rows.length} pessoa{g.rows.length === 1 ? '' : 's'}</span>
+          </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {team.map(({ user, profile }, i) => (
+          {g.rows.map(({ user, profile }, i) => (
             <button key={user.id} onClick={() => { setSelected(user); }}
               aria-label={`Abrir ID operacional de ${user.name}`}
               style={{
                 width: '100%', textAlign: 'left', background: 'white', borderRadius: R.md,
-                border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`,
+                border: `1px solid ${C.border}`, borderLeft: `4px solid ${g.color || accent}`,
                 padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'block',
               }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -8791,8 +8891,9 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
                   <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
-                    Nível {profile.level} · {profile.checklists} checklists · {profile.tasksDone} tarefas
-                    {profile.streak ? ` · ${profile.streak} dia${profile.streak === 1 ? '' : 's'} seguidos` : ''}
+                    {profile.checklists === 0 && profile.tasksDone === 0
+                      ? 'Sem execuções no período'
+                      : `Nível ${profile.level} · ${profile.checklists} checklists · ${profile.tasksDone} tarefas${profile.streak ? ` · ${profile.streak} dia${profile.streak === 1 ? '' : 's'} seguidos` : ''}`}
                   </p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -8817,7 +8918,8 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
             </button>
           ))}
         </div>
-      )}
+        </div>
+      ))}
     </div>
   );
 }
