@@ -28,6 +28,39 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
 ];
 
+/**
+ * Espera a altura do documento parar de mudar.
+ *
+ * Por que existe: `cadastro @ mobile` falhava mais ou menos 1 em 3, sempre com
+ * o mesmo diff de 87px. Não era regressão — é o widget do Cloudflare Turnstile,
+ * que monta por volta de 1,3s depois do load e empurra 71px de iframe mais 16
+ * de margem. O `waitForTimeout(1200)` fixo caía bem em cima dessa fronteira,
+ * então o screenshot saía ora antes, ora depois do widget entrar.
+ *
+ * Esperar por um seletor do Turnstile resolveria só esta rota: qualquer coisa
+ * que monte tarde — outro iframe, um mapa, imagem sem dimensão declarada —
+ * reintroduz a mesma corrida noutra página. A altura do documento é o sintoma
+ * comum a todas, então é nela que se espera.
+ *
+ * Estabilizar não é garantia absoluta (um widget muito lento pode entrar depois
+ * da janela), mas transforma um timeout que ACERTA por sorte num que espera
+ * pelo evento real. Se estourar o teto, devolve a última medida e o teste segue
+ * — a mesma tolerância que o `settle` já tinha.
+ */
+async function waitForStableHeight(page, { interval = 200, samples = 4, timeout = 8000 } = {}) {
+  const deadline = Date.now() + timeout;
+  let last = -1;
+  let stable = 0;
+  while (Date.now() < deadline) {
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    stable = h === last ? stable + 1 : 0;
+    if (stable >= samples) return h;
+    last = h;
+    await page.waitForTimeout(interval);
+  }
+  return last;
+}
+
 const ROUTES = [
   { name: 'landing', path: '/' },
   { name: 'app-login', path: '/app', settle: 'select, a[href*="cadastro"]' },
@@ -61,6 +94,9 @@ for (const vp of VIEWPORTS) {
         await page.waitForSelector(route.settle, { timeout: 15000 }).catch(() => {});
         await page.waitForTimeout(800);
       }
+
+      // Último a entrar pode chegar depois de tudo acima (ver waitForStableHeight).
+      await waitForStableHeight(page);
 
       // Neutraliza o que muda sozinho e produziria falso positivo: data do dia
       // no cabeçalho e qualquer animação em curso.

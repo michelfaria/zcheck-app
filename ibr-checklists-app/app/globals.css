@@ -274,6 +274,35 @@ input, textarea, button, select {
      alto que a viewport prende o topo e deixa o último card inalcançável. */
   .zc-jit-aside { margin-top: 0; gap: 16px; }
 
+  /* ── Header vira TOPBAR ──────────────────────────────────────────────────
+     No celular o cabeçalho empilha três linhas — [logo da empresa + data |
+     usuário], [ações] e [seletor de loja] — e isso custava 133px de altura
+     ANTES de qualquer conteúdo, medidos em produção. Altura é o recurso
+     escasso do desktop, não largura.
+
+     A reorganização é 100% CSS: o DOM continua o mesmo, só muda de eixo. Por
+     isso o mobile fica intacto por construção, e não por revisão — o que
+     importa numa área que o CLAUDE.md registra ter quebrado o layout antes.
+
+     As faixas de trial/offline/sync continuam empilhadas acima: são estado de
+     sistema, e é onde o estudo pedia que ficassem. */
+  .zc-headerbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 56px;
+    padding: 0 24px !important;
+    background: #fff;
+  }
+  /* As margens que separavam as linhas empilhadas viram espaço morto na linha. */
+  .zc-headerbar > * { margin-bottom: 0 !important; }
+
+  /* `justify-between` num contêiner de largura automática não sobra espaço,
+     então os filhos ficam adjacentes — o `gap` é que os separa. */
+  .zc-hdr-info    { order: 1; flex: 0 0 auto; gap: 16px; }
+  .zc-hdr-units   { order: 2; flex: 1 1 auto; min-width: 0; }
+  .zc-hdr-actions { order: 3; flex: 0 0 auto; }
+
   /* O seletor de loja usava `flex: 1` por botão: com 3 lojas em 1677px cada
      botão virava 463px de largura — e o "Ver o J.I.T." ocupava 1409px.
      Juntos, empurravam o conteúdo 133px para baixo. Enquanto a topbar de

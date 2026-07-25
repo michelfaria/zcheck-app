@@ -6381,7 +6381,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
+export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -6433,10 +6433,10 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
         </a>
       </div>
 
-      <div className="px-4 pt-3 pb-2">
+      <div className="zc-headerbar px-4 pt-3 pb-2">
       {/* Linha de data: logo PRÓPRIO da empresa quando existe; senão, nada
           (sem fallback do ZCheck aqui — ele já está no cabeçalho). */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="zc-hdr-info flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {company?.logo_url && (
             <img src={company.logo_url} alt={company?.name || 'Empresa'} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
@@ -6454,7 +6454,7 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 mb-3">
+      <div className="zc-hdr-actions flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
         </div>
         <div className="flex items-center gap-3">
@@ -6495,7 +6495,7 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
       </div>
 
       {canSwitchUnit ? (
-        <div className="zc-unitpicker flex gap-2">
+        <div className="zc-unitpicker zc-hdr-units flex gap-2">
           {/* "Todas" existia no modelo (unitId nulo = visão consolidada) mas não
               tinha botão: uma vez escolhida uma loja, não havia como voltar à
               visão geral. */}
@@ -6528,7 +6528,7 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
           ))}
         </div>
       ) : (
-        <div className="flex items-center gap-2 py-2 px-3" style={{ borderRadius: 6, background: unit.color, color: C.bg }}>
+        <div className="zc-hdr-units flex items-center gap-2 py-2 px-3" style={{ borderRadius: 6, background: unit.color, color: C.bg }}>
           <Store size={16} />
           <span style={{ fontSize: 14, fontWeight: W.semibold }}>{unit.name}</span>
         </div>
