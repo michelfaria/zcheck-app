@@ -4394,14 +4394,78 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
   };
 
   if (editing) {
+    /**
+     * Mestre-detalhe no desktop (item 9 do estudo). Editar 5 checklists custava
+     * 15 navegações: tipo → setor → lista → editor, e a volta pela BackBar a
+     * cada troca. Com a lista ao lado, trocar de checklist é um clique e o
+     * efeito da edição aparece na contagem lateral na hora.
+     *
+     * A lista aqui é escrita de novo, não é o JSX de cartões do celular movido
+     * para cá: em 360px a régua é outra — linha densa, não cartão. Mover o
+     * código do mobile daria uma lista boa para o dedo e ruim para o painel, e
+     * ainda arriscaria o caminho que já funciona.
+     *
+     * `.zc-md-list` some abaixo de 1024px, então no celular o editor continua
+     * ocupando a tela inteira, exatamente como hoje.
+     */
+    const doTipo = templates
+      .filter(t => t.unitId === unit.id && (!checklistType || activeTypes.find(c => c.key === checklistType)?.match(t)))
+      .sort((a, b) => (a.sector || '').localeCompare(b.sector || '', 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'));
+    const porSetor = [];
+    for (const t of doTipo) {
+      const last = porSetor[porSetor.length - 1];
+      if (last && last.setor === t.sector) last.items.push(t);
+      else porSetor.push({ setor: t.sector, items: [t] });
+    }
+
     return (
-      <TemplateEditor
-        unit={unit} sector={activeSector}
-        template={editing === 'new' ? null : editing}
-        checklistType={checklistType}
-        allTemplates={templates}
-        onSave={handleSave} onCancel={() => setEditing(null)}
-      />
+      <div className="zc-md">
+        <aside className="zc-md-list" aria-label="Checklists desta unidade">
+          {porSetor.map(g => (
+            <div key={g.setor} style={{ marginBottom: 14 }}>
+              <p style={{
+                fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase',
+                letterSpacing: '0.06em', color: C.mutedLight, padding: '0 2px 6px',
+              }}>{g.setor}</p>
+              <div style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
+                {g.items.map((t, i) => {
+                  const ativo = editing !== 'new' && editing?.id === t.id;
+                  const label = t.name.includes(' — ') ? t.name.split(' — ')[0] : t.name;
+                  const criticos = t.items.filter(it => it.critical).length;
+                  return (
+                    <button key={t.id} onClick={() => { setSector(t.sector); setEditing(t); }}
+                      aria-current={ativo ? 'true' : undefined}
+                      style={{
+                        width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+                        padding: '10px 14px', fontFamily: 'inherit', display: 'block',
+                        borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+                        background: ativo ? C.bg : '#fff',
+                        boxShadow: ativo ? `inset 3px 0 0 ${unit.color}` : 'none',
+                      }}>
+                      <span style={{ display: 'block', fontSize: T.bodySm, fontWeight: ativo ? W.semibold : W.medium, color: C.ink }}>{label}</span>
+                      <span style={{ display: 'block', fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                        {t.items.length} {t.items.length === 1 ? 'item' : 'itens'}
+                        {criticos ? ` · ${criticos} ${criticos === 1 ? 'crítico' : 'críticos'}` : ''}
+                        {t.deadline ? ` · até ${t.deadline}` : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </aside>
+
+        <div className="zc-md-detail">
+          <TemplateEditor
+            unit={unit} sector={activeSector}
+            template={editing === 'new' ? null : editing}
+            checklistType={checklistType}
+            allTemplates={templates}
+            onSave={handleSave} onCancel={() => setEditing(null)}
+          />
+        </div>
+      </div>
     );
   }
 

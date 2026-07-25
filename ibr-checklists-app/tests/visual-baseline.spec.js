@@ -67,7 +67,10 @@ const ROUTES = [
   { name: 'entrar', path: '/entrar' },
   { name: 'ajuda', path: '/ajuda' },
   { name: 'comecar', path: '/comecar' },
-  { name: 'cadastro', path: '/cadastro' },
+  // O Turnstile monta tarde e reserva 71px + 16 de margem acima do botão. O
+  // input de resposta é criado pelo widget tanto com a site key de teste (dev,
+  // sem iframe) quanto com a real (produção), então serve de sinal nos dois.
+  { name: 'cadastro', path: '/cadastro', settle: 'input[name="cf-turnstile-response"]' },
   { name: 'lista', path: '/lista' },
   { name: 'termos', path: '/termos' },
   { name: 'privacidade', path: '/privacidade' },
@@ -87,9 +90,10 @@ for (const vp of VIEWPORTS) {
       // Deixa o React hidratar e pintar antes de fotografar.
       await page.waitForTimeout(1200);
 
-      // /app busca a lista de usuários no Supabase antes de montar o seletor de
-      // login. Sem esperar por isso, o screenshot pega ora o estado de carga,
-      // ora o seletor pronto — e o baseline vira ruído em vez de medida.
+      // Rotas que dependem de algo assíncrono declaram em `settle` o elemento
+      // que só existe depois: /app busca os usuários no Supabase antes de montar
+      // o seletor de login; /cadastro espera o Turnstile. Sem isso o screenshot
+      // pega ora o estado de carga, ora o pronto — baseline vira ruído.
       if (route.settle) {
         await page.waitForSelector(route.settle, { timeout: 15000 }).catch(() => {});
         await page.waitForTimeout(800);

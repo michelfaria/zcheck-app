@@ -192,6 +192,10 @@ input, textarea, button, select {
 
 .zc-sidenav { display: none; }
 
+/* No celular o mestre-detalhe não existe: o editor ocupa a tela inteira, como
+   sempre ocupou. A lista lateral só faz sentido onde há largura para ela. */
+.zc-md-list { display: none; }
+
 /* J.I.T. como PÁGINA (menu lateral > Operação > J.I.T.). Mesmo
    conteúdo do pop-up, sem overlay: o gestor pedia poder voltar nele quando
    quisesse — antes, fechado o pop-up, ele sumia até o dia seguinte.
@@ -273,6 +277,31 @@ input, textarea, button, select {
   /* Sem `sticky`: a coluna passa de 1200px de altura e um elemento sticky mais
      alto que a viewport prende o topo e deixa o último card inalcançável. */
   .zc-jit-aside { margin-top: 0; gap: 16px; }
+
+  /* ── Gerenciar: mestre-detalhe ───────────────────────────────────────────
+     Editar 5 checklists custava 15 navegações — tipo → setor → lista → editor,
+     e a volta pela BackBar a cada troca. Com a lista fixa ao lado, trocar é um
+     clique e a contagem lateral ("12 itens · 3 críticos") atualiza à vista.
+
+     360px de lista sai da conta do estudo: rail 240 + 24 + lista 360 + 24 +
+     editor 480 = 1128, que é por que o breakpoint é 1024 e não 1280. */
+  .zc-md {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+    padding: var(--zc-pad-view);
+  }
+  .zc-md-list {
+    display: block;   /* volta: o default global esconde no celular */
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+  .zc-md-detail { min-width: 0; }
+  /* O editor já traz o próprio padding de view; dentro do painel ele duplicaria. */
+  .zc-md-detail > .zc-view { padding: 0; }
 
   /* ── Header vira TOPBAR ──────────────────────────────────────────────────
      No celular o cabeçalho empilha três linhas — [logo da empresa + data |
