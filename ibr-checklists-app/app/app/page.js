@@ -5592,6 +5592,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
   const [approvalUnits, setApprovalUnits] = useState([]); // array — gerência multi-select
   const [approvalSector, setApprovalSector] = useState(null);
   const [processingId, setProcessingId] = useState(null);
+  const sectorRows = useSectors(); // setores reais da empresa, para a aprovação
 
   const gestaoCount = users.filter(u => u.role === 'gestao').length;
 
@@ -5785,7 +5786,25 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     const req = reviewingRequest;
     const unitObj = units.find(u => u.id === req.unit_id);
     const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
-    const showSector = !isAlteracao && approvalRole === 'colaborador' && req.unit_id === 'ibr1';
+    // Setores da loja escolhida NESTE modal. Antes a condição era
+    // `req.unit_id === 'ibr1'`: chumbada no IBR, então nenhuma outra empresa via
+    // o seletor — e, como o cadastro passou a nascer sem loja (unit_id nulo),
+    // nem o IBR via. O vínculo de setor só dava para fazer depois, editando o
+    // usuário já aprovado. Mesma lógica do UserEditor, agora também aqui.
+    const approvalSectorGroups = !['colaborador', 'lideranca'].includes(approvalRole) || !approvalUnit
+      ? []
+      : approvalUnit === 'ibr1'
+        ? [
+            { id: null, label: 'Todos os setores', desc: 'Vê checklists de toda a loja' },
+            { id: 'salao', label: 'Salão', desc: 'Salão interno, Jardim, Bar e Caixa' },
+            { id: 'cozinha', label: 'Cozinha', desc: 'Brunch, Produção, Pizza e Bowls' },
+          ]
+        : [
+            { id: null, label: 'Todos os setores', desc: 'Vê checklists de toda a loja' },
+            ...sectorRows
+              .filter(s => (s.unit_id || s.unitId) === approvalUnit)
+              .map(s => ({ id: s.id, label: s.name, desc: `Vê apenas os checklists de ${s.name}` })),
+          ];
 
     return (
       <div className="zc-view space-y-3" style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom, 0px))" }}>
@@ -5911,18 +5930,22 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
               </>
             )}
 
-            {/* Setor — para colaborador e liderança na IBR1 */}
-            {['colaborador','lideranca'].includes(approvalRole) && approvalUnit === 'ibr1' && (
+            {/* Setor — colaborador e liderança, em QUALQUER empresa. Só some
+                quando a loja não tem setor cadastrado (sobraria só "Todos"). */}
+            {approvalSectorGroups.length > 1 && (
               <>
                 <Eyebrow>Setor</Eyebrow>
                 <div className="space-y-2">
-                  {[{ id: null, label: 'Todos os setores' }, { id: 'salao', label: 'Salão' }, { id: 'cozinha', label: 'Cozinha' }].map(sg => {
-                    const unitColor = units.find(u => u.id === 'ibr1')?.color;
+                  {approvalSectorGroups.map(sg => {
+                    const unitColor = units.find(u => u.id === approvalUnit)?.color || C.ink;
                     return (
                       <button key={String(sg.id)} onClick={() => setApprovalSector(sg.id)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                         <Ticket accent={approvalSector === sg.id ? unitColor : C.border}>
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-display" style={{ fontWeight: W.semibold, color: approvalSector === sg.id ? unitColor : C.ink }}>{sg.label}</p>
+                            <div>
+                              <p className="font-display" style={{ fontWeight: W.semibold, color: approvalSector === sg.id ? unitColor : C.ink }}>{sg.label}</p>
+                              <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{sg.desc}</p>
+                            </div>
                             {approvalSector === sg.id ? <CheckCircle2 size={20} color={unitColor} /> : <Circle size={20} color={C.mutedLight} />}
                           </div>
                         </Ticket>
