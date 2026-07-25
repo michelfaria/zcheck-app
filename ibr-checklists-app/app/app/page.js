@@ -4159,6 +4159,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
   const [checklistType, setChecklistType] = useState(null);
   const [sector, setSector] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [mdQuery, setMdQuery] = useState('');   // busca da lista lateral (desktop)
   const [showFolgas, setShowFolgas] = useState(false);
 
   // Novo checklist form state
@@ -4408,9 +4409,16 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
      * `.zc-md-list` some abaixo de 1024px, então no celular o editor continua
      * ocupando a tela inteira, exatamente como hoje.
      */
-    const doTipo = templates
+    // Busca por nome OU setor, sem acento e sem caixa: quem procura "salao"
+    // deve achar "Salão", e quem lembra do setor mas não do nome também acha.
+    const norm = v => (v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const q = norm(mdQuery.trim());
+    const doTipoTodos = templates
       .filter(t => t.unitId === unit.id && (!checklistType || activeTypes.find(c => c.key === checklistType)?.match(t)))
       .sort((a, b) => (a.sector || '').localeCompare(b.sector || '', 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'));
+    const doTipo = q
+      ? doTipoTodos.filter(t => norm(t.name).includes(q) || norm(t.sector).includes(q))
+      : doTipoTodos;
     const porSetor = [];
     for (const t of doTipo) {
       const last = porSetor[porSetor.length - 1];
@@ -4421,6 +4429,29 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
     return (
       <div className="zc-md">
         <aside className="zc-md-list" aria-label="Checklists desta unidade">
+          {/* A busca só aparece quando há lista o bastante para justificá-la —
+              com 4 checklists o campo é mais cromo que ajuda. */}
+          {doTipoTodos.length >= 8 && (
+            <div className="zc-md-search">
+              <label htmlFor="zc-md-q" className="sr-only">Buscar checklist</label>
+              <input
+                id="zc-md-q" type="search" value={mdQuery}
+                onChange={e => setMdQuery(e.target.value)}
+                placeholder={`Buscar entre ${doTipoTodos.length} checklists…`}
+                style={{
+                  width: '100%', padding: '9px 12px', fontSize: T.bodySm, color: C.ink,
+                  background: '#fff', border: `1px solid ${C.borderStrong}`, borderRadius: R.sm,
+                  fontFamily: 'inherit',
+                }} />
+              {q && (
+                <p style={{ fontSize: T.label, color: C.mutedLight, margin: '6px 2px 0' }}>
+                  {doTipo.length === 0
+                    ? 'Nenhum checklist com esse termo'
+                    : `${doTipo.length} de ${doTipoTodos.length}`}
+                </p>
+              )}
+            </div>
+          )}
           {porSetor.map(g => (
             <div key={g.setor} style={{ marginBottom: 14 }}>
               <p style={{
@@ -4462,7 +4493,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
             template={editing === 'new' ? null : editing}
             checklistType={checklistType}
             allTemplates={templates}
-            onSave={handleSave} onCancel={() => setEditing(null)}
+            onSave={handleSave} onCancel={() => { setMdQuery(''); setEditing(null); }}
           />
         </div>
       </div>

@@ -300,6 +300,16 @@ input, textarea, button, select {
     overflow-y: auto;
   }
   .zc-md-detail { min-width: 0; }
+  /* A busca gruda no topo da coluna: rolar 25 checklists e ter que voltar ao
+     topo para filtrar seria trocar um problema por outro. */
+  .zc-md-search {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--zc-canvas);
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+  }
   /* O editor já traz o próprio padding de view; dentro do painel ele duplicaria. */
   .zc-md-detail > .zc-view { padding: 0; }
 
