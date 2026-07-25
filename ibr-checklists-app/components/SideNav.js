@@ -33,11 +33,15 @@ export const NAV_ITEMS = [
 ];
 
 /**
- * Ordem histórica da barra inferior. Mantida à parte da ordem do rail porque
- * mudar a posição dos ícones no celular é mudar memória muscular de quem usa o
- * app de pé, no meio do turno.
+ * Ordem da barra inferior — deliberadamente diferente da ordem do rail.
+ *
+ * `usuarios` NÃO está aqui: no celular ele passou a viver dentro de Gerenciar,
+ * como sub-aba. Isso abriu o lugar que o J.I.T. ocupa agora — antes o acesso
+ * a ele era um botão de largura inteira repetido no topo de TODAS as abas.
+ * Seis é o teto real: com 390px de tela cada alvo fica com 65px, e "RELATÓRIOS"
+ * já ocupa 61px a 9px de fonte.
  */
-export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'relatorios', 'gerenciar', 'usuarios', 'id', 'equipe'];
+export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'jit', 'relatorios', 'gerenciar', 'id', 'equipe'];
 
 /**
  * Rail lateral do desktop (>= BP.desktop). Quem decide se ele ou a BottomNav
@@ -52,7 +56,7 @@ export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'relatorios', 'gerenciar'
  * pelo gestor e é cor não medida; o item ativo usa `greenOnDark` (6.66:1).
  */
 export default function SideNav({
-  tab, setTab, allowedTabs, pendingCount = 0, unitName, dateLabel,
+  tab, setTab, allowedTabs, pendingCount = 0, jitSignal = false, unitName, dateLabel,
 }) {
   const items = NAV_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
@@ -98,6 +102,7 @@ export default function SideNav({
               const Icon = it.icon;
               const active = tab === it.id;
               const showBadge = it.id === 'usuarios' && pendingCount > 0;
+              const showDot = it.id === 'jit' && jitSignal;
               return (
                 <button
                   key={it.id}
@@ -106,7 +111,7 @@ export default function SideNav({
                   // O nome acessível vive no BOTÃO. Num <span> genérico o
                   // aria-label é descartado pela spec ARIA, e o leitor de tela
                   // anunciaria só "Usuários 3", sem dizer o que o 3 é.
-                  aria-label={showBadge ? `${it.label}, ${pendingCount} solicitações pendentes` : undefined}
+                  aria-label={showBadge ? `${it.label}, ${pendingCount} solicitações pendentes` : (showDot ? `${it.label}, há novidades` : undefined)}
                   style={{
                     position: 'relative', display: 'flex', alignItems: 'center', gap: 11,
                     width: '100%', padding: '9px 18px', border: 'none', textAlign: 'left',
@@ -121,6 +126,11 @@ export default function SideNav({
                   }} />}
                   <Icon size={18} color="currentColor" aria-hidden="true" style={{ flexShrink: 0 }} />
                   {it.label}
+                  {showDot && (
+                    <span aria-hidden="true" style={{
+                      width: 8, height: 8, borderRadius: R.pill, background: C.warning, flexShrink: 0,
+                    }} />
+                  )}
                   {showBadge && (
                     <span aria-hidden="true" style={{
                       marginLeft: 'auto', background: C.warning, color: '#fff', fontSize: T.label,

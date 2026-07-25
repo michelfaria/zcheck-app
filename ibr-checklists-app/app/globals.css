@@ -279,11 +279,6 @@ input, textarea, button, select {
      Juntos, empurravam o conteúdo 133px para baixo. Enquanto a topbar de
      verdade não existe (fase 7), pelo menos param de esticar. */
   .zc-unitpicker > button { flex: 0 1 auto !important; min-width: 120px; }
-  /* O botão "Ver o J.I.T." some no desktop: o rail lateral já tem o
-     destino em Operação, e repetir a mesma porta em toda aba era ruído no topo
-     de todas as telas. No CELULAR ele fica — lá não existe rail, e sem ele o
-     J.I.T. só apareceria no pop-up automático da abertura do dia. */
-  .zc-jit-cta { display: none !important; }
 
   /* ── Overlays: bottom sheet deixa de existir no desktop ──────────────────
      Uma gaveta de 480px colada na borda de baixo de um monitor de 1440px é
@@ -343,6 +338,10 @@ input, textarea, button, select {
   }
   /* Os 4 StatCards eram 2×2 mesmo em 1440px. */
   .zc-rep-results .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* Caminhos que só existem no celular. No desktop o rail lateral já leva
+     ao destino, e um segundo caminho para o mesmo lugar é ruído. */
+  .zc-only-mobile { display: none !important; }
 
   /* A faixa do logo ZCheck é redundante quando o rail já o exibe.
      `!important` É necessário aqui: o div tem `display: flex` inline. */

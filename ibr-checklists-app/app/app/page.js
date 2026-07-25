@@ -4072,7 +4072,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   );
 }
 
-export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, usersPanel, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [showImport, setShowImport] = useState(false);
   const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
 
@@ -4487,9 +4487,13 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
           { id: 'editar', label: 'Checklists' },
           { id: 'novo', label: '+ Novo' },
           { id: 'estrutura', label: 'Estrutura' },
+          // Só no celular: lá a barra inferior não cabia Usuários E J.I.T., e o
+          // J.I.T. é de uso diário. No desktop o rail tem os dois, então esta
+          // sub-aba seria um segundo caminho para o mesmo lugar.
+          ...(usersPanel ? [{ id: 'usuarios', label: 'Usuários', mobileOnly: true }] : []),
         ].map(tab => (
           <button key={tab.id} onClick={() => setGerenciarTab(tab.id)}
-            className="flex-1 py-3"
+            className={`flex-1 py-3${tab.mobileOnly ? ' zc-only-mobile' : ''}`}
             style={{ background: 'none', border: 'none', fontWeight: W.semibold, fontSize: 12,
               textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer',
               color: gerenciarTab === tab.id ? unit.color : C.muted,
@@ -4942,6 +4946,10 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       )}
 
       {/* ── ABA: ESTRUTURA ── */}
+      {gerenciarTab === 'usuarios' && usersPanel && (
+        <div className="zc-only-mobile">{usersPanel}</div>
+      )}
+
       {gerenciarTab === 'estrutura' && (
         <EstruturView unit={unit} allUnits={allUnits} checklistTypes={checklistTypes} company={company}
           onSaveUnit={onSaveUnit} onSaveSector={onSaveSector} onSaveChecklistType={onSaveChecklistType}
@@ -6459,7 +6467,7 @@ function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, o
   );
 }
 
-function BottomNav({ tab, setTab, accent, allowedTabs }) {
+function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false }) {
   const ALL_ITEMS = BOTTOM_NAV_ORDER.map(id => NAV_ITEMS.find(it => it.id === id)).filter(Boolean);
   const items = ALL_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
@@ -6476,10 +6484,19 @@ function BottomNav({ tab, setTab, accent, allowedTabs }) {
           <button
             key={it.id} onClick={() => setTab(it.id)}
             aria-current={active ? 'page' : undefined}
+            aria-label={it.id === 'jit' && jitSignal ? `${it.label}, há novidades` : undefined}
             className="flex-1 flex flex-col items-center gap-1"
             style={{ background: 'none', border: 'none', padding: '10px 4px 12px', minHeight: 56 }}
           >
-            <Icon size={22} color={active ? accent : C.mutedLight} />
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <Icon size={22} color={active ? accent : C.mutedLight} />
+              {it.id === 'jit' && jitSignal && (
+                <span aria-hidden="true" style={{
+                  position: 'absolute', top: -1, right: -3, width: 8, height: 8,
+                  borderRadius: R.pill, background: C.warning, border: '1.5px solid white',
+                }} />
+              )}
+            </span>
             <span style={{ fontSize: 9, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? accent : C.mutedLight }}>
               {it.label}
             </span>
@@ -9740,6 +9757,7 @@ function AppInner() {
       <SideNav
         tab={activeTab} setTab={setTab} allowedTabs={allowedTabs}
         pendingCount={pendingRequestsCount}
+        jitSignal={MANAGER_ROLES.includes(currentUser.role) && jitHasSignal && !jitSeenToday}
         unitName={unit?.name} dateLabel={sideNavDate}
       />
 
@@ -9869,22 +9887,6 @@ function AppInner() {
 
 
       <main id="zc-main-content" tabIndex={-1} className="zc-content" style={{ flex: 1 }} key={unitId}>
-        {MANAGER_ROLES.includes(currentUser.role) && !showJit && (
-          <div style={{ padding: '10px 14px 0' }}>
-            {/* Badge = há sinal que você ainda não viu. É como sinal de meio de
-                dia chega ao gestor sem takeover (anti-fadiga). */}
-            {/* Destaque deliberado (pedido 18/07): é a porta de entrada do dia do
-                gestor — botão cheio, não mais um contorno discreto. */}
-            <button onClick={openJit} className="font-display zc-jit-cta"
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 12px', borderRadius: R.md, border: 'none', background: C.ink, color: 'white', fontWeight: W.semibold, fontSize: T.bodySm, cursor: 'pointer', boxShadow: '0 2px 10px rgba(8,20,30,0.18)' }}>
-              <BarChart3 size={17} color="white" />
-              Ver o J.I.T.
-              {jitHasSignal && !jitSeenToday && (
-                <span aria-label="Há novidades no J.I.T." style={{ width: 9, height: 9, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
-              )}
-            </button>
-          </div>
-        )}
         {activeTab === 'executar' && (
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
@@ -9931,6 +9933,14 @@ function AppInner() {
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
             closures={closures} onSaveClosures={saveClosures} canSeeAllUnits={canSwitchUnit}
+            /* Usuários vive DENTRO de Gerenciar no celular: a barra inferior não
+               cabia Usuários e J.I.T. juntos, e o J.I.T. é de uso diário. No
+               desktop o rail continua tendo os dois — a sub-aba some por CSS. */
+            usersPanel={allowedTabs.includes('usuarios') ? (
+              <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser}
+                onGenerateTestData={generateTestData} generatingTestData={generatingTestData}
+                testDataResult={testDataResult} />
+            ) : null}
             checklistTypes={dynamicTypes} activeTypes={ACTIVE_TYPES} allUnits={ACTIVE_UNITS} company={company}
             onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
@@ -9950,7 +9960,8 @@ function AppInner() {
         )}
       </main>
 
-      <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs} />
+      <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs}
+        jitSignal={MANAGER_ROLES.includes(currentUser.role) && jitHasSignal && !jitSeenToday} />
       </div>
     </div>
     </SectorsContext.Provider>
