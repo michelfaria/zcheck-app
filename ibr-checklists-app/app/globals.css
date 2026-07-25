@@ -255,6 +255,10 @@ input, textarea, button, select {
      ponto: interrupção vira status permanente. Mostrar os dois é o oposto. */
   .zc-requests-popup { display: none !important; }
 
+  /* Métricas e conquistas do ID Operacional da unidade: 2×2 é o certo no
+     celular e desperdício em 1440px. */
+  .zc-unit-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
   /* Briefing em duas colunas: uma coluna de 720px num monitor largo deixava
      metade da tela em branco, e branco desse tamanho não lê como respiro — lê
      como "falta coisa". A esquerda continua com medida de leitura; a direita

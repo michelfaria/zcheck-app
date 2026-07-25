@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Sunrise,
+  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Sunrise, Store,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 
@@ -21,6 +21,9 @@ export const NAV_ITEMS = [
   // O briefing também é destino, não só pop-up de abertura: fechado o pop-up,
   // ele sumia até o dia seguinte. Só papéis de gestão o recebem (MANAGER_ROLES).
   { id: 'briefing', label: 'Briefing do dia', icon: Sunrise, group: 'Operação' },
+  // Ranking das unidades. Cada loja tem seu ID Operacional, como o colaborador
+  // tem o dele em "Meu ID" — mesma ideia de identidade, outra escala.
+  { id: 'unidades', label: 'Unidades', icon: Store, group: 'Operação' },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart3, group: 'Análise' },
   { id: 'equipe', label: 'Equipe', icon: Star, group: 'Pessoas' },
   { id: 'id', label: 'Meu ID', icon: Award, group: 'Pessoas' },

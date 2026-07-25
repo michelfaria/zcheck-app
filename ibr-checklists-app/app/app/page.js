@@ -124,9 +124,9 @@ const ROLE_COLORS = {
 // Which bottom-nav tabs each role can see, in order.
 const ROLE_TABS = {
   colaborador: ['executar', 'painel', 'id'],
-  lideranca: ['executar', 'painel', 'briefing', 'relatorios', 'id', 'equipe'],
-  gerencia: ['executar', 'painel', 'briefing', 'relatorios', 'gerenciar', 'equipe'],
-  gestao: ['executar', 'painel', 'briefing', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
+  lideranca: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'id', 'equipe'],
+  gerencia: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'gerenciar', 'equipe'],
+  gestao: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
 };
 
 // Papéis de gestão que recebem o Daily Briefing (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
@@ -7977,6 +7977,119 @@ function computeOperationalProfile(completions, userId, userName) {
   };
 }
 
+/**
+ * ID Operacional da UNIDADE — o análogo de `computeOperationalProfile`, que faz
+ * o mesmo para a pessoa.
+ *
+ * A diferença que importa: a pessoa não tem "esperado". A unidade tem — dá para
+ * saber quantos checklists eram previstos num dia (`countApplicableTemplatesOnDate`,
+ * descontando folgas). Por isso ADERÊNCIA é a métrica-mãe da unidade, e não a
+ * simples contagem de execuções: uma loja que fez 40 de 40 vale mais que outra
+ * que fez 60 de 90.
+ *
+ * `days` é a janela de análise (30 por padrão).
+ */
+function computeUnitProfile(completions, templates, closures, unit, days = 30) {
+  const uid = unit.id;
+  const mine = (completions || [])
+    .filter(c => c.unitId === uid)
+    .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
+
+  // Janela de datas, do mais antigo ao mais recente.
+  const dates = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  // Aderência: concluídos ÷ previstos, dia a dia, ignorando dias de folga.
+  let expected = 0, doneChecklists = 0;
+  const daily = dates.map(ds => {
+    const closed = isUnitClosed(closures, uid, ds);
+    const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, { unitId: uid }, ds);
+    const done = mine.filter(c => c.date === ds).length;
+    expected += exp; doneChecklists += done;
+    return { date: ds, expected: exp, done, closed, rate: exp ? Math.round((done / exp) * 100) : null };
+  });
+  const adherence = expected ? Math.round((doneChecklists / expected) * 100) : null;
+
+  // Qualidade da execução: tarefas e críticos.
+  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0, evidences = 0;
+  const operators = new Set();
+  mine.forEach(c => {
+    if (c.operatorUserId || c.operatorName) operators.add(c.operatorUserId || c.operatorName);
+    (c.items || []).forEach(i => {
+      totalItems++; if (i.done) doneItems++;
+      if (i.critical) { critTotal++; if (i.done) critDone++; }
+      if (i.hasPhoto) evidences++;
+    });
+  });
+  const taskRate = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
+  const criticalRate = critTotal ? Math.round((critDone / critTotal) * 100) : null;
+  const criticalPending = critTotal - critDone;
+
+  const activeDays = [...new Set(mine.map(c => c.date).filter(Boolean))];
+  const streak = currentStreak(new Set(activeDays));
+  const bestStreak = longestStreak(activeDays);
+
+  // Evolução por semana (últimas 6 com atividade).
+  const wkMap = new Map();
+  mine.forEach(c => {
+    const wk = weekStartStr(c.date);
+    if (!wkMap.has(wk)) wkMap.set(wk, { week: wk, total: 0, done: 0, checklists: 0 });
+    const w = wkMap.get(wk); w.checklists++;
+    (c.items || []).forEach(i => { w.total++; if (i.done) w.done++; });
+  });
+  const weekly = [...wkMap.values()]
+    .map(w => ({ ...w, rate: w.total ? Math.round((w.done / w.total) * 100) : 0 }))
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .slice(-6);
+
+  /**
+   * Índice operacional — número único que ordena o ranking.
+   * Pesos explícitos de propósito: aderência é o que a gestão cobra (fez o que
+   * era para fazer), qualidade vem depois, e crítico pesa porque é risco.
+   * Se um dia mudar, muda AQUI e o ranking inteiro acompanha.
+   */
+  const parts = [
+    { key: 'aderencia', label: 'Aderência', weight: 0.5, value: adherence },
+    { key: 'tarefas', label: 'Tarefas concluídas', weight: 0.3, value: taskRate },
+    { key: 'criticos', label: 'Críticos em dia', weight: 0.2, value: criticalRate },
+  ];
+  const usable = parts.filter(x => x.value != null);
+  const wsum = usable.reduce((a, x) => a + x.weight, 0);
+  const index = usable.length ? Math.round(usable.reduce((a, x) => a + x.value * x.weight, 0) / wsum) : null;
+
+  // Nível: mesma ideia do colaborador, régua maior — uma loja acumula muito
+  // mais checklists que uma pessoa, então 15 por nível não faria sentido.
+  const perLevel = 60;
+  const level = Math.floor(mine.length / perLevel) + 1;
+  const intoLevel = mine.length % perLevel;
+
+  const achievements = [
+    { id: 'rotina', title: 'Rotina de pé', desc: '10 checklists concluídos', earned: mine.length >= 10 },
+    { id: 'cem', title: 'Cem rodadas', desc: '100 checklists concluídos', earned: mine.length >= 100 },
+    { id: 'streak7', title: 'Sete dias', desc: '7 dias seguidos em operação', earned: bestStreak >= 7 },
+    { id: 'aderencia90', title: 'Aderência alta', desc: 'Aderência ≥ 90% no período', earned: adherence != null && adherence >= 90 },
+    { id: 'criticos95', title: 'Risco sob controle', desc: 'Críticos em dia ≥ 95%', earned: criticalRate != null && criticalRate >= 95 },
+    { id: 'semana', title: 'Semana perfeita', desc: 'Uma semana inteira a 100%', earned: weekly.some(w => w.rate === 100 && w.checklists >= 3) },
+    { id: 'evidencia', title: 'Prova em dia', desc: '50+ evidências registradas', earned: evidences >= 50 },
+    { id: 'equipe', title: 'Time inteiro', desc: '5+ pessoas executando', earned: operators.size >= 5 },
+  ];
+
+  return {
+    unit, index, parts,
+    adherence, taskRate, criticalRate, criticalPending,
+    checklists: mine.length, expected, evidences,
+    operators: operators.size,
+    streak, bestStreak, activeDays: activeDays.length,
+    level, intoLevel, perLevel,
+    weekly, daily, achievements,
+    recent: mine.slice(-8).reverse(),
+    windowDays: days,
+  };
+}
+
 export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
   const p = useMemo(
@@ -8303,6 +8416,254 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
           {sending ? 'Enviando…' : 'Enviar reconhecimento'}
         </button>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------- Unidades: ranking + ID ------------------------ */
+
+// Medalha de posição sem emoji: emoji como DADO em painel de gestão custa mais
+// credibilidade que qualquer erro de layout (ver docs/REVISAO_DESKTOP_v1.md §8).
+function RankBadge({ pos }) {
+  const tone = pos === 1 ? C.ink : pos === 2 ? C.muted : C.mutedLight;
+  return (
+    <span className="font-display" aria-hidden="true" style={{
+      width: 28, height: 28, borderRadius: R.pill, flexShrink: 0,
+      display: 'grid', placeItems: 'center',
+      background: pos <= 3 ? `${tone}14` : 'transparent',
+      border: `1px solid ${pos <= 3 ? `${tone}40` : C.border}`,
+      color: tone, fontSize: T.caption, fontWeight: W.bold,
+    }}>{pos}</span>
+  );
+}
+
+function IndexRing({ value, accent, size = 84 }) {
+  const v = Math.max(0, Math.min(100, value ?? 0));
+  const r = (size - 10) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.border} strokeWidth="8" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={accent} strokeWidth="8"
+          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - v / 100)} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+        <span className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink }}>
+          {value == null ? '—' : value}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ID Operacional da UNIDADE. Mesmo conceito da carteirinha do colaborador
+ * (`OperationalIdView`), aplicado à loja: identidade, nível, índice, o que
+ * compõe o índice, evolução e conquistas.
+ */
+function UnitIdView({ profile, position, total, accent }) {
+  const p = profile;
+  const u = p.unit;
+  const color = u.color || accent;
+
+  const Metric = ({ label, value, sub, tone }) => (
+    <div style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 14 }}>
+      <div style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>{label}</div>
+      <div className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: tone || C.ink, marginTop: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+
+  const maxWk = Math.max(100, ...p.weekly.map(w => w.rate));
+
+  return (
+    <div className="zc-view space-y-4">
+      {/* Carteirinha */}
+      <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
+        <div style={{ background: color, color: '#fff', padding: '18px 20px' }}>
+          <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.85 }}>
+            ID Operacional da unidade
+          </p>
+          <p className="font-display" style={{ fontSize: 'calc(24px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 4 }}>{u.name}</p>
+          <p style={{ fontSize: T.caption, opacity: 0.9, marginTop: 2 }}>
+            Nível {p.level} · {position}º de {total} no ranking · últimos {p.windowDays} dias
+          </p>
+        </div>
+
+        <div style={{ padding: 20, display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <IndexRing value={p.index} accent={color} />
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
+              Índice operacional
+            </p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              Média ponderada do que a gestão cobra: aderência pesa 50%, conclusão de
+              tarefas 30% e críticos em dia 20%.
+            </p>
+            <div style={{ marginTop: 10 }}>
+              {p.parts.map(part => (
+                <div key={part.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                  <span style={{ fontSize: T.caption, color: C.ink, flex: 1 }}>{part.label}</span>
+                  <span style={{ fontSize: T.label, color: C.mutedLight }}>{Math.round(part.weight * 100)}%</span>
+                  <span className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, width: 44, textAlign: 'right' }}>
+                    {part.value == null ? '—' : `${part.value}%`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Progresso de nível */}
+        <div style={{ padding: '0 20px 18px' }}>
+          <div style={{ height: 6, borderRadius: R.pill, background: C.bg, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+            <div style={{ height: '100%', width: `${(p.intoLevel / p.perLevel) * 100}%`, background: color, borderRadius: R.pill }} />
+          </div>
+          <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 6 }}>
+            {p.intoLevel} de {p.perLevel} checklists para o nível {p.level + 1}
+          </p>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-2 zc-unit-metrics">
+        <Metric label="Aderência" value={p.adherence == null ? '—' : `${p.adherence}%`}
+          sub={`${p.checklists} de ${p.expected} previstos`}
+          tone={p.adherence == null ? C.ink : p.adherence >= 80 ? C.success : p.adherence >= 50 ? C.warning : C.critical} />
+        <Metric label="Tarefas concluídas" value={`${p.taskRate}%`} sub={`${p.evidences} evidências`} />
+        {/* Tonaliza pela TAXA, não pela contagem de pendentes: 93% em vermelho
+            só porque existem 25 pendentes num universo de 350 lê como alarme
+            onde o número é bom. A contagem fica no subtítulo, que é o lugar
+            dela. */}
+        <Metric label="Críticos em dia" value={p.criticalRate == null ? '—' : `${p.criticalRate}%`}
+          sub={p.criticalPending ? `${p.criticalPending} pendente(s)` : 'nenhum pendente'}
+          tone={p.criticalRate == null ? C.ink : p.criticalRate >= 95 ? C.success : p.criticalRate >= 80 ? C.warning : C.critical} />
+        <Metric label="Sequência" value={`${p.streak} dia${p.streak === 1 ? '' : 's'}`}
+          sub={`recorde de ${p.bestStreak} · ${p.operators} pessoa(s)`} />
+      </div>
+
+      {p.weekly.length > 0 && (
+        <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
+          <h3 style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
+            Evolução · últimas semanas
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 90, marginTop: 12 }}>
+            {p.weekly.map(w => (
+              <div key={w.week} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span className="font-display" style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted }}>{w.rate}%</span>
+                <div style={{ width: '100%', height: 52, display: 'flex', alignItems: 'flex-end' }}>
+                  <div style={{ width: '100%', height: `${Math.max(4, (w.rate / maxWk) * 100)}%`, background: color, borderRadius: '3px 3px 0 0' }} />
+                </div>
+                <span style={{ fontSize: T.label, color: C.mutedLight }}>
+                  {new Date(`${w.week}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
+        <h3 style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
+          Conquistas da unidade
+        </h3>
+        <div className="grid grid-cols-2 gap-2 zc-unit-metrics" style={{ marginTop: 12 }}>
+          {p.achievements.map(a => (
+            <div key={a.id} style={{
+              border: `1px solid ${a.earned ? `${color}40` : C.border}`,
+              background: a.earned ? `${color}0D` : C.bg,
+              borderRadius: R.sm, padding: '10px 12px', opacity: a.earned ? 1 : 0.55,
+            }}>
+              <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: a.earned ? C.ink : C.muted }}>{a.title}</p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{a.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Ranking das unidades. Cada linha abre o ID Operacional daquela unidade — o
+ * mesmo gesto que Equipe já usa para abrir a carteirinha de um colaborador.
+ */
+export function UnidadesView({ units, templates, completions, closures, currentUser, canSeeAllUnits, accent }) {
+  const [selected, setSelected] = useState(null);
+
+  const scoped = useMemo(
+    () => (canSeeAllUnits ? units : units.filter(u => u.id === currentUser?.unitId)),
+    [units, canSeeAllUnits, currentUser],
+  );
+
+  const ranking = useMemo(
+    () => scoped
+      .map(u => computeUnitProfile(completions, templates, closures, u))
+      .sort((a, b) => (b.index ?? -1) - (a.index ?? -1) || b.checklists - a.checklists),
+    [scoped, completions, templates, closures],
+  );
+
+  if (selected) {
+    const idx = ranking.findIndex(r => r.unit.id === selected);
+    const prof = ranking[idx];
+    if (!prof) return null;
+    return (
+      <div>
+        <BackBar onBack={() => setSelected(null)} label="Voltar para unidades" accent={accent} />
+        <UnitIdView profile={prof} position={idx + 1} total={ranking.length} accent={accent} />
+      </div>
+    );
+  }
+
+  if (ranking.length === 0) {
+    return <div className="zc-view"><EmptyState title="Nenhuma unidade" desc="Cadastre uma loja em Gerenciar › Estrutura." /></div>;
+  }
+
+  return (
+    <div className="zc-view space-y-3">
+      <Eyebrow>Ranking das unidades · últimos 30 dias</Eyebrow>
+      <p style={{ fontSize: T.caption, color: C.muted, marginTop: -4 }}>
+        Ordenado pelo índice operacional: aderência (50%), tarefas concluídas (30%) e críticos em dia (20%).
+      </p>
+
+      {ranking.map((p, i) => (
+        <button key={p.unit.id} onClick={() => setSelected(p.unit.id)}
+          aria-label={`Abrir ID operacional de ${p.unit.name}`}
+          style={{
+            width: '100%', textAlign: 'left', background: '#fff', border: `1px solid ${C.border}`,
+            borderLeft: `4px solid ${p.unit.color || accent}`, borderRadius: R.md,
+            padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'block',
+          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <RankBadge pos={i + 1} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{p.unit.name}</p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                Nível {p.level} · {p.checklists} checklists · {p.operators} pessoa(s)
+                {p.criticalPending ? ` · ${p.criticalPending} crítico(s) pendente(s)` : ''}
+              </p>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink }}>
+                {p.index == null ? '—' : p.index}
+              </p>
+              <p style={{ fontSize: T.label, color: C.mutedLight }}>índice</p>
+            </div>
+            <ChevronRight size={18} color={C.mutedLight} style={{ flexShrink: 0 }} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+            {[['Aderência', p.adherence], ['Tarefas', p.taskRate], ['Críticos', p.criticalRate]].map(([label, v]) => (
+              <div key={label} style={{ flex: 1, minWidth: 88 }}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
+                <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>
+                  {v == null ? '—' : `${v}%`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </button>
+      ))}
     </div>
   );
 }
@@ -9270,6 +9631,13 @@ function AppInner() {
           )
         )}
         {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} />}
+        {activeTab === 'unidades' && (
+          <UnidadesView
+            units={ACTIVE_UNITS} templates={templates} completions={completions || []}
+            closures={closures} currentUser={currentUser} canSeeAllUnits={canSwitchUnit}
+            accent={unit.color}
+          />
+        )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
           <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} activeTypes={ACTIVE_TYPES} />
