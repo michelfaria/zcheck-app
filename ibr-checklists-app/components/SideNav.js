@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Sunrise, Store,
+  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Activity, Store,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 
@@ -18,9 +18,10 @@ import { C, R, W, T, greenOnDark } from '../lib/tokens';
 export const NAV_ITEMS = [
   { id: 'executar', label: 'Executar', icon: ClipboardCheck, group: 'Operação' },
   { id: 'painel', label: 'Painel', icon: LayoutGrid, group: 'Operação' },
-  // O briefing também é destino, não só pop-up de abertura: fechado o pop-up,
-  // ele sumia até o dia seguinte. Só papéis de gestão o recebem (MANAGER_ROLES).
-  { id: 'briefing', label: 'Briefing do dia', icon: Sunrise, group: 'Operação' },
+  // J.I.T. (Just In Time): o resumo do que importa na operação AGORA. Também é
+  // destino, não só pop-up de abertura — fechado o pop-up, ele sumia até o dia
+  // seguinte. Só papéis de gestão o recebem (MANAGER_ROLES).
+  { id: 'jit', label: 'J.I.T.', icon: Activity, group: 'Operação' },
   // Ranking das unidades. Cada loja tem seu ID Operacional, como o colaborador
   // tem o dele em "Meu ID" — mesma ideia de identidade, outra escala.
   { id: 'unidades', label: 'Unidades', icon: Store, group: 'Operação' },

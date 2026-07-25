@@ -33,7 +33,7 @@ import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
-import { C, R, W, T, successBright } from '../../lib/tokens';
+import { C, R, W, T, successBright, greenOnDark } from '../../lib/tokens';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
 import { useAppUrlState } from '../../lib/appUrlState';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
@@ -124,9 +124,9 @@ const ROLE_COLORS = {
 // Which bottom-nav tabs each role can see, in order.
 const ROLE_TABS = {
   colaborador: ['executar', 'painel', 'id'],
-  lideranca: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'id', 'equipe'],
-  gerencia: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'gerenciar', 'equipe'],
-  gestao: ['executar', 'painel', 'briefing', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
+  lideranca: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'id', 'equipe'],
+  gerencia: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'equipe'],
+  gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
 };
 
 // Papéis de gestão que recebem o Daily Briefing (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
@@ -7281,7 +7281,7 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
     });
   }
 
-  // ── Prioridades por loja (só na visão multi-loja) ──────────────────────────
+  // ── Situação por loja (só na visão multi-loja) ──────────────────────────
   // Onde o gestor deve olhar primeiro. Cada loja recebe um score de atenção;
   // ordenado do mais crítico ao menos. Um líder de uma loja só (scopeUnitId
   // definido) não vê ranking entre lojas — não é escopo dele.
@@ -7359,8 +7359,31 @@ export function buildBriefing(completions, templates, closures, units, scopeUnit
   // (d) Quem executou hoje.
   const peopleToday = collaboratorStats(tFiltered).slice(0, 5);
 
+  /**
+   * Status da BASE da empresa, agora. O J.I.T. deixou de ser "o resumo de hoje"
+   * e passou a ser "o estado da operação neste momento" — e estado inclui a
+   * estrutura, não só a execução: quantas unidades existem, quantas estão de
+   * folga hoje, quantos checklists ativos, quanta gente pôs a mão.
+   * Tudo derivado do que já está em memória; nenhuma consulta nova.
+   */
+  const tAll = filterCompletions(completions, scopeFilter([today]));
+  const tSummary = summarizeCompletions(tAll);
+  const base = {
+    units: unitIds.length,
+    unitsClosed: unitIds.filter(uid => isUnitClosed(closures, uid, today)).length,
+    sectors: new Set(templates.filter(t => !scopeUnitId || t.unitId === scopeUnitId).map(t => t.sector).filter(Boolean)).size,
+    templates: templates.filter(t => !scopeUnitId || t.unitId === scopeUnitId).length,
+    peopleToday: new Set(tAll.map(c => c.operatorUserId || c.operatorName).filter(Boolean)).size,
+    executionsToday: tAll.length,
+    criticalOpenToday: tSummary.criticalPending,
+    evidencesToday: tSummary.photos,
+  };
+
   return {
     date: today,
+    scopeUnitId: scopeUnitId || null,
+    scopeLabel: scopeUnitId ? unitName(scopeUnitId) : `todas as ${unitIds.length} unidade${unitIds.length === 1 ? '' : 's'}`,
+    base,
     yesterday: { adherence: yAdherence, checklists: yFiltered.length, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
     today: { expected: tExpected, done: tDone, pending: Math.max(0, tExpected - tDone), overdue: overdue.length },
     recommendations: recs.slice(0, 3),
@@ -7556,9 +7579,23 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
 
   const y = briefing.yesterday, t = briefing.today;
   const dateLabel = new Date(`${briefing.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
   const firstName = (currentUser?.name || '').split(' ')[0];
+  const scopeLabel = briefing.scopeLabel || '';
+
+  /**
+   * Carimbo de frescor. O J.I.T. não é um resumo de manhã que envelhece durante
+   * o dia: `completions` chega por realtime (subscribeToCompletions) e o
+   * briefing é um useMemo sobre ele, então o conteúdo já se refaz sozinho a cada
+   * execução registrada. O relógio existe para o gestor VER isso — sem ele, um
+   * painel ao vivo é indistinguível de um painel parado.
+   */
+  const [tick, setTick] = useState(() => new Date());
+  useEffect(() => {
+    setTick(new Date());
+    const id = setInterval(() => setTick(new Date()), 60000);
+    return () => clearInterval(id);
+  }, [briefing]);
+  const updatedAt = tick.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const Stat = ({ label, value, sub, color }) => (
     <div style={{ flex: 1, textAlign: 'center', padding: '10px 6px' }}>
@@ -7603,8 +7640,32 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
   const trend = briefing.trend7 || [];
   const maxTrend = Math.max(100, ...trend.map(d => d.rate));
 
+  const b = briefing.base;
+  const BaseCell = ({ label, value, tone }) => (
+    <div style={{ padding: '8px 0' }}>
+      <p className="font-display" style={{ fontSize: 'calc(20px * var(--zc-t-scale))', fontWeight: W.bold, color: tone || C.ink, lineHeight: 1.1 }}>{value}</p>
+      <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{label}</p>
+    </div>
+  );
+
   const sidePanels = (
     <aside className="zc-briefing-aside">
+      {b && (
+        <Card title="Base da operação · agora" sub={scopeLabel}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0 16px' }}>
+            <BaseCell label={`unidades${b.unitsClosed ? ` · ${b.unitsClosed} de folga` : ''}`} value={b.units} />
+            <BaseCell label="setores" value={b.sectors} />
+            <BaseCell label="checklists ativos" value={b.templates} />
+            <BaseCell label="pessoas executando hoje" value={b.peopleToday} />
+            <BaseCell label="execuções hoje" value={b.executionsToday} />
+            <BaseCell label="evidências hoje" value={b.evidencesToday} />
+            <BaseCell label="críticos abertos hoje" value={b.criticalOpenToday}
+              tone={b.criticalOpenToday ? C.critical : C.success} />
+            <BaseCell label="atrasados agora" value={briefing.today.overdue}
+              tone={briefing.today.overdue ? C.warning : C.success} />
+          </div>
+        </Card>
+      )}
       {trend.length > 0 && (
         <Card title="Aderência · 7 dias" sub="% de tarefas concluídas por dia">
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 96 }}>
@@ -7688,13 +7749,19 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
               cantos do alvo. */}
           {/* Numa PÁGINA não existe "fechar": o destino é o próprio menu. O × só
               faz sentido no pop-up de abertura. */}
-          {!asPage && <button type="button" onClick={onClose} aria-label="Fechar briefing"
+          {!asPage && <button type="button" onClick={onClose} aria-label="Fechar J.I.T."
             style={{ position: 'absolute', top: 12, right: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999,
               width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>}
-          <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
-          <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
-          <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>J.I.T. · Just In Time</p>
+          <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6 }}>Sua operação agora</p>
+          <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+            <span style={{ textTransform: 'capitalize' }}>{dateLabel}</span>
+            {' · '}
+            <span aria-hidden="true" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: R.pill, background: greenOnDark, marginRight: 5, verticalAlign: 'middle' }} />
+            atualizado às {updatedAt}
+            {scopeLabel ? ` · ${scopeLabel}` : ''}
+          </p>
         </div>
 
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -7739,8 +7806,11 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
           {insight && (
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 18 }}>{insight.icon || '🧠'}</span>
-                <p style={{ fontSize: 10.5, fontWeight: W.semibold, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>🧠 Análise do dia</p>
+                {/* Sem emoji: num painel de gestão o emoji como DADO custa mais
+                    credibilidade que erro de layout. Um traço na cor do acento
+                    marca a seção sem fingir que é informação. */}
+                <span aria-hidden="true" style={{ width: 14, height: 2, borderRadius: 2, background: accent, flexShrink: 0 }} />
+                <p style={{ fontSize: 10.5, fontWeight: W.semibold, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Leitura da operação</p>
               </div>
               <p className="font-display" style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
               <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 12 }}>{insight.evidence}</p>
@@ -7789,7 +7859,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
 
           {/* Recomendações */}
           <div>
-            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades de hoje</p>
+            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades agora</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {briefing.recommendations.map(rec => (
                 <div key={rec.id} onClick={() => clickRec(rec)}
@@ -7852,7 +7922,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
               <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno! 🙌</p>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>Esse briefing te ajudou a priorizar o dia?</p>
+                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>O J.I.T. te ajudou a priorizar?</p>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                   <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
                   <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
@@ -7862,7 +7932,7 @@ export function DailyBriefing({ briefing, currentUser, accent, openSource, actio
           </div>
 
           <button onClick={onClose} style={{ padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: 'pointer', marginTop: 2 }}>
-            Começar o dia →
+            Ir para a operação →
           </button>
         </div>
       </>
@@ -9780,9 +9850,9 @@ function AppInner() {
             <button onClick={openBriefing} className="font-display zc-briefing-cta"
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 12px', borderRadius: R.md, border: 'none', background: C.ink, color: 'white', fontWeight: W.semibold, fontSize: T.bodySm, cursor: 'pointer', boxShadow: '0 2px 10px rgba(8,20,30,0.18)' }}>
               <BarChart3 size={17} color="white" />
-              Ver briefing do dia
+              Ver o J.I.T.
               {briefingHasSignal && !briefingSeenToday && (
-                <span aria-label="Há novidades no briefing" style={{ width: 9, height: 9, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
+                <span aria-label="Há novidades no J.I.T." style={{ width: 9, height: 9, borderRadius: R.pill, background: C.warning, display: 'inline-block', flexShrink: 0 }} />
               )}
             </button>
           </div>
@@ -9794,7 +9864,7 @@ function AppInner() {
         {/* Briefing como DESTINO, não só pop-up de abertura. Mesmo componente,
             sem o overlay fixo (`asPage`) — não existe segunda implementação para
             divergir da primeira. */}
-        {activeTab === 'briefing' && (
+        {activeTab === 'jit' && (
           briefing ? (
             <DailyBriefing
               asPage
@@ -9813,8 +9883,8 @@ function AppInner() {
             />
           ) : (
             <div className="zc-view">
-              <EmptyState title="Briefing indisponível"
-                desc="O briefing do dia é montado a partir das execuções e ainda não há dados suficientes hoje." />
+              <EmptyState title="J.I.T. indisponível"
+                desc="O J.I.T. é montado a partir das execuções da empresa e ainda não há dados suficientes." />
             </div>
           )
         )}
