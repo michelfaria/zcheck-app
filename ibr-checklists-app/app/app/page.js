@@ -5793,7 +5793,10 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
               return (
                 <button
                   key={req.id}
-                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || 'ibr1'); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); }}
+                  // O cadastro não pede loja (unit_id nasce nulo): o padrão tem de
+                  // ser a primeira loja DESTA empresa — 'ibr1' chumbado
+                  // pré-selecionava loja de outro tenant.
+                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || units[0]?.id || ''); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); }}
                   className="w-full text-left"
                   style={{ background: 'none', border: 'none', padding: 0 }}
                 >

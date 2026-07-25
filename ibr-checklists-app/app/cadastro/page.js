@@ -127,7 +127,7 @@ export default function CadastroPage() {
       const { error: uploadErr } = await supabase.storage
         .from('colaboradores')
         .upload(path, selfie, { contentType: selfie.type, upsert: false });
-      if (uploadErr) throw uploadErr;
+      if (uploadErr) throw Object.assign(uploadErr, { etapa: 'selfie' });
 
       const { error: dbErr } = await supabase.from('user_requests').insert({
         name: name.trim(),
@@ -140,13 +140,28 @@ export default function CadastroPage() {
         selfie_path: path,
         status: 'pendente',
       });
-      if (dbErr) throw dbErr;
+      if (dbErr) throw Object.assign(dbErr, { etapa: 'solicitacao' });
 
-      await notifyGestao(name.trim(), companyId);
+      // A notificação da gestão é um extra: se o e-mail falhar, a solicitação
+      // já está gravada e não pode virar "erro" na cara de quem se cadastrou.
+      try { await notifyGestao(name.trim(), companyId); }
+      catch (e) { console.error('notifyGestao falhou (solicitação já gravada):', e); }
       setStep('success');
     } catch (e) {
       console.error(e);
-      setError('Erro ao enviar. Verifique sua conexão e tente novamente.');
+      // Antes esta tela culpava a conexão para QUALQUER falha — inclusive
+      // bloqueio de permissão no banco, que não tem nada a ver com internet.
+      // Isso escondeu por completo os dois bloqueios de RLS/NOT NULL que
+      // deixaram o cadastro quebrado (ver 20260724_fix_cadastro_anonimo.sql).
+      const rls = /row-level security|violates row-level/i.test(e?.message || '');
+      const semRede = typeof navigator !== 'undefined' && navigator.onLine === false;
+      setError(
+        semRede
+          ? 'Você está sem internet. Reconecte e tente novamente.'
+          : rls || e?.etapa
+            ? `Não foi possível concluir o cadastro (${e.etapa === 'selfie' ? 'envio da selfie' : 'gravação da solicitação'}). Avise a gestão — detalhe: ${e?.message || e?.error || 'erro desconhecido'}`
+            : `Erro ao enviar: ${e?.message || 'tente novamente.'}`
+      );
     } finally {
       setLoading(false);
     }
