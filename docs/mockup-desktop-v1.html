@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>ZCheck — Mockup Desktop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* tokens existentes — lib/tokens.js */
+  --bg:#F7F9FB; --border:#E2EAF0; --border-strong:#7E93A3;
+  --ink:#063C5C; --ink-hover:#0A4A70; --muted:#5B6B78; --muted-light:#627382;
+  --success:#15803D; --warning:#B45309; --critical:#B91C1C;
+  --success-bright:#16A34A; --green-on-dark:#4ADE80;
+  /* extensões propostas */
+  --shell:#E8EFF5; --ink-muted:#9FB8C8;
+  /* raio */
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
+  /* elevação */
+  --e2:0 1px 2px rgba(8,20,30,.06), 0 8px 24px -8px rgba(8,20,30,.18);
+  --e3:0 1px 2px rgba(8,20,30,.06), 0 16px 40px -16px rgba(8,20,30,.22);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  background:var(--shell); color:var(--ink);
+  font-size:15px; line-height:1.5;
+  font-feature-settings:'tnum' 1;
+  -webkit-font-smoothing:antialiased;
+}
+.display{letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- moldura ---------- */
+.frame{width:1440px;margin:0 auto 48px;background:var(--shell);overflow:hidden;border:1px solid #CBD9E4}
+.caption-bar{width:1440px;margin:40px auto 10px;display:flex;align-items:baseline;gap:12px}
+.caption-bar h2{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.caption-bar span{font-size:13px;color:var(--muted)}
+
+/* faixa de sistema 32px */
+.sysbar{height:32px;background:var(--ink);color:#fff;display:flex;align-items:center;
+  padding:0 20px;gap:10px;font-size:13px}
+.sysbar .dot{width:6px;height:6px;border-radius:var(--r-pill);background:var(--green-on-dark)}
+.sysbar .muted{color:var(--ink-muted)}
+.sysbar .cta{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:none;
+  padding:3px 12px;border-radius:var(--r-sm);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+
+.body-row{display:grid;grid-template-columns:240px 1fr;min-height:820px}
+
+/* ---------- sidebar ---------- */
+.side{background:var(--ink);display:flex;flex-direction:column;padding:16px 0 12px}
+.side .brand{padding:0 18px 20px;display:flex;align-items:center;gap:9px}
+.side .brand .mark{width:26px;height:26px;border-radius:7px;background:var(--green-on-dark);
+  display:grid;place-items:center;color:var(--ink);font-weight:700;font-size:14px}
+.side .brand .wm{color:#fff;font-weight:600;font-size:17px;letter-spacing:-.02em}
+.side .grp{padding:16px 18px 6px;font-size:11px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--ink-muted)}
+.side a{display:flex;align-items:center;gap:11px;padding:9px 18px;color:var(--ink-muted);
+  text-decoration:none;font-size:14px;font-weight:500;position:relative}
+.side a svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75}
+.side a.on{color:#fff;background:rgba(255,255,255,.08);font-weight:600}
+.side a.on::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;
+  background:var(--green-on-dark);border-radius:0 2px 2px 0}
+.side .badge{margin-left:auto;background:var(--warning);color:#fff;font-size:11px;font-weight:600;
+  min-width:19px;height:19px;border-radius:var(--r-pill);display:grid;place-items:center;padding:0 5px}
+.side .foot{margin-top:auto;padding:12px 18px 0;border-top:1px solid rgba(255,255,255,.10)}
+.side .foot a{padding:7px 0;font-size:13px}
+
+/* contexto do colaborador (sidebar de 3 itens) */
+.ctx{margin:auto 18px 0;padding:14px 0 0;border-top:1px solid rgba(255,255,255,.10)}
+.ctx .k{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted)}
+.ctx .v{color:#fff;font-size:14px;font-weight:600;margin-top:6px}
+.ctx .d{color:var(--ink-muted);font-size:13px;margin-top:2px}
+.ctx .bar{height:5px;border-radius:var(--r-pill);background:rgba(255,255,255,.14);margin-top:11px;overflow:hidden}
+.ctx .bar i{display:block;height:100%;background:var(--green-on-dark);border-radius:var(--r-pill)}
+
+/* ---------- topbar ---------- */
+.main{display:flex;flex-direction:column;min-width:0;background:var(--shell)}
+.top{height:56px;background:#fff;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:14px;padding:0 24px;flex:none}
+.top .co{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+.top .co .lg{width:24px;height:24px;border-radius:6px;background:var(--bg);
+  border:1px solid var(--border);display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--muted)}
+.seg{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:2px}
+.seg button{border:none;background:none;font:inherit;font-size:13px;font-weight:500;color:var(--muted);
+  padding:4px 11px;border-radius:6px;cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(8,20,30,.08)}
+.top .date{color:var(--muted);font-size:14px}
+.top .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn-ink{background:var(--ink);color:#fff;border:none;padding:8px 14px;border-radius:var(--r-sm);
+  font:inherit;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px}
+.btn-ink .sig{width:7px;height:7px;border-radius:var(--r-pill);background:var(--warning)}
+.btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border-strong);padding:7px 13px;
+  border-radius:var(--r-sm);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.avatar{width:30px;height:30px;border-radius:var(--r-pill);background:var(--bg);
+  border:1px solid var(--border);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--muted)}
+
+/* ---------- conteúdo ---------- */
+.canvas{padding:24px 32px 40px;overflow:auto}
+.page-head{display:flex;align-items:flex-end;gap:14px;margin-bottom:20px}
+.page-head h1{font-size:28px;font-weight:600;letter-spacing:-.02em}
+.page-head p{font-size:14px;color:var(--muted);padding-bottom:3px}
+.page-head .act{margin-left:auto;display:flex;gap:8px}
+
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--r-md);padding:16px}
+.card.tight{padding:14px 16px}
+.card h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:12px}
+
+.grid{display:grid;gap:16px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.hero-row{display:grid;grid-template-columns:1.55fr 1fr 1fr 1.15fr;gap:16px;margin-bottom:16px}
+
+.hero .big{font-size:44px;font-weight:700;letter-spacing:-.03em;line-height:1.05;font-variant-numeric:tabular-nums}
+.hero .sub{font-size:14px;color:var(--muted);margin-top:4px}
+.bar{height:7px;border-radius:var(--r-pill);background:var(--bg);margin-top:14px;overflow:hidden;border:1px solid var(--border)}
+.bar i{display:block;height:100%;border-radius:var(--r-pill)}
+.kpi .v{font-size:30px;font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums;line-height:1.1}
+.delta{font-size:13px;font-weight:600;margin-top:5px;display:flex;align-items:center;gap:5px}
+.delta.up{color:var(--success)} .delta.down{color:var(--critical)} .delta.flat{color:var(--muted)}
+.tri{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent}
+.tri.u{border-bottom:6px solid currentColor} .tri.d{border-top:6px solid currentColor}
+
+.spark{display:flex;align-items:flex-end;gap:5px;height:56px;margin-top:6px}
+.spark i{flex:1;background:var(--bg);border:1px solid var(--border);border-bottom:none;border-radius:3px 3px 0 0}
+.spark i.hi{background:var(--ink);border-color:var(--ink)}
+.spark-x{display:flex;gap:5px;margin-top:6px}
+.spark-x span{flex:1;text-align:center;font-size:11px;color:var(--muted-light)}
+
+/* card de loja — UMA marca de acento (rail) */
+.store{position:relative;overflow:hidden;padding-left:19px}
+.store::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+.store .nm{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.store .rk{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.store .pc{font-size:30px;font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums;margin-top:10px}
+.store .types{display:flex;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.store .types div{flex:1}
+.store .types .t{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted-light)}
+.store .types .n{font-size:14px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+
+.two{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-top:16px;align-items:start}
+
+/* linhas de tipo de checklist */
+.tgrp+.tgrp{margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.tgrp .hd{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.tgrp .hd b{font-size:15px;font-weight:600}
+.pill{font-size:12px;font-weight:600;padding:2px 9px;border-radius:var(--r-pill);border:1px solid}
+.pill.ok{color:var(--success);border-color:#B7DFC5;background:#F1F9F4}
+.pill.warn{color:var(--warning);border-color:#EBCFA8;background:#FDF6EC}
+.trow{display:grid;grid-template-columns:120px 1fr 96px 74px 20px;gap:10px;align-items:center;
+  height:38px;font-size:14px;border-bottom:1px solid var(--border)}
+.trow:last-child{border-bottom:none}
+.trow .s{color:var(--muted)}
+.trow .who{color:var(--ink);font-weight:500}
+.trow .tm{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.trow .ct{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.mk{width:16px;height:16px;border-radius:var(--r-pill);display:grid;place-items:center;justify-self:end}
+.mk.ok{background:var(--success)} .mk.pend{border:1.5px solid var(--border-strong)}
+.mk svg{width:9px;height:9px;stroke:#fff;stroke-width:3;fill:none}
+
+/* ranking */
+.rk-row{display:grid;grid-template-columns:22px 1fr 52px;gap:10px;align-items:center;height:40px;
+  border-bottom:1px solid var(--border);font-size:14px}
+.rk-row:last-child{border-bottom:none}
+.rk-row .p{font-size:13px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.rk-row .p.top{color:var(--ink)}
+.rk-row .v{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.rk-row.me{background:var(--bg);margin:0 -16px;padding:0 16px;border-radius:6px}
+.dotc{width:8px;height:8px;border-radius:var(--r-pill);display:inline-block;margin-right:8px;vertical-align:1px}
+
+/* ---------- relatórios ---------- */
+.rep{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start}
+.filters{position:sticky;top:0}
+.fset+.fset{margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}
+.fset .label{margin-bottom:9px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:13px;font-weight:500;padding:6px 12px;border-radius:var(--r-sm);
+  border:1px solid var(--border-strong);background:#fff;color:var(--ink);cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.sel{width:100%;padding:8px 11px;border:1px solid var(--border-strong);border-radius:var(--r-sm);
+  background:#fff;font:inherit;font-size:14px;color:var(--ink)}
+.range{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)}
+.range span{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--bg);text-align:center;font-variant-numeric:tabular-nums}
+.exp{display:flex;flex-direction:column;gap:8px}
+.exp button{width:100%;justify-content:center}
+
+/* tabela densa */
+table{width:100%;border-collapse:collapse}
+thead th{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  text-align:left;padding:0 12px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+thead th.r{text-align:right}
+thead th .sort{color:var(--border-strong);margin-left:5px;font-size:10px}
+tbody td{height:40px;padding:0 12px;font-size:14px;border-bottom:1px solid var(--border);
+  font-variant-numeric:tabular-nums}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even){background:var(--bg)}
+td.r{text-align:right}
+td.nm{font-weight:500}
+.minibar{display:flex;align-items:center;gap:9px;justify-content:flex-end}
+.minibar i{display:block;height:6px;border-radius:var(--r-pill);background:var(--ink)}
+.minibar em{font-style:normal;font-weight:600;width:38px;text-align:right}
+.st{font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.st .sq{width:8px;height:8px;border-radius:2px}
+.pager{display:flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;color:var(--muted)}
+.pager b{background:var(--ink);color:#fff;width:26px;height:26px;border-radius:6px;display:grid;
+  place-items:center;font-size:13px;font-weight:600}
+.pager span{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;
+  border:1px solid var(--border);background:#fff;cursor:pointer}
+.pager .tot{margin-left:auto;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:3px;width:fit-content;margin-bottom:14px}
+.tabs button{border:none;background:none;font:inherit;font-size:13px;font-weight:500;color:var(--muted);
+  padding:5px 13px;border-radius:6px;cursor:pointer}
+.tabs button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(8,20,30,.08)}
+
+/* ---------- gerenciar: mestre-detalhe ---------- */
+.md-row{display:grid;grid-template-columns:360px 1fr;gap:24px;align-items:start}
+.lst .sec{margin-bottom:18px}
+.lst .sec>.label{margin-bottom:8px}
+.lst .grp{background:#fff;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.lst .sub{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-light);
+  padding:9px 14px 5px}
+.lst a{display:flex;align-items:center;gap:10px;padding:9px 14px;text-decoration:none;color:var(--ink);
+  font-size:14px;border-top:1px solid var(--border)}
+.lst a .meta{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.lst a.on{background:var(--bg);font-weight:600;box-shadow:inset 3px 0 0 var(--ink)}
+.ed-head{display:flex;align-items:center;gap:12px;padding-bottom:14px;margin-bottom:16px;
+  border-bottom:1px solid var(--border)}
+.ed-head h2{font-size:22px;font-weight:600;letter-spacing:-.015em}
+.ed-head .crumb{font-size:13px;color:var(--muted);margin-top:3px}
+.fld{margin-bottom:14px}
+.fld .label{margin-bottom:7px}
+.inp{width:100%;padding:9px 12px;border:1px solid var(--border-strong);border-radius:var(--r-sm);
+  font:inherit;font-size:15px;color:var(--ink);background:#fff}
+.inp.sm{width:120px;font-variant-numeric:tabular-nums}
+.items{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-top:8px}
+.item{display:grid;grid-template-columns:22px 26px 1fr 92px 92px 26px;gap:10px;align-items:center;
+  height:44px;padding:0 12px;border-bottom:1px solid var(--border);font-size:14px;background:#fff}
+.item:last-child{border-bottom:none}
+.item:nth-child(even){background:var(--bg)}
+.item .hd{color:var(--border-strong);cursor:grab;font-size:14px;letter-spacing:-2px}
+.item .ix{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.item .fg{font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.item .fg .bx{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--border-strong);
+  display:grid;place-items:center;flex:none}
+.item .fg.on{color:var(--critical)} .item .fg.on .bx{background:var(--critical);border-color:var(--critical)}
+.item .fg.on2{color:var(--ink)} .item .fg.on2 .bx{background:var(--ink);border-color:var(--ink)}
+.item .fg .bx svg{width:8px;height:8px;stroke:#fff;stroke-width:3;fill:none}
+.item .x{color:var(--muted-light);text-align:center;cursor:pointer}
+.addi{margin-top:10px;background:#fff;border:1px dashed var(--border-strong);color:var(--muted);
+  width:100%;padding:10px;border-radius:var(--r-sm);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.ed-foot{display:flex;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.note{font-size:13px;color:var(--muted);margin-left:auto;align-self:center}
+
+/* legenda */
+.legend{width:1440px;margin:0 auto 60px;background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-md);padding:22px 26px}
+.legend h3{font-size:18px;font-weight:600;margin-bottom:14px;letter-spacing:-.01em}
+.legend .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+.legend ul{list-style:none;font-size:14px;line-height:1.75}
+.legend li{position:relative;padding-left:15px;color:var(--muted)}
+.legend li b{color:var(--ink);font-weight:600}
+.legend li code{font-size:13px;background:var(--bg);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;font-family:ui-monospace,monospace}
+.legend li::before{content:"";position:absolute;left:0;top:10px;width:5px;height:5px;
+  border-radius:var(--r-pill);background:var(--border-strong)}
+.sw{display:flex;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);flex-wrap:wrap}
+.sw div{font-size:12px;color:var(--muted);text-align:center}
+.sw i{display:block;width:88px;height:34px;border-radius:6px;border:1px solid var(--border);margin-bottom:5px}
+.sw b{display:block;color:var(--ink);font-weight:600;font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ TELA 1 — PAINEL ══════════════════ -->
+<div class="caption-bar"><h2>1 · Painel</h2><span>gestão · 1440 × 900 · sidebar 240 em ink + topbar 56 + canvas shell</span></div>
+<div class="frame">
+  <div class="sysbar">
+    <span class="dot"></span><span>Teste grátis</span><span class="muted">· 9 dias restantes</span>
+    <button class="cta">Assinar agora</button>
+  </div>
+  <div class="body-row">
+    <nav class="side">
+      <div class="brand"><span class="mark">Z</span><span class="wm">ZCheck</span></div>
+      <div class="grp">Operação</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>Executar</a>
+      <a href="#" class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Painel</a>
+      <div class="grp">Análise</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 9v9M17 12v6"/></svg>Relatórios</a>
+      <div class="grp">Pessoas</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Equipe</a>
+      <div class="grp">Configuração</div>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.61.78 1 1.42 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Gerenciar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Usuários<span class="badge">3</span></a>
+      <div class="foot">
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>Central de ajuda</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Recolher menu</a>
+      </div>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="co"><span class="lg">IBR</span>Ilhabela Republic</div>
+        <div class="seg">
+          <button class="on">Loja Principal</button><button>Beira-Mar</button><button>Centro</button><button>Todas</button>
+        </div>
+        <span class="date">terça, 24 de julho</span>
+        <div class="right">
+          <button class="btn-ink">Ver briefing do dia<span class="sig"></span></button>
+          <div class="avatar">MF</div>
+        </div>
+      </div>
+
+      <div class="canvas">
+        <div class="page-head">
+          <div><h1 class="display">Painel</h1></div>
+          <p>Acompanhamento do dia · atualizado às 15:42</p>
+        </div>
+
+        <div class="hero-row">
+          <div class="card hero">
+            <h3>Score do dia · Loja Principal</h3>
+            <div class="big display">78%</div>
+            <div class="sub">Excelente · 14 de 18 checklists concluídos</div>
+            <div class="bar"><i style="width:78%;background:var(--success-bright)"></i></div>
+          </div>
+          <div class="card kpi">
+            <h3>Ontem</h3>
+            <div class="v">71%</div>
+            <div class="delta up"><span class="tri u"></span>+7 pp</div>
+          </div>
+          <div class="card kpi">
+            <h3>Média 7 dias</h3>
+            <div class="v">74%</div>
+            <div class="delta up"><span class="tri u"></span>acima da média</div>
+          </div>
+          <div class="card">
+            <h3>Últimos 7 dias</h3>
+            <div class="spark">
+              <i style="height:38%"></i><i style="height:55%"></i><i style="height:72%"></i>
+              <i style="height:44%"></i><i style="height:81%"></i><i style="height:65%"></i>
+              <i class="hi" style="height:92%"></i>
+            </div>
+            <div class="spark-x"><span>Q</span><span>S</span><span>S</span><span>D</span><span>S</span><span>T</span><span>Q</span></div>
+          </div>
+        </div>
+
+        <div class="label" style="margin:24px 0 12px">Comparativo entre lojas · 24 jul</div>
+        <div class="grid g3">
+          <div class="card store" style="--a:#2F6F5E">
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span class="nm">Loja Principal</span><span class="rk">1º</span>
+            </div>
+            <div class="pc display">92%</div>
+            <div class="delta up"><span class="tri u"></span>+8 pp vs. ontem</div>
+            <div class="bar"><i style="width:92%;background:#2F6F5E"></i></div>
+            <div class="types">
+              <div><div class="t">Abertura</div><div class="n">3/3</div></div>
+              <div><div class="t">Interm.</div><div class="n">2/3</div></div>
+              <div><div class="t">Fecham.</div><div class="n">1/2</div></div>
+            </div>
+          </div>
+          <div class="card store" style="--a:#C2622E">
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span class="nm">Beira-Mar</span><span class="rk">2º</span>
+            </div>
+            <div class="pc display">78%</div>
+            <div class="delta down"><span class="tri d"></span>−3 pp vs. ontem</div>
+            <div class="bar"><i style="width:78%;background:#C2622E"></i></div>
+            <div class="types">
+              <div><div class="t">Abertura</div><div class="n">3/3</div></div>
+              <div><div class="t">Interm.</div><div class="n">1/3</div></div>
+              <div><div class="t">Fecham.</div><div class="n">1/2</div></div>
+            </div>
+          </div>
+          <div class="card store" style="--a:#35577A">
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span class="nm">Centro</span><span class="rk">3º</span>
+            </div>
+            <div class="pc display">64%</div>
+            <div class="delta flat">sem variação</div>
+            <div class="bar"><i style="width:64%;background:#35577A"></i></div>
+            <div class="types">
+              <div><div class="t">Abertura</div><div class="n">2/3</div></div>
+              <div><div class="t">Interm.</div><div class="n">1/3</div></div>
+              <div><div class="t">Fecham.</div><div class="n">0/2</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="two">
+          <div class="card">
+            <h3>Por tipo de checklist · Loja Principal</h3>
+            <div class="tgrp">
+              <div class="hd"><b>Abertura</b><span class="pill ok">3 de 3 concluídos</span></div>
+              <div class="trow"><span class="s">Salão</span><span class="who">Ana Paula</span><span class="tm">08:12</span><span class="ct">12/12</span><span class="mk ok"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span></div>
+              <div class="trow"><span class="s">Cozinha</span><span class="who">Léo Martins</span><span class="tm">08:40</span><span class="ct">10/10</span><span class="mk ok"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span></div>
+              <div class="trow"><span class="s">Bar</span><span class="who">Ana Paula</span><span class="tm">09:02</span><span class="ct">8/8</span><span class="mk ok"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span></div>
+            </div>
+            <div class="tgrp">
+              <div class="hd"><b>Intermediário</b><span class="pill warn">1 de 3 concluídos</span></div>
+              <div class="trow"><span class="s">Salão</span><span class="who" style="color:var(--muted)">— não iniciado</span><span class="tm">até 15:00</span><span class="ct">0/9</span><span class="mk pend"></span></div>
+              <div class="trow"><span class="s">Cozinha</span><span class="who">Léo Martins</span><span class="tm">14:20</span><span class="ct">9/9</span><span class="mk ok"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span></div>
+              <div class="trow"><span class="s">Bar</span><span class="who" style="color:var(--muted)">— não iniciado</span><span class="tm">até 16:00</span><span class="ct">0/7</span><span class="mk pend"></span></div>
+            </div>
+            <div class="tgrp">
+              <div class="hd"><b>Fechamento</b><span class="pill warn">1 de 2 concluídos</span></div>
+              <div class="trow"><span class="s">Salão</span><span class="who">Carla Souza</span><span class="tm">23:10</span><span class="ct">11/11</span><span class="mk ok"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span></div>
+              <div class="trow"><span class="s">Cozinha</span><span class="who" style="color:var(--muted)">— pendente</span><span class="tm">até 23:59</span><span class="ct">0/8</span><span class="mk pend"></span></div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card">
+              <h3>Ranking do dia · lojas</h3>
+              <div class="rk-row"><span class="p top">1</span><span><span class="dotc" style="background:#2F6F5E"></span>Loja Principal</span><span class="v">92%</span></div>
+              <div class="rk-row"><span class="p top">2</span><span><span class="dotc" style="background:#C2622E"></span>Beira-Mar</span><span class="v">78%</span></div>
+              <div class="rk-row"><span class="p top">3</span><span><span class="dotc" style="background:#35577A"></span>Centro</span><span class="v">64%</span></div>
+            </div>
+            <div class="card">
+              <h3>Ranking da equipe · 7 dias</h3>
+              <div class="rk-row"><span class="p top">1</span><span>Ana Paula</span><span class="v">94%</span></div>
+              <div class="rk-row"><span class="p top">2</span><span>Léo Martins</span><span class="v">88%</span></div>
+              <div class="rk-row me"><span class="p">3</span><span>Michel Faria <span style="color:var(--muted);font-size:13px">· você</span></span><span class="v">81%</span></div>
+              <div class="rk-row"><span class="p">4</span><span>Carla Souza</span><span class="v">76%</span></div>
+              <div class="rk-row"><span class="p">5</span><span>Rafael Dias</span><span class="v">71%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ TELA 2 — RELATÓRIOS ══════════════════ -->
+<div class="caption-bar"><h2>2 · Relatórios</h2><span>filtro fixo 280 à esquerda + tabela densa · resolve o loop ver→ajustar→ver e o corte em 20 registros</span></div>
+<div class="frame">
+  <div class="sysbar">
+    <span class="dot"></span><span>Teste grátis</span><span class="muted">· 9 dias restantes</span>
+    <button class="cta">Assinar agora</button>
+  </div>
+  <div class="body-row">
+    <nav class="side">
+      <div class="brand"><span class="mark">Z</span><span class="wm">ZCheck</span></div>
+      <div class="grp">Operação</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>Executar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Painel</a>
+      <div class="grp">Análise</div>
+      <a href="#" class="on"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 9v9M17 12v6"/></svg>Relatórios</a>
+      <div class="grp">Pessoas</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Equipe</a>
+      <div class="grp">Configuração</div>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.61.78 1 1.42 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Gerenciar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Usuários<span class="badge">3</span></a>
+      <div class="foot">
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>Central de ajuda</a>
+        <a href="#"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Recolher menu</a>
+      </div>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="co"><span class="lg">IBR</span>Ilhabela Republic</div>
+        <div class="seg">
+          <button class="on">Loja Principal</button><button>Beira-Mar</button><button>Centro</button><button>Todas</button>
+        </div>
+        <span class="date">01 – 24 de julho</span>
+        <div class="right">
+          <button class="btn-ink">Ver briefing do dia<span class="sig"></span></button>
+          <div class="avatar">MF</div>
+        </div>
+      </div>
+
+      <div class="canvas">
+        <div class="page-head">
+          <div><h1 class="display">Relatórios</h1></div>
+          <p>84 execuções no período · 3 críticos pendentes</p>
+        </div>
+
+        <div class="rep">
+          <div class="card filters">
+            <div class="fset">
+              <div class="label">Período</div>
+              <div class="chips">
+                <button class="chip">7 dias</button><button class="chip on">30 dias</button>
+                <button class="chip">Mês</button><button class="chip">Personalizado</button>
+              </div>
+              <div class="range"><span>01/07/2026</span>até<span>24/07/2026</span></div>
+            </div>
+            <div class="fset">
+              <div class="label">Agrupar por</div>
+              <div class="chips"><button class="chip on">Tipo</button><button class="chip">Setor</button></div>
+            </div>
+            <div class="fset">
+              <div class="label">Setor</div>
+              <div class="chips">
+                <button class="chip on">Todos</button><button class="chip">Salão</button>
+                <button class="chip">Cozinha</button><button class="chip">Bar</button>
+              </div>
+            </div>
+            <div class="fset">
+              <div class="label">Colaborador</div>
+              <select class="sel"><option>Todos os colaboradores</option></select>
+            </div>
+            <div class="fset">
+              <div class="label">Exportar recorte atual</div>
+              <div class="exp">
+                <button class="btn-ghost">Baixar CSV</button>
+                <button class="btn-ghost">Gerar PDF</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="grid g4" style="margin-bottom:16px">
+              <div class="card kpi tight"><h3>Checklists</h3><div class="v">84</div><div class="delta flat">de 90 previstos</div></div>
+              <div class="card kpi tight"><h3>Tarefas</h3><div class="v">91%</div><div class="delta up"><span class="tri u"></span>819 de 900</div></div>
+              <div class="card kpi tight"><h3>Críticos pendentes</h3><div class="v" style="color:var(--critical)">3</div><div class="delta down"><span class="tri d"></span>+2 vs. anterior</div></div>
+              <div class="card kpi tight"><h3>Evidências</h3><div class="v">27</div><div class="delta flat">fotos anexadas</div></div>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+              <h3>Nível de realização por colaborador</h3>
+              <table>
+                <thead><tr>
+                  <th>Colaborador</th><th>Setor</th><th class="r">Checklists</th><th class="r">Tarefas</th>
+                  <th class="r">Críticos</th><th class="r">Última atividade</th><th class="r">Realização <span class="sort">▼</span></th>
+                </tr></thead>
+                <tbody>
+                  <tr><td class="nm">Ana Paula</td><td>Salão</td><td class="r">22</td><td class="r">198</td><td class="r">12</td><td class="r">hoje, 09:02</td><td class="r"><div class="minibar"><i style="width:66px"></i><em>94%</em></div></td></tr>
+                  <tr><td class="nm">Léo Martins</td><td>Cozinha</td><td class="r">19</td><td class="r">171</td><td class="r">9</td><td class="r">hoje, 14:20</td><td class="r"><div class="minibar"><i style="width:62px"></i><em>88%</em></div></td></tr>
+                  <tr><td class="nm">Michel Faria</td><td>Todos</td><td class="r">16</td><td class="r">144</td><td class="r">7</td><td class="r">hoje, 15:31</td><td class="r"><div class="minibar"><i style="width:57px"></i><em>81%</em></div></td></tr>
+                  <tr><td class="nm">Carla Souza</td><td>Salão</td><td class="r">14</td><td class="r">122</td><td class="r">6</td><td class="r">ontem, 23:10</td><td class="r"><div class="minibar"><i style="width:53px"></i><em>76%</em></div></td></tr>
+                  <tr><td class="nm">Rafael Dias</td><td>Bar</td><td class="r">13</td><td class="r">109</td><td class="r">5</td><td class="r">22/07, 18:44</td><td class="r"><div class="minibar"><i style="width:50px"></i><em>71%</em></div></td></tr>
+                  <tr><td class="nm">Juliana Reis</td><td>Cozinha</td><td class="r">11</td><td class="r">94</td><td class="r">4</td><td class="r">22/07, 11:05</td><td class="r"><div class="minibar"><i style="width:43px"></i><em>62%</em></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+              <h3>Produtividade · score 100 = média da empresa</h3>
+              <div class="tabs"><button class="on">Por loja</button><button>Por setor</button><button>Por colaborador</button></div>
+              <table>
+                <thead><tr><th>Loja</th><th class="r">Pontos</th><th class="r">Tarefas</th><th class="r">Pts / hora</th><th class="r">Score</th></tr></thead>
+                <tbody>
+                  <tr><td class="nm">Loja Principal</td><td class="r">1.204</td><td class="r">418</td><td class="r">5,4</td><td class="r"><div class="minibar"><i style="width:70px"></i><em>112</em></div></td></tr>
+                  <tr><td class="nm">Beira-Mar</td><td class="r">982</td><td class="r">341</td><td class="r">4,6</td><td class="r"><div class="minibar"><i style="width:60px"></i><em>96</em></div></td></tr>
+                  <tr><td class="nm">Centro</td><td class="r">744</td><td class="r">260</td><td class="r">3,9</td><td class="r"><div class="minibar"><i style="width:51px"></i><em>82</em></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card">
+              <h3>Execuções do período</h3>
+              <table>
+                <thead><tr>
+                  <th>Data e hora</th><th>Setor</th><th>Checklist</th><th>Operador</th>
+                  <th class="r">Itens</th><th class="r">Evidências</th><th>Situação</th>
+                </tr></thead>
+                <tbody>
+                  <tr><td>24/07 · 09:02</td><td>Bar</td><td>Abertura</td><td>Ana Paula</td><td class="r">8/8</td><td class="r">2</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>24/07 · 08:40</td><td>Cozinha</td><td>Abertura</td><td>Léo Martins</td><td class="r">10/10</td><td class="r">1</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>24/07 · 08:12</td><td>Salão</td><td>Abertura</td><td>Ana Paula</td><td class="r">12/12</td><td class="r">3</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>23/07 · 23:10</td><td>Salão</td><td>Fechamento</td><td>Carla Souza</td><td class="r">11/11</td><td class="r">2</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>23/07 · 22:48</td><td>Cozinha</td><td>Fechamento</td><td>Juliana Reis</td><td class="r">6/8</td><td class="r">0</td><td><span class="st" style="color:var(--critical)"><span class="sq" style="background:var(--critical)"></span>Crítico pendente</span></td></tr>
+                  <tr><td>23/07 · 15:22</td><td>Bar</td><td>Intermediário</td><td>Rafael Dias</td><td class="r">7/7</td><td class="r">1</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>23/07 · 14:20</td><td>Cozinha</td><td>Intermediário</td><td>Léo Martins</td><td class="r">9/9</td><td class="r">2</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>23/07 · 09:05</td><td>Salão</td><td>Abertura</td><td>Ana Paula</td><td class="r">12/12</td><td class="r">4</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                  <tr><td>22/07 · 18:44</td><td>Bar</td><td>Intermediário</td><td>Rafael Dias</td><td class="r">5/7</td><td class="r">0</td><td><span class="st" style="color:var(--warning)"><span class="sq" style="background:var(--warning)"></span>Incompleto</span></td></tr>
+                  <tr><td>22/07 · 11:05</td><td>Cozinha</td><td>Abertura</td><td>Juliana Reis</td><td class="r">10/10</td><td class="r">1</td><td><span class="st" style="color:var(--success)"><span class="sq" style="background:var(--success)"></span>Concluído</span></td></tr>
+                </tbody>
+              </table>
+              <div class="pager">
+                <span>‹</span><b>1</b><span>2</span><span>3</span><span>…</span><span>9</span><span>›</span>
+                <span class="tot" style="width:auto;border:none;background:none;padding:0">84 registros · 10 por página</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ TELA 3 — GERENCIAR ══════════════════ -->
+<div class="caption-bar"><h2>3 · Gerenciar</h2><span>mestre-detalhe · editar 5 checklists deixa de custar 15 navegações</span></div>
+<div class="frame">
+  <div class="sysbar">
+    <span class="dot"></span><span>Teste grátis</span><span class="muted">· 9 dias restantes</span>
+    <button class="cta">Assinar agora</button>
+  </div>
+  <div class="body-row" style="min-height:700px">
+    <nav class="side">
+      <div class="brand"><span class="mark">Z</span><span class="wm">ZCheck</span></div>
+      <div class="grp">Operação</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>Executar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Painel</a>
+      <div class="grp">Análise</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 9v9M17 12v6"/></svg>Relatórios</a>
+      <div class="grp">Pessoas</div>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Equipe</a>
+      <div class="grp">Configuração</div>
+      <a href="#" class="on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.61.78 1 1.42 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Gerenciar</a>
+      <a href="#" style="padding-left:47px;font-size:13px">Checklists</a>
+      <a href="#" style="padding-left:47px;font-size:13px">Novo checklist</a>
+      <a href="#" style="padding-left:47px;font-size:13px">Estrutura</a>
+      <a href="#" style="padding-left:47px;font-size:13px">Folgas</a>
+      <a href="#" style="padding-left:47px;font-size:13px">Importar CSV</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Usuários<span class="badge">3</span></a>
+      <div class="foot">
+        <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>Central de ajuda</a>
+      </div>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="co"><span class="lg">IBR</span>Ilhabela Republic</div>
+        <div class="seg">
+          <button class="on">Loja Principal</button><button>Beira-Mar</button><button>Centro</button><button>Todas</button>
+        </div>
+        <span class="date">terça, 24 de julho</span>
+        <div class="right">
+          <button class="btn-ink">Ver briefing do dia<span class="sig"></span></button>
+          <div class="avatar">MF</div>
+        </div>
+      </div>
+
+      <div class="canvas">
+        <div class="page-head">
+          <div><h1 class="display">Checklists</h1></div>
+          <p>Gerenciar · Loja Principal · 11 modelos ativos</p>
+          <div class="act"><button class="btn-ghost">Importar CSV</button><button class="btn-ink">Novo checklist</button></div>
+        </div>
+
+        <div class="md-row">
+          <div class="lst">
+            <div class="sec">
+              <div class="label">Abertura</div>
+              <div class="grp">
+                <div class="sub">Salão</div>
+                <a href="#" class="on">Praça de Bebidas<span class="meta">12 itens · 3 críticos</span></a>
+                <a href="#">Praça de Alimentos<span class="meta">9 itens · 2 críticos</span></a>
+                <div class="sub" style="border-top:1px solid var(--border)">Cozinha</div>
+                <a href="#">Cozinha Central<span class="meta">10 itens · 4 críticos</span></a>
+              </div>
+            </div>
+            <div class="sec">
+              <div class="label">Intermediário</div>
+              <div class="grp">
+                <div class="sub">Salão</div>
+                <a href="#">Praça de Bebidas<span class="meta">9 itens · 1 crítico</span></a>
+                <div class="sub" style="border-top:1px solid var(--border)">Cozinha</div>
+                <a href="#">Cozinha Central<span class="meta">9 itens · 2 críticos</span></a>
+              </div>
+            </div>
+            <div class="sec">
+              <div class="label">Fechamento</div>
+              <div class="grp">
+                <div class="sub">Salão</div>
+                <a href="#">Praça de Bebidas<span class="meta">11 itens · 3 críticos</span></a>
+                <div class="sub" style="border-top:1px solid var(--border)">Cozinha</div>
+                <a href="#">Cozinha Central<span class="meta">8 itens · 2 críticos</span></a>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:20px 22px">
+            <div class="ed-head">
+              <div>
+                <h2 class="display">Praça de Bebidas</h2>
+                <div class="crumb">Loja Principal · Salão · Abertura</div>
+              </div>
+              <div style="margin-left:auto;display:flex;gap:8px">
+                <button class="btn-ghost">Duplicar</button>
+                <button class="btn-ink">Salvar alterações</button>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 200px;gap:18px">
+              <div class="fld">
+                <div class="label">Nome do checklist</div>
+                <input class="inp" value="Praça de Bebidas — Abertura">
+              </div>
+              <div class="fld">
+                <div class="label">Prazo</div>
+                <input class="inp" value="09:00">
+              </div>
+            </div>
+
+            <div class="label" style="margin-top:4px">Itens do checklist · 12</div>
+            <div class="items">
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">1</span><span>Limpar e organizar as mesas do salão</span><span class="fg"><span class="bx"></span>crítico</span><span class="fg"><span class="bx"></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">2</span><span>Repor guardanapos e porta-copos</span><span class="fg"><span class="bx"></span>crítico</span><span class="fg"><span class="bx"></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">3</span><span>Testar a máquina de café e limpar o bico de vapor</span><span class="fg on"><span class="bx"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span>crítico</span><span class="fg"><span class="bx"></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">4</span><span>Verificar temperatura das geladeiras de bebida</span><span class="fg on"><span class="bx"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span>crítico</span><span class="fg on2"><span class="bx"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">5</span><span>Conferir estoque de gelo e repor</span><span class="fg"><span class="bx"></span>crítico</span><span class="fg"><span class="bx"></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">6</span><span>Higienizar bancada e torneiras do bar</span><span class="fg on"><span class="bx"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span>crítico</span><span class="fg on2"><span class="bx"><svg viewBox="0 0 12 12"><path d="m2 6 3 3 5-6"/></svg></span>foto</span><span class="x">×</span></div>
+              <div class="item"><span class="hd">⋮⋮</span><span class="ix">7</span><span>Checar validade dos insumos abertos</span><span class="fg"><span class="bx"></span>crítico</span><span class="fg"><span class="bx"></span>foto</span><span class="x">×</span></div>
+            </div>
+            <button class="addi">+ Adicionar item</button>
+
+            <div class="ed-foot">
+              <button class="btn-ghost">Excluir checklist</button>
+              <span class="note">Última edição por Michel Faria · hoje, 11:24</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ LEGENDA ══════════════════ -->
+<div class="caption-bar"><h2>Regras aplicadas neste mockup</h2><span>cada decisão é rastreável ao estudo</span></div>
+<div class="legend">
+  <div class="cols">
+    <ul>
+      <li><b>Sidebar em <code>ink</code></b> — gravidade institucional sem cor nova. Uma superfície ink por tela</li>
+      <li><b>Canvas <code>shell</code>, card branco, zero sombra</b> — separação por degrau + hairline de 1px</li>
+      <li><b>Botão primário sempre <code>ink</code></b> — nunca a cor da loja</li>
+      <li><b>Acento só como rail ou dot</b> — uma marca por objeto, nunca em texto</li>
+    </ul>
+    <ul>
+      <li><b>Nenhum emoji como dado</b> — posição, forma e cor semântica no lugar de 🏆⭐📈</li>
+      <li><b>Numerais tabulares</b> em toda coluna de número — os dígitos alinham na vertical</li>
+      <li><b>Linha de tabela de 40px</b> — ~18 linhas por tela contra ~5 da pilha de cards</li>
+      <li><b>Rótulo em 12px maiúsculo</b> — o piso sobe: acabaram os 9, 10 e 11px</li>
+    </ul>
+    <ul>
+      <li><b>Tracking −0.02em</b> em título e número grande — o efeito "produto caro", de graça</li>
+      <li><b>Corpo continua 15px</b> — só a metade de cima da escala cresce</li>
+      <li><b>Paginação real</b> — o corte em 20 registros e o "exporte o CSV" deixam de existir</li>
+      <li><b>Conteúdo alinhado à esquerda</b> — nada centralizado em tela larga</li>
+    </ul>
+  </div>
+  <div class="sw">
+    <div><i style="background:#E8EFF5"></i><b>shell</b>#E8EFF5 · novo</div>
+    <div><i style="background:#F7F9FB"></i><b>bg</b>#F7F9FB</div>
+    <div><i style="background:#fff"></i><b>card</b>#FFFFFF</div>
+    <div><i style="background:#063C5C"></i><b>ink</b>#063C5C</div>
+    <div><i style="background:#9FB8C8"></i><b>inkMuted</b>#9FB8C8 · novo</div>
+    <div><i style="background:#4ADE80"></i><b>greenOnDark</b>#4ADE80</div>
+    <div><i style="background:#15803D"></i><b>success</b>#15803D</div>
+    <div><i style="background:#B45309"></i><b>warning</b>#B45309</div>
+    <div><i style="background:#B91C1C"></i><b>critical</b>#B91C1C</div>
+    <div><i style="background:#E2EAF0"></i><b>border</b>#E2EAF0</div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.store').forEach(el=>{
+  el.style.setProperty('--x', getComputedStyle(el).getPropertyValue('--a'));
+});
+</script>
+<style>.store::before{background:var(--a)}</style>
+</body>
+</html>

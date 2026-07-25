@@ -17,7 +17,7 @@ export default function OverviewPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Visão Geral</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Visão Geral</h1>
         <UpdatedAt updatedAt={updatedAt} onRefresh={refresh} loading={loading} />
       </div>
 
@@ -25,7 +25,7 @@ export default function OverviewPage() {
       <Card>
         <SectionTitle>Checklists concluídos</SectionTitle>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
-          <span style={{ fontSize: 40, fontWeight: 800, color: C.ink, lineHeight: 1 }}>{northStar.today}</span>
+          <span style={{ fontSize: 40, fontWeight: 700, color: C.ink, lineHeight: 1 }}>{northStar.today}</span>
           <span style={{ fontSize: 13, color: C.muted }}>hoje · últimos 30 dias abaixo</span>
         </div>
         <div style={{ width: '100%', height: 160 }}>
@@ -64,7 +64,7 @@ export default function OverviewPage() {
             rows={companies.map(c => [
               <span key="n" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <HealthDot status={c.health} />{c.name || c.company_id}
-                {!c.active && <span style={{ fontSize: 10, fontWeight: 800, color: C.critical }}>INATIVA</span>}
+                {!c.active && <span style={{ fontSize: 10, fontWeight: 600, color: C.critical }}>INATIVA</span>}
               </span>,
               timeAgo(c.last_activity),
               c.completions_7d, c.completions_30d,

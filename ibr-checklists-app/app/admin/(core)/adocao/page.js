@@ -24,7 +24,7 @@ export default function AdoptionPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Adoção</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Adoção</h1>
         <UpdatedAt updatedAt={updatedAt} onRefresh={refresh} loading={loading} />
       </div>
 

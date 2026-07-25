@@ -185,7 +185,7 @@ export default function CadastroPage() {
 
   const Divider = () => <div style={{ height: 1, background: C.border, margin: '0 0 20px' }} />;
   const Label = ({ children }) => (
-    <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 6 }}>
+    <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 6 }}>
       {children}
     </p>
   );
@@ -195,7 +195,7 @@ export default function CadastroPage() {
   if (step === 'status') {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui,sans-serif' }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink, textAlign: 'center', marginBottom: 4 }}>ZCheck</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 4 }}>ZCheck</h1>
         <p style={{ fontSize: 13, color: C.muted, marginBottom: 28 }}>Verificar status de solicitação</p>
         <div style={{ width: '100%', maxWidth: 320 }}>
           <StatusChecker />
@@ -211,11 +211,11 @@ export default function CadastroPage() {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui,sans-serif' }}>
         <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Solicitação enviada!</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Solicitação enviada!</h1>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 300, lineHeight: 1.6, marginBottom: 32 }}>
           Sua solicitação foi recebida. Sua solicitação será analisada em breve. Você será contatado via WhatsApp ou e-mail quando houver retorno.
         </p>
-        <a href="/app" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 800, color: 'white', padding: '12px 28px', borderRadius: 10, background: C.ink, textDecoration: 'none' }}>
+        <a href="/app" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: 'white', padding: '12px 28px', borderRadius: 10, background: C.ink, textDecoration: 'none' }}>
           Voltar ao início
         </a>
       </div>
@@ -280,7 +280,7 @@ export default function CadastroPage() {
 
         {/* Selfie */}
         <div style={{ background: 'white', borderRadius: 12, padding: 20, border: '1px solid ' + C.border, marginBottom: 16 }}>
-          <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 12 }}>
+          <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 12 }}>
             Foto selfie — obrigatória
           </p>
           <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 16 }}>
@@ -293,7 +293,7 @@ export default function CadastroPage() {
               <button onClick={() => { setSelfie(null); setSelfiePreview(null); }} style={{
                 position: 'absolute', top: 8, right: 8, background: 'white',
                 border: '1px solid ' + C.border, borderRadius: 20, padding: '4px 12px',
-                fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
               }}>Refazer</button>
             </div>
           ) : (
@@ -303,7 +303,7 @@ export default function CadastroPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => selfieRef.current?.click()} style={{
                 flex: 1, padding: '24px 8px', borderRadius: 10, border: '2px dashed ' + C.border,
-                background: 'none', fontSize: 13, fontWeight: 800, color: C.ink, cursor: 'pointer',
+                background: 'none', fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
               }}>
                 <span style={{ fontSize: 34 }}>📷</span>
@@ -311,7 +311,7 @@ export default function CadastroPage() {
               </button>
               <button onClick={() => galeriaRef.current?.click()} style={{
                 flex: 1, padding: '24px 8px', borderRadius: 10, border: '2px dashed ' + C.border,
-                background: 'none', fontSize: 13, fontWeight: 800, color: C.ink, cursor: 'pointer',
+                background: 'none', fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, fontFamily: 'inherit',
               }}>
                 <span style={{ fontSize: 34 }}>🖼️</span>
@@ -327,13 +327,13 @@ export default function CadastroPage() {
         <div ref={turnstileRef} style={{ marginBottom: 16 }} />
 
         {error && (
-          <p style={{ fontSize: 13, fontWeight: 800, color: C.critical, marginBottom: 12, textAlign: 'center' }}>{error}</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: C.critical, marginBottom: 12, textAlign: 'center' }}>{error}</p>
         )}
 
         <button onClick={submit} disabled={loading} style={{
           width: '100%', padding: '16px 0', borderRadius: 12, border: 'none',
           background: loading ? C.muted : C.ink, color: 'white',
-          fontSize: 16, fontWeight: 800, cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
+          fontSize: 16, fontWeight: 600, cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
         }}>
           {loading ? 'Enviando…' : 'Solicitar acesso'}
         </button>
@@ -408,7 +408,7 @@ function StatusChecker({ cpf: initialCpf } = {}) {
         <button
           onClick={checkStatus}
           disabled={loading || !cpf.trim()}
-          style={{ padding: '12px 18px', borderRadius: 8, background: C.ink, color: 'white', fontWeight: 800, fontSize: 13, border: 'none', cursor: 'pointer', opacity: loading || !cpf.trim() ? 0.5 : 1 }}
+          style={{ padding: '12px 18px', borderRadius: 8, background: C.ink, color: 'white', fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', opacity: loading || !cpf.trim() ? 0.5 : 1 }}
         >
           {loading ? '...' : 'Consultar'}
         </button>
@@ -417,10 +417,10 @@ function StatusChecker({ cpf: initialCpf } = {}) {
       {checked && info && (
         <div style={{ marginTop: 14, padding: '16px', borderRadius: 10, background: 'white', border: `2px solid ${info.color}30`, textAlign: 'center' }}>
           <p style={{ fontSize: 30, marginBottom: 8 }}>{info.icon}</p>
-          <p style={{ fontSize: 14, fontWeight: 800, color: info.color, marginBottom: 4 }}>{info.label}</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: info.color, marginBottom: 4 }}>{info.label}</p>
           <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{info.desc}</p>
           {status === 'aprovado' && (
-            <a href="/app" style={{ display: 'inline-block', marginTop: 14, padding: '10px 24px', background: '#31C85A', color: 'white', borderRadius: 8, fontWeight: 800, fontSize: 13, textDecoration: 'none' }}>
+            <a href="/app" style={{ display: 'inline-block', marginTop: 14, padding: '10px 24px', background: '#31C85A', color: 'white', borderRadius: 8, fontWeight: 600, fontSize: 13, textDecoration: 'none' }}>
               Abrir o app →
             </a>
           )}

@@ -6,7 +6,7 @@ export const metadata = {
 
 const Section = ({ title, children }) => (
   <div style={{ marginBottom: 32 }}>
-    <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 12, borderBottom: `2px solid ${C.border}`, paddingBottom: 8 }}>{title}</h2>
+    <h2 style={{ fontSize: 18, fontWeight: 600, color: C.ink, marginBottom: 12, borderBottom: `2px solid ${C.border}`, paddingBottom: 8 }}>{title}</h2>
     {children}
   </div>
 );
@@ -32,7 +32,7 @@ export default function PrivacidadePage() {
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '48px 24px 80px' }}>
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: C.ink, marginBottom: 8 }}>Política de Privacidade</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: C.ink, marginBottom: 8 }}>Política de Privacidade</h1>
           <p style={{ fontSize: 14, color: C.muted }}>ZCheck — Versão 1.0 — 25 de junho de 2026</p>
           <div style={{ display: 'inline-block', background: '#E8F4F0', borderRadius: 8, padding: '8px 16px', marginTop: 12 }}>
             <p style={{ fontSize: 13, color: '#2F6F5E', fontWeight: 700, margin: 0 }}>Conforme Lei nº 13.709/2018 (LGPD)</p>

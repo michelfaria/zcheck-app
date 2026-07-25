@@ -19,7 +19,7 @@ function Step({ n, label, active, done }) {
     <div className="flex flex-col items-center gap-1" style={{ flex: 1, minWidth: 0 }}>
       <div style={{
         width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        fontWeight: 800, fontSize: 12,
+        fontWeight: 600, fontSize: 12,
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
       }}>
@@ -33,7 +33,7 @@ function Step({ n, label, active, done }) {
 function Input({ label, value, onChange, placeholder, type = 'text' }) {
   return (
     <div>
-      {label && <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>{label}</p>}
+      {label && <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>{label}</p>}
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{ width: '100%', fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px',
           border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' }} />
@@ -196,13 +196,13 @@ export default function ComecarPage() {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
         <div style={{ fontSize: 64, marginBottom: 12 }}>🎉</div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Conta criada!</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Conta criada!</h1>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 360, lineHeight: 1.6, marginBottom: 20 }}>
           Entre com o nome <strong>{gestorName}</strong> e o PIN que você definiu. No primeiro acesso você configura
           sua operação — lojas, checklists, logo e cores — em poucos passos.
         </p>
         <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 24, maxWidth: 360, width: '100%', textAlign: 'center' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Endereço da sua empresa</p>
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Endereço da sua empresa</p>
           <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, wordBreak: 'break-all', marginBottom: 10 }}>{createdSlug}.zcheckapp.com/app</p>
           <button
             onClick={async () => {
@@ -213,7 +213,7 @@ export default function ComecarPage() {
             {copied ? '✓ Link copiado' : 'Copiar link'}
           </button>
         </div>
-        <a href={appUrl} style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>
+        <a href={appUrl} style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 600, fontSize: 15, textDecoration: 'none' }}>
           Entrar e configurar →
         </a>
       </div>
@@ -239,7 +239,7 @@ export default function ComecarPage() {
         {/* ── STEP 1: E-mail ── */}
         {step === 1 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Seu e-mail</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Seu e-mail</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Enviaremos um código de 6 dígitos para confirmar que é você.</p>
             <Input label="E-mail" value={email} onChange={setEmail} placeholder="voce@empresa.com" type="email" />
             <div ref={turnstileRef} style={{ marginTop: 8 }} />
@@ -249,11 +249,11 @@ export default function ComecarPage() {
         {/* ── STEP 2: Código ── */}
         {step === 2 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Digite o código</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Digite o código</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Enviamos um código de 6 dígitos para <strong>{email}</strong>.</p>
             <input type="tel" inputMode="numeric" maxLength={6} value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••"
-              style={{ width: '100%', fontSize: 28, fontWeight: 800, letterSpacing: '0.4em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
+              style={{ width: '100%', fontSize: 28, fontWeight: 700, letterSpacing: '0.4em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
             <button onClick={() => { setStep(1); setCode(''); setError(''); }}
               style={{ background: 'none', border: 'none', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
               Não recebeu? Reenviar código
@@ -264,7 +264,7 @@ export default function ComecarPage() {
         {/* ── STEP 3: Empresa (só o nome) ── */}
         {step === 3 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Nome da empresa</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Nome da empresa</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>É como sua empresa aparece no ZCheck. As lojas e checklists você configura no primeiro acesso.</p>
             <Input label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Ex: Padaria do João, Hotel Central..." />
             {companyName.trim() && slug(companyName).length >= 3 && (
@@ -276,20 +276,20 @@ export default function ComecarPage() {
         {/* ── STEP 4: Gestor ── */}
         {step === 4 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Conta do gestor</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Conta do gestor</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>A conta principal de acesso. Você entra com o nome e o PIN.</p>
             <Input label="Nome do gestor" value={gestorName} onChange={setGestorName} placeholder="Ex: João Silva" />
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN de acesso (4 dígitos)</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN de acesso (4 dígitos)</p>
               <input type="tel" inputMode="numeric" maxLength={4} value={gestorPin}
                 onChange={e => setGestorPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••"
-                style={{ width: '100%', fontSize: 24, fontWeight: 800, letterSpacing: '0.5em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
+                style={{ width: '100%', fontSize: 24, fontWeight: 700, letterSpacing: '0.5em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
             </div>
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Confirmar PIN</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Confirmar PIN</p>
               <input type="tel" inputMode="numeric" maxLength={4} value={gestorPin2}
                 onChange={e => setGestorPin2(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••"
-                style={{ width: '100%', fontSize: 24, fontWeight: 800, letterSpacing: '0.5em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${gestorPin2 && gestorPin !== gestorPin2 ? C.critical : C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
+                style={{ width: '100%', fontSize: 24, fontWeight: 700, letterSpacing: '0.5em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${gestorPin2 && gestorPin !== gestorPin2 ? C.critical : C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
               {gestorPin2 && gestorPin !== gestorPin2 && (
                 <p style={{ fontSize: 11, color: C.critical, fontWeight: 700, marginTop: 4 }}>PINs não coincidem</p>
               )}
@@ -304,10 +304,10 @@ export default function ComecarPage() {
         <div className="flex gap-3" style={{ marginTop: 32 }}>
           {step === 4 && (
             <button onClick={() => { setError(''); setStep(3); }}
-              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>← Voltar</button>
+              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 600, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>← Voltar</button>
           )}
           <button onClick={goNext} disabled={saving}
-            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 800, color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
+            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 600, color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
             {saving ? 'Aguarde...' : step === 1 ? 'Enviar código →' : step === 2 ? 'Verificar →' : step === 4 ? 'Criar conta →' : 'Próximo →'}
           </button>
         </div>

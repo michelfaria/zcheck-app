@@ -57,7 +57,7 @@ function Md({ text }) {
     const line = raw.trimEnd();
     if (/^#{1,4}\s/.test(line)) {
       flush();
-      out.push(<h3 key={i} style={{ fontSize: 13, fontWeight: 800, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '14px 0 6px' }}>
+      out.push(<h3 key={i} style={{ fontSize: 13, fontWeight: 600, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '14px 0 6px' }}>
         {line.replace(/^#{1,4}\s/, '')}
       </h3>);
     } else if (/^[-*]\s/.test(line.trim())) {
@@ -169,7 +169,7 @@ export default function AgentsPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Time de Gestão</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Time de Gestão</h1>
         <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>
             chamadas 24h: {usage.calls}/{usage.limit}
@@ -207,7 +207,7 @@ export default function AgentsPage() {
             {pendingActions.map(a => (
               <li key={a.id} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: 'white', background: C.ink, borderRadius: 4, padding: '2px 6px' }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'white', background: C.ink, borderRadius: 4, padding: '2px 6px' }}>
                     {agents[a.agent] || a.agent}
                   </span>
                   <strong style={{ fontSize: 13, color: C.ink }}>{ACTION_LABELS[a.action_type] || a.action_type}</strong>
@@ -229,17 +229,17 @@ export default function AgentsPage() {
                 )}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => decide(a.id, 'approve')} disabled={busy === a.id}
-                    style={{ background: C.success, color: 'white', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                    style={{ background: C.success, color: 'white', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     Aprovar e executar
                   </button>
                   <button onClick={() => decide(a.id, 'reject')} disabled={busy === a.id}
-                    style={{ background: 'none', color: C.critical, border: `1px solid ${C.critical}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                    style={{ background: 'none', color: C.critical, border: `1px solid ${C.critical}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     Rejeitar
                   </button>
                   {waLink(contacts[a.payload?.company_id]?.whatsapp, a.payload?.message) && (
                     <a href={waLink(contacts[a.payload.company_id].whatsapp, a.payload.message)}
                        target="_blank" rel="noreferrer"
-                       style={{ background: 'none', color: C.success, border: `1px solid ${C.success}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 800, textDecoration: 'none' }}>
+                       style={{ background: 'none', color: C.success, border: `1px solid ${C.success}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
                       Abrir no WhatsApp ↗
                     </a>
                   )}
@@ -268,7 +268,7 @@ export default function AgentsPage() {
                       {g.current != null ? `${g.current} / ` : 'alvo: '}{g.target}{g.unit ? ` ${g.unit}` : ''}
                       {g.deadline ? ` · até ${new Date(g.deadline + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
                     </span>
-                    {g.created_by === 'ceo' && <span style={{ fontSize: 10, fontWeight: 800, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 4, padding: '0 5px' }}>proposta do time</span>}
+                    {g.created_by === 'ceo' && <span style={{ fontSize: 10, fontWeight: 600, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 4, padding: '0 5px' }}>proposta do time</span>}
                     <button onClick={() => archiveGoal(g.id)} disabled={busy === g.id}
                       style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 11, color: C.mutedLight, cursor: 'pointer', textDecoration: 'underline' }}>
                       arquivar
@@ -353,7 +353,7 @@ export default function AgentsPage() {
             {chat && (
               <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: 'white', background: C.ink, borderRadius: 4, padding: '2px 6px' }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'white', background: C.ink, borderRadius: 4, padding: '2px 6px' }}>
                     {chat.agentName}
                   </span>
                   {chat.reportId && (
@@ -408,7 +408,7 @@ export default function AgentsPage() {
                 return (
                   <li key={a.id} style={{ fontSize: 12, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 6 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 4, padding: '1px 6px', color: 'white',
+                      <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 4, padding: '1px 6px', color: 'white',
                         background: a.status === 'executed' ? C.success : a.status === 'rejected' ? C.mutedLight : C.critical }}>
                         {a.status === 'executed' ? 'FEITO' : a.status === 'rejected' ? 'REJEITADO' : 'FALHOU'}
                       </span>

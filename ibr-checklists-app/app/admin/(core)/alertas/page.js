@@ -56,7 +56,7 @@ export default function AlertsPage() {
     const sev = SEVERITY[a.severity] || SEVERITY.info;
     return (
       <li key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 8, background: isOpen ? sev.bg : 'transparent', border: `1px solid ${isOpen ? sev.color : C.border}`, opacity: isOpen ? 1 : 0.75 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: 'white', background: sev.color, borderRadius: 4, padding: '2px 6px', flexShrink: 0, marginTop: 2 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'white', background: sev.color, borderRadius: 4, padding: '2px 6px', flexShrink: 0, marginTop: 2 }}>
           {sev.label}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -82,7 +82,7 @@ export default function AlertsPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Alertas</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Alertas</h1>
         <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
           <button
             onClick={runNow} disabled={busy === 'run'}

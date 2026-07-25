@@ -53,7 +53,7 @@ function Step({ n, label, active, done }) {
     <div className="flex flex-col items-center gap-1">
       <div style={{
         width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontWeight: 800, fontSize: 13,
+        fontWeight: 600, fontSize: 13,
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted,
         transition: 'all 0.2s',
@@ -68,7 +68,7 @@ function Step({ n, label, active, done }) {
 function Input({ label, value, onChange, placeholder, type = 'text' }) {
   return (
     <div>
-      {label && <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>{label}</p>}
+      {label && <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>{label}</p>}
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{ width: '100%', fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px',
           border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' }} />
@@ -190,11 +190,11 @@ export default function OnboardingPage() {
   if (done) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ fontSize: 72, marginBottom: 16 }}>🎉</div>
-      <h1 style={{ fontSize: 26, fontWeight: 800, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Empresa criada!</h1>
+      <h1 style={{ fontSize: 26, fontWeight: 700, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Empresa criada!</h1>
       <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 320, lineHeight: 1.6, marginBottom: 32 }}>
         <strong>{companyName}</strong> está pronta no ZCheck. Acesse o app com o PIN do gestor e comece a configurar seus checklists.
       </p>
-      <a href="/app" style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>
+      <a href="/app" style={{ padding: '14px 32px', borderRadius: 12, background: C.ink, color: 'white', fontWeight: 600, fontSize: 15, textDecoration: 'none' }}>
         Ir para o app →
       </a>
     </div>
@@ -206,7 +206,7 @@ export default function OnboardingPage() {
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: C.muted, marginBottom: 4, letterSpacing: '-0.03em' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: C.muted, marginBottom: 4, letterSpacing: '-0.03em' }}>
             <span style={{ color: '#063C5C' }}>Z</span>chek
           </div>
           <p style={{ fontSize: 13, color: C.muted }}>Configure sua empresa em 5 passos</p>
@@ -223,13 +223,13 @@ export default function OnboardingPage() {
         {/* ── STEP 1: Empresa ── */}
         {step === 1 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Sobre sua empresa</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Sobre sua empresa</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Essas informações identificam sua empresa no ZCheck.</p>
 
             <Input label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Ex: Padaria do João, Hotel Central..." />
 
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Segmento</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Segmento</p>
               <div className="flex flex-wrap gap-2">
                 {Object.keys(SEGMENT_TEMPLATES).map(seg => (
                   <button key={seg} onClick={() => applyTemplate(seg)}
@@ -249,7 +249,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Cor principal</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Cor principal</p>
               <div className="flex flex-wrap gap-2">
                 {COLORS.map(c => (
                   <button key={c} onClick={() => setPrimaryColor(c)}
@@ -263,7 +263,7 @@ export default function OnboardingPage() {
         {/* ── STEP 2: Lojas ── */}
         {step === 2 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Adicione cada loja ou unidade operacional.</p>
             <div className="space-y-3">
               {units.map((u, i) => (
@@ -291,7 +291,7 @@ export default function OnboardingPage() {
         {/* ── STEP 3: Setores ── */}
         {step === 3 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Setores operacionais</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Setores operacionais</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Defina os setores de cada loja (ex: Salão, Cozinha, Caixa).</p>
             <div className="space-y-3">
               {sectors.map((s, i) => (
@@ -325,7 +325,7 @@ export default function OnboardingPage() {
         {/* ── STEP 4: Tipos ── */}
         {step === 4 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Tipos de checklist</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Tipos de checklist</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
               Defina os tipos de checklist da sua operação. Não se limite a Abertura e Fechamento — adicione qualquer tipo que faça sentido para seu negócio.
             </p>
@@ -361,26 +361,26 @@ export default function OnboardingPage() {
         {/* ── STEP 5: Gestor ── */}
         {step === 5 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Conta do gestor</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Conta do gestor</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Crie a conta principal de acesso à plataforma.</p>
 
             <Input label="Nome do gestor" value={gestorName} onChange={setGestorName} placeholder="Ex: João Silva" />
 
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN de acesso (4 dígitos)</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN de acesso (4 dígitos)</p>
               <input type="tel" inputMode="numeric" maxLength={4} value={gestorPin}
                 onChange={e => setGestorPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 placeholder="••••"
-                style={{ width: '100%', fontSize: 24, fontWeight: 800, letterSpacing: '0.5em', color: C.ink,
+                style={{ width: '100%', fontSize: 24, fontWeight: 700, letterSpacing: '0.5em', color: C.ink,
                   background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
             </div>
 
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Confirmar PIN</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Confirmar PIN</p>
               <input type="tel" inputMode="numeric" maxLength={4} value={gestorPin2}
                 onChange={e => setGestorPin2(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 placeholder="••••"
-                style={{ width: '100%', fontSize: 24, fontWeight: 800, letterSpacing: '0.5em', color: C.ink,
+                style={{ width: '100%', fontSize: 24, fontWeight: 700, letterSpacing: '0.5em', color: C.ink,
                   background: 'white', padding: '12px 14px', border: `1.5px solid ${gestorPin2 && gestorPin !== gestorPin2 ? C.critical : C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />
               {gestorPin2 && gestorPin !== gestorPin2 && (
                 <p style={{ fontSize: 11, color: C.critical, fontWeight: 700, marginTop: 4 }}>PINs não coincidem</p>
@@ -388,7 +388,7 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Chave de provisionamento</p>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Chave de provisionamento</p>
               <input type="password" value={provisionKey} autoComplete="off"
                 onChange={e => setProvisionKey(e.target.value)}
                 placeholder="Segredo do servidor"
@@ -399,7 +399,7 @@ export default function OnboardingPage() {
 
             {/* Resumo */}
             <div style={{ background: 'white', borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Resumo da configuração</p>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Resumo da configuração</p>
               <div className="space-y-2">
                 <div className="flex justify-between"><span style={{ fontSize: 13, color: C.muted }}>Empresa</span><span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{companyName}</span></div>
                 <div className="flex justify-between"><span style={{ fontSize: 13, color: C.muted }}>Lojas</span><span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{units.filter(u => u.name.trim()).length}</span></div>
@@ -419,12 +419,12 @@ export default function OnboardingPage() {
         <div className="flex gap-3" style={{ marginTop: 32 }}>
           {step > 1 && (
             <button onClick={() => setStep(s => s - 1)}
-              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>
+              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 600, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>
               ← Voltar
             </button>
           )}
           <button onClick={goNext} disabled={saving}
-            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 800,
+            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 600,
               color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
             {saving ? 'Criando...' : step === 5 ? 'Criar empresa →' : 'Próximo →'}
           </button>

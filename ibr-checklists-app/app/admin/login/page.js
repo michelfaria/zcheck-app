@@ -56,7 +56,7 @@ export default function AdminLoginPage() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, marginBottom: 6 }}>ZCheck Core</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: C.ink, marginBottom: 6 }}>ZCheck Core</h1>
             <p style={{ fontSize: 14, color: C.muted }}>Centro de inteligência e gestão da plataforma</p>
           </div>
 

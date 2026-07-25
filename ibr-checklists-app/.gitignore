@@ -6,3 +6,10 @@ node_modules/
 *.log
 .DS_Store
 .env*
+
+# Playwright — relatórios e artefatos de execução são locais;
+# os snapshots de baseline (tests/*-snapshots/) SÃO versionados.
+test-results/
+playwright-report/
+blob-report/
+.playwright/

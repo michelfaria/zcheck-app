@@ -11,7 +11,7 @@ const input = {
   outline: 'none', color: C.ink, background: 'white',
 };
 const label = {
-  display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
+  display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em',
   textTransform: 'uppercase', color: C.muted, margin: '12px 0 5px',
 };
 
@@ -86,7 +86,7 @@ export default function ConfigPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Config</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Config</h1>
         <UpdatedAt updatedAt={codes.updatedAt} onRefresh={codes.refresh} loading={codes.loading} />
       </div>
 

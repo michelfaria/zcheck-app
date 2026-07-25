@@ -88,7 +88,7 @@ export function Card({ children, style }) {
 export function SectionTitle({ children, right }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <h2 style={{ fontSize: 13, fontWeight: 800, color: C.ink, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: C.ink, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
         {children}
       </h2>
       {right}
@@ -102,7 +102,7 @@ export function Kpi({ label, value, sub }) {
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, lineHeight: 1.1 }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: C.ink, lineHeight: 1.1 }}>{value ?? '—'}</div>
       {sub && <div style={{ fontSize: 12, color: C.mutedLight, marginTop: 4 }}>{sub}</div>}
     </Card>
   );
@@ -194,7 +194,7 @@ export function Table({ head, rows, empty }) {
         <thead>
           <tr>
             {head.map((h, i) => (
-              <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 8px', fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+              <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
                 {h}
               </th>
             ))}

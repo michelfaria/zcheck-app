@@ -8,6 +8,12 @@ const config = {
   ],
   theme: {
     extend: {
+      // O preflight do Tailwind aplica fontFamily.sans no <html>. Sem esta
+      // entrada ele aplicava a pilha padrão do Tailwind, e a Inter carregada
+      // via next/font (app/layout.js) não chegava a valer para tudo.
+      fontFamily: {
+        sans: ['var(--font-inter, ui-sans-serif)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
       // Tokens shadcn (arranjo Tailwind v3): cada cor lê o canal HSL definido
       // em app/globals.css, que por sua vez espelha lib/tokens.js. Uma paleta
       // só — componente shadcn nenhum deve introduzir cor nova.

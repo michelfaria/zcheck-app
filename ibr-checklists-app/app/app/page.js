@@ -3,10 +3,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   CheckCircle2, Circle, AlertTriangle, ChevronRight, ArrowLeft,
-  Plus, Trash2, X, ClipboardCheck, LayoutGrid, Settings2, Clock, Lock, Camera,
+  Plus, Trash2, X, Settings2, Clock, Lock, Camera,
   Users, User, LogOut, Store, BarChart3, ChevronUp, ChevronDown, Calendar,
-  WifiOff, RefreshCw, Bell, BellOff, ExternalLink, Award, Star,
-  FileText, PlayCircle, HelpCircle,
+  WifiOff, RefreshCw, Bell, BellOff, ExternalLink, FileText, PlayCircle, HelpCircle,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -35,6 +34,8 @@ import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from 
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
 import { C, R, W, T } from '../../lib/tokens';
+import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
+import { useAppUrlState } from '../../lib/appUrlState';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
 import { billingState, priceForUnits, MAX_SELF_SERVICE_UNITS } from '../../lib/plans';
 import { getSessionToken, setSessionToken, persistSession, loadPersistedSession } from '../../lib/supabase';
@@ -50,7 +51,7 @@ const LOGO_LOGIN_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADVCA
 // IBR1/IBR2/IBR3. Use `useUnits()` no lugar: o provider injeta as unidades do
 // tenant logado (ACTIVE_UNITS). O default abaixo só serve ao IBR, que ainda
 // depende da constante enquanto não migra para dados dinâmicos.
-const UNITS = [
+export const UNITS = [
   {
     id: 'ibr1', name: 'IBR1', color: '#2F6F5E',
     shifts: ['Manhã', 'Tarde'],
@@ -74,13 +75,13 @@ const ROLES = ['colaborador', 'lideranca', 'gerencia', 'gestao'];
 
 // Unidades do tenant logado. O provider (em AppInner) injeta ACTIVE_UNITS; o
 // default UNITS mantém o IBR funcionando enquanto ele depende da constante.
-const UnitsContext = React.createContext(UNITS);
+export const UnitsContext = React.createContext(UNITS);
 const useUnits = () => React.useContext(UnitsContext);
 
 // Linhas de `sectors` do tenant logado ({id, name, unit_id}), para resolver o
 // setor de um usuário pelo id. O IBR usa pseudo-ids ('salao'/'cozinha') que não
 // existem na tabela, por isso o resolvedor abaixo trata os dois casos.
-const SectorsContext = React.createContext([]);
+export const SectorsContext = React.createContext([]);
 const useSectors = () => React.useContext(SectorsContext);
 
 // Logo a exibir para a empresa logada. Ordem: o logo que ela subiu → o asset do
@@ -114,7 +115,7 @@ const ROLE_DESCRIPTIONS = {
 };
 
 const ROLE_COLORS = {
-  colaborador: '#6B8299',
+  colaborador: C.muted,
   lideranca: '#35577A',
   gerencia: '#C2622E',
   gestao: '#2F6F5E',
@@ -134,7 +135,7 @@ const MANAGER_ROLES = ['lideranca', 'gerencia', 'gestao'];
 // unitId === null means "todas as lojas" (gerência / gestão).
 // SEED_USERS: PINs removed from bundle — validation happens server-side via Supabase.
 // PINs are only seeded to Supabase once via saveUsers() on first run.
-const SEED_USERS = [
+export const SEED_USERS = [
   { id: 'u1', name: 'Michel', pin: '1234', role: 'gestao', unitId: null, sectorId: null },
   { id: 'u2', name: 'Diretoria Operacional', pin: '2222', role: 'gerencia', unitId: null, sectorId: null },
   { id: 'u5', name: 'Colaborador IBR1', pin: '1111', role: 'colaborador', unitId: 'ibr1', sectorId: null },
@@ -660,7 +661,7 @@ const IBR3_TEMPLATES = [
 ];
 
 
-function generateSeedTemplates() {
+export function generateSeedTemplates() {
   const templates = [];
   UNITS.forEach(u => {
     if (u.id === 'ibr2' || u.id === 'ibr3') return; // IBR2 and IBR3 use real checklists defined below.
@@ -943,7 +944,7 @@ function computeProductivity(completions) {
 }
 
 // Generates ~7 days of realistic-looking completion history (for testing the Relatórios tab).
-function generateSimulatedCompletions(templates, users, days = 7) {
+export function generateSimulatedCompletions(templates, users, days = 7) {
   const completions = [];
   for (let offset = days - 1; offset >= 0; offset--) {
     const d = new Date();
@@ -1069,15 +1070,15 @@ function ToastHost() {
   }, []);
   if (!msg) return null;
   return (
-    <div style={{
+    <div className="zc-overlay-center" style={{
       position: 'fixed', left: '50%', transform: 'translateX(-50%)',
-      bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', zIndex: 400,
+      bottom: 'calc(var(--zc-nav-h) + 16px + env(safe-area-inset-bottom, 0px))', zIndex: 400,
       display: 'flex', alignItems: 'center', gap: 8, maxWidth: 'calc(100vw - 32px)',
       background: '#E8F4F0', border: `1px solid ${C.success}`, borderRadius: R.pill,
       padding: '10px 16px', boxShadow: '0 4px 16px rgba(8,20,30,0.18)',
     }}>
       <CheckCircle2 size={16} color={C.success} style={{ flexShrink: 0 }} />
-      <p style={{ fontSize: 13, fontWeight: 700, color: C.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</p>
+      <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</p>
     </div>
   );
 }
@@ -1181,7 +1182,7 @@ function RefDocButton({ doc, accent }) {
   return (
     <button onClick={open}
       className="flex items-center gap-2"
-      style={{ fontSize: 13, fontWeight: 700, color: accent, background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, padding: '8px 12px', cursor: 'pointer', maxWidth: '100%' }}>
+      style={{ fontSize: 13, fontWeight: W.semibold, color: accent, background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, padding: '8px 12px', cursor: 'pointer', maxWidth: '100%' }}>
       <FileText size={14} style={{ flexShrink: 0 }} />
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loading ? 'Abrindo…' : doc.name}</span>
     </button>
@@ -1266,7 +1267,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                     ) : (
                       <a href={item.refVideo} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2"
-                        style={{ fontSize: 13, fontWeight: 700, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}>
+                        style={{ fontSize: 13, fontWeight: W.semibold, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}>
                         <PlayCircle size={14} /> Assistir vídeo
                       </a>
                     )}
@@ -1284,7 +1285,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
               {item.refLink && (
                 <a href={item.refLink} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2"
-                  style={{ fontSize: 13, fontWeight: 700, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}
+                  style={{ fontSize: 13, fontWeight: W.semibold, color: accent, textDecoration: 'none', padding: '8px 12px', background: `${accent}12`, borderRadius: 8, border: `1px solid ${accent}30`, width: 'fit-content' }}
                 >
                   <ExternalLink size={14} /> Abrir material de referência
                 </a>
@@ -1387,7 +1388,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             className="font-mono-ibr"
             style={{
               flexShrink: 0, transform: 'rotate(-6deg)', border: `2px solid ${C.success}`, color: C.success,
-              fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '2px 6px', borderRadius: 4,
+              fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '2px 6px', borderRadius: 4,
             }}
           >
             OK
@@ -1637,20 +1638,20 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       { min: 100, emoji: '🏆', title: 'Perfeito!', msg: 'Todos os itens concluídos. Excelente trabalho!', color: C.success },
       { min: 90,  emoji: '⭐', title: 'Excelente!', msg: 'Quase tudo concluído. Continue assim!', color: C.success },
       { min: 75,  emoji: '👍', title: 'Bom trabalho!', msg: 'A maioria dos itens foi concluída.', color: unit.color },
-      { min: 50,  emoji: '📈', title: 'Checklist registrado', msg: 'Você pode melhorar! Tente concluir mais itens amanhã.', color: '#C6842A' },
+      { min: 50,  emoji: '📈', title: 'Checklist registrado', msg: 'Você pode melhorar! Tente concluir mais itens amanhã.', color: C.warning },
       { min: 0,   emoji: '⚠️', title: 'Registrado com pendências', msg: 'Muitos itens ficaram pendentes. Priorize-os no próximo turno.', color: C.critical },
     ];
     const level = levels.find(l => rate >= l.min);
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ fontSize: 72, marginBottom: 12, lineHeight: 1 }}>{level.emoji}</div>
-        <p className="font-display" style={{ fontSize: 26, fontWeight: 800, color: level.color, textAlign: 'center', marginBottom: 8 }}>{level.title}</p>
+        <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: level.color, textAlign: 'center', marginBottom: 8 }}>{level.title}</p>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, marginBottom: 20 }}>{level.msg}</p>
         <div style={{ background: 'white', borderRadius: 14, padding: '16px 24px', border: `2px solid ${level.color}30`, textAlign: 'center', marginBottom: 20, minWidth: 200 }}>
-          <p style={{ fontSize: 48, fontWeight: 800, color: level.color, lineHeight: 1 }}>{rate}%</p>
+          <p style={{ fontSize: 48, fontWeight: W.bold, color: level.color, lineHeight: 1 }}>{rate}%</p>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{done} de {total} itens</p>
           {criticalMissed > 0 && (
-            <p style={{ fontSize: 12, color: C.critical, fontWeight: 700, marginTop: 6 }}>⚠ {criticalMissed} crítico{criticalMissed > 1 ? 's' : ''} pendente{criticalMissed > 1 ? 's' : ''}</p>
+            <p style={{ fontSize: 12, color: C.critical, fontWeight: W.semibold, marginTop: 6 }}>⚠ {criticalMissed} crítico{criticalMissed > 1 ? 's' : ''} pendente{criticalMissed > 1 ? 's' : ''}</p>
           )}
           <div style={{ width: '100%', height: 6, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
             <div style={{ height: '100%', width: `${rate}%`, background: level.color, borderRadius: 999 }} />
@@ -1660,7 +1661,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
           {template.name} · {template.sector} · {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
         </p>
         <button onClick={() => onComplete(completionRecord)}
-          style={{ padding: '14px 40px', borderRadius: 12, background: unit.color, color: 'white', border: 'none', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>
+          style={{ padding: '14px 40px', borderRadius: 12, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: 'pointer' }}>
           Concluir →
         </button>
       </div>
@@ -1668,7 +1669,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   }
 
   return (
-    <div className="p-4" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
+    <div className="zc-view" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
       <BackBar onBack={onCancel} label={template.sector} accent={unit.color}
         motiv={(() => {
           const n = (template.name || '').toLowerCase();
@@ -1679,7 +1680,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
         })()}
       />
       <div className="mb-3">
-        <h2 className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{template.name}</h2>
+        <h2 className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{template.name}</h2>
         {template.deadline && <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Prazo até {template.deadline}</p>}
       </div>
 
@@ -1691,7 +1692,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
             </div>
             <div>
               <Eyebrow>Responsável</Eyebrow>
-              <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 1 }}>{currentUser.name}</p>
+              <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink, marginTop: 1 }}>{currentUser.name}</p>
             </div>
           </div>
         </Ticket>
@@ -1710,11 +1711,11 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
         ))}
       </div>
 
-      {error && <p style={{ fontSize: 12, fontWeight: 800, color: C.critical, marginTop: 8 }}>{error}</p>}
+      {error && <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.critical, marginTop: 8 }}>{error}</p>}
 
-      <div className="fixed left-0 right-0 p-3" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}` }}>
+      <div className="zc-actionbar fixed left-0 right-0 p-3" style={{ bottom: "calc(var(--zc-nav-h) + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}`, zIndex: 90 }}>
         <div className="flex items-center justify-between mb-2">
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>{doneCount} de {total} concluídos</span>
+          <span style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted }}>{doneCount} de {total} concluídos</span>
           <div style={{ width: 120, height: 6, background: C.border, borderRadius: 999, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${(doneCount / total) * 100}%`, background: unit.color }} />
           </div>
@@ -1722,7 +1723,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
         <button
           onClick={finish}
           className="font-display w-full py-3"
-          style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: C.bg, background: unit.color }}
+          style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: C.bg, background: unit.color }}
         >
           Concluir checklist
         </button>
@@ -1738,16 +1739,16 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
 
       {/* Aviso de execução colaborativa bloqueada (H6) */}
       {collabNotice && (
-        <div style={{ position: 'fixed', bottom: 'calc(120px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 300, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: 700, boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}>
+        <div className="zc-overlay" style={{ position: 'fixed', bottom: 'calc(120px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 300, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: W.semibold, boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}>
           🔒 {collabNotice}
         </div>
       )}
 
       {/* Reabrir tarefa — exige motivo (auditoria, H6) */}
       {reopenTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom,0px))' }}>
-            <p className="font-display" style={{ fontSize: 17, fontWeight: 800, color: C.ink, marginBottom: 6 }}>Reabrir tarefa</p>
+        <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom,0px))' }}>
+            <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, marginBottom: 6 }}>Reabrir tarefa</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>
               "{truncName(reopenTarget.text, 44)}" será marcada como pendente. Registre o motivo para a auditoria.
             </p>
@@ -1756,11 +1757,11 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
               style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, resize: 'none', marginBottom: 14, background: 'white', color: C.ink }} />
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => { setReopenTarget(null); setReopenReason(''); }}
-                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}>
                 Cancelar
               </button>
               <button onClick={confirmReopen}
-                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: C.critical, color: 'white', border: 'none', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: C.critical, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}>
                 Reabrir
               </button>
             </div>
@@ -1792,13 +1793,13 @@ function visibleSectors(unit, sectorId, sectorRows) {
   return filtered.length ? filtered : unit.sectors;
 }
 
-const CHECKLIST_TYPE_ORDER = [
+export const CHECKLIST_TYPE_ORDER = [
   { key: 'abertura',     label: 'Abertura',      match: t => t.name.toLowerCase().includes('abertura') },
   { key: 'intermediario',label: 'Intermediário', match: t => t.name.toLowerCase().includes('intermedi') },
   { key: 'fechamento',   label: 'Fechamento',    match: t => t.name.toLowerCase().includes('fechamento') },
 ];
 
-function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
   const today = todayStr();
@@ -1819,7 +1820,7 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
     return (
       <div className="p-4 flex flex-col items-center justify-center" style={{ minHeight: 300 }}>
         <Calendar size={40} color={C.mutedLight} />
-        <p className="font-display" style={{ fontWeight: 800, fontSize: 18, color: C.ink, textAlign: 'center', marginTop: 16 }}>
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(18px * var(--zc-t-scale))', color: C.ink, textAlign: 'center', marginTop: 16 }}>
           {unit.name} está fechada hoje
         </p>
         <p style={{ fontSize: 13, color: C.muted, marginTop: 8, textAlign: 'center' }}>
@@ -1852,7 +1853,7 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
       : [{ sector: null, templates: typeTemplates }];
 
     return (
-      <div className="p-4 space-y-3">
+      <div className="zc-view space-y-3">
         <BackBar onBack={() => setChecklistType(null)} label={typeConfig.label} accent={unit.color} />
         {grouped.map(({ sector, templates: ts }) => (
           <div key={sector || 'all'}>
@@ -1868,7 +1869,7 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
                     <Ticket accent={STATUS_CFG[status].color}>
                       <div className="flex items-center justify-between gap-2">
                         <div style={{ minWidth: 0 }}>
-                          <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{displayName}</p>
+                          <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{displayName}</p>
                           <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                             {count} item{count > 1 ? 's' : ''} hoje{t.deadline ? ` · até ${t.deadline}` : ''}
                           </p>
@@ -1888,7 +1889,7 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
 
   // Level 1: checklist types
   return (
-    <div className="p-4 space-y-3">
+    <div className="zc-view space-y-3">
       <Eyebrow>{unit.name}</Eyebrow>
       <div className="space-y-2">
         {activeTypes.map(({ key, label, match }) => {
@@ -1907,10 +1908,10 @@ function ExecutarView({ unit, templates, completions, closures, currentUser, onS
               <Ticket accent={unit.color}>
                 <div className="flex items-center justify-between gap-2">
                   <div style={{ minWidth: 0 }}>
-                    <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{label}</p>
+                    <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{label}</p>
                     <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                       {done}/{total} {unitLabel} concluíd{isPraca ? 'a' : 'o'}{total > 1 ? 's' : ''}
-                      {overdue > 0 && <span style={{ color: C.critical, fontWeight: 800 }}> · {overdue} atrasad{isPraca ? 'a' : 'o'}{overdue > 1 ? 's' : ''}</span>}
+                      {overdue > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {overdue} atrasad{isPraca ? 'a' : 'o'}{overdue > 1 ? 's' : ''}</span>}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1953,12 +1954,12 @@ function PhotoModal({ recordId, item, onClose }) {
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.6)' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16 }}>
-        <p className="font-display" style={{ fontWeight: 800, color: C.ink, marginBottom: 8 }}>{item.text}</p>
+        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>{item.text}</p>
         {status === 'loading' && <p style={{ fontSize: 13, color: C.muted }}>Carregando foto…</p>}
         {status === 'error' && <p style={{ fontSize: 13, color: C.critical }}>Não foi possível carregar a foto.</p>}
         {status === 'ok' && <img src={src} alt={item.text} style={{ width: '100%', borderRadius: 8 }} />}
         {item.note && <p style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Obs: {item.note}</p>}
-        <button onClick={onClose} className="w-full mt-3 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white' }}>
+        <button onClick={onClose} className="w-full mt-3 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
           Fechar
         </button>
       </div>
@@ -1966,7 +1967,7 @@ function PhotoModal({ recordId, item, onClose }) {
   );
 }
 
-function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const sectorRows = useSectors(); // linhas de sectors da empresa logada
   const today = todayStr();
@@ -2080,7 +2081,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
   const rating = getRating(rateToday);
 
   return (
-    <div className="p-4 space-y-4" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+    <div className="zc-view space-y-4" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
 
       {/* Date navigator */}
       <div className="flex items-center justify-between gap-2">
@@ -2088,7 +2089,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
           <ArrowLeft size={16} color={C.ink} />
         </button>
         <div className="flex-1 flex flex-col items-center">
-          <p className="font-display" style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>{dateLabel}</p>
+          <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 15, color: C.ink }}>{dateLabel}</p>
           <input type="date" value={viewDate} max={today} onChange={e => setSelectedDate(e.target.value)}
             style={{ fontSize: 11, color: C.muted, background: 'none', border: 'none', outline: 'none', textAlign: 'center', cursor: 'pointer' }} />
         </div>
@@ -2120,8 +2121,8 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                 <button key={sg.id} onClick={() => setActiveSectorGroup(sg.id)}
                   className="text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                   <Ticket accent={r !== null && r >= 80 ? C.success : r !== null && r < 50 ? C.critical : unit.color}>
-                    <p className="font-display" style={{ fontWeight: 800, fontSize: 14, color: C.ink }}>{sg.label}</p>
-                    <p className="font-display" style={{ fontSize: 32, fontWeight: 800, color: unit.color, lineHeight: 1, margin: '4px 0' }}>
+                    <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 14, color: C.ink }}>{sg.label}</p>
+                    <p className="font-display" style={{ fontSize: 'calc(32px * var(--zc-t-scale))', fontWeight: W.bold, color: unit.color, lineHeight: 1, margin: '4px 0' }}>
                       {r !== null ? `${r}%` : '—'}
                     </p>
                     {sgRating && (
@@ -2134,7 +2135,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                     {sg.avg7 !== null && (
                       <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
                         Média 7d: {sg.avg7}%
-                        <span style={{ marginLeft: 4, color: r !== null && r > sg.avg7 ? C.success : r !== null && r < sg.avg7 ? C.critical : C.muted, fontWeight: 800 }}>
+                        <span style={{ marginLeft: 4, color: r !== null && r > sg.avg7 ? C.success : r !== null && r < sg.avg7 ? C.critical : C.muted, fontWeight: W.semibold }}>
                           {r !== null && r > sg.avg7 ? ' ▲' : r !== null && r < sg.avg7 ? ' ▼' : ' ='}
                         </span>
                       </p>
@@ -2171,7 +2172,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                 if (r === 100) return { label: '🏆 Perfeito', color: '#2F6F5E' };
                 if (r >= 90) return { label: '⭐ Excelente', color: '#2F6F5E' };
                 if (r >= 75) return { label: '👍 Bom', color: u.color };
-                if (r >= 50) return { label: '📈 Regular', color: '#C6842A' };
+                if (r >= 50) return { label: '📈 Regular', color: C.warning };
                 return { label: '⚠ Atenção', color: C.critical };
               };
               const rating = getRating(rate);
@@ -2206,21 +2207,21 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p style={{ fontSize: 13, fontWeight: 800, color: u.color }}>{u.name}</p>
+                        <p style={{ fontSize: 13, fontWeight: W.semibold, color: u.color }}>{u.name}</p>
                         {!unitClosed && rate !== null && (
                           <span style={{ fontSize: 13 }}>{['🥇','🥈','🥉'][rank] ?? ''}</span>
                         )}
                       </div>
                       {unitClosed
                         ? <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Fechada hoje</p>
-                        : <p className="font-display" style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, marginTop: 4 }}>{rate ?? '—'}%</p>
+                        : <p className="font-display" style={{ fontSize: 'calc(36px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, lineHeight: 1, marginTop: 4 }}>{rate ?? '—'}%</p>
                       }
-                      {rating && <p style={{ fontSize: 11, fontWeight: 700, color: rating.color, marginTop: 2 }}>{rating.label}</p>}
+                      {rating && <p style={{ fontSize: 11, fontWeight: W.semibold, color: rating.color, marginTop: 2 }}>{rating.label}</p>}
                     </div>
                     {!unitClosed && trend !== null && (
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontSize: 11, color: C.muted, fontWeight: 700 }}>vs média 7d</p>
-                        <p style={{ fontSize: 18, fontWeight: 800, color: trend >= 0 ? C.success : C.critical }}>
+                        <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold }}>vs média 7d</p>
+                        <p style={{ fontSize: 18, fontWeight: W.semibold, color: trend >= 0 ? C.success : C.critical }}>
                           {trend >= 0 ? '▲' : '▼'} {Math.abs(trend)}%
                         </p>
                         <p style={{ fontSize: 11, color: C.muted }}>média {avg}%</p>
@@ -2241,8 +2242,8 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                           const r = turnoRate(shift);
                           return r !== null ? (
                             <div key={label} style={{ flex:1, background: C.bg, borderRadius: 6, padding: '4px 6px', textAlign:'center' }}>
-                              <p style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform:'uppercase' }}>{label.slice(0,4)}</p>
-                              <p style={{ fontSize: 13, fontWeight: 800, color: r>=80?C.success:r>=50?u.color:C.critical }}>{r}%</p>
+                              <p style={{ fontSize: 9, fontWeight: W.semibold, color: C.muted, textTransform:'uppercase' }}>{label.slice(0,4)}</p>
+                              <p style={{ fontSize: 13, fontWeight: W.semibold, color: r>=80?C.success:r>=50?u.color:C.critical }}>{r}%</p>
                             </div>
                           ) : null;
                         })}
@@ -2254,7 +2255,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                               <div style={{ width:'100%', background: v===null?C.border:v>=80?C.success:v>=50?u.color:C.critical, borderRadius: 2, height: v===null?2:`${Math.max(2, (v/100)*20)}px`, opacity: i===6?1:0.6+i*0.06 }} />
                             </div>
                           ))}
-                          <p style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginLeft: 2 }}>7d</p>
+                          <p style={{ fontSize: 9, color: C.muted, fontWeight: W.semibold, marginLeft: 2 }}>7d</p>
                         </div>
                       </div>
                     </>
@@ -2281,8 +2282,8 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                   {sorted.map(({u, rate}, i) => (
                     <div key={u.id} className="flex items-center gap-3" style={{ padding: '8px 12px', background: 'white', borderRadius: 10, border: `1.5px solid ${C.border}` }}>
                       <span style={{ fontSize: 18 }}>{['🥇','🥈','🥉'][i]}</span>
-                      <p style={{ flex:1, fontSize: 14, fontWeight: 800, color: u.color }}>{u.name}</p>
-                      <p className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>{rate}%</p>
+                      <p style={{ flex:1, fontSize: 14, fontWeight: W.semibold, color: u.color }}>{u.name}</p>
+                      <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{rate}%</p>
                       <div style={{ width: 60, height: 4, background: C.border, borderRadius: 999, overflow:'hidden' }}>
                         <div style={{ height:'100%', width:`${rate}%`, background: rate>=80?C.success:rate>=50?u.color:C.critical }} />
                       </div>
@@ -2300,7 +2301,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
         <Ticket accent={C.muted}>
           <div className="flex items-center gap-2">
             <Calendar size={18} color={C.muted} />
-            <p style={{ fontSize: 14, fontWeight: 700, color: C.muted }}>Loja fechada — nenhum checklist necessário.</p>
+            <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.muted }}>Loja fechada — nenhum checklist necessário.</p>
           </div>
         </Ticket>
       ) : (
@@ -2309,13 +2310,13 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
           <div className="p-4" style={{ background: unit.color, borderRadius: 12 }}>
             <div className="flex items-end justify-between">
               <div>
-                <p style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                <p style={{ fontSize: 12, fontWeight: W.semibold, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                   {unit.name}{sectorLabelFor(currentUser?.sectorId, sectorRows) ? ` · ${sectorLabelFor(currentUser?.sectorId, sectorRows)}` : ''}
                 </p>
-                <p className="font-display" style={{ fontSize: 56, fontWeight: 800, color: 'white', lineHeight: 1, marginTop: 4 }}>
+                <p className="font-display" style={{ fontSize: 'calc(56px * var(--zc-t-scale))', fontWeight: W.bold, color: 'white', lineHeight: 1, marginTop: 4 }}>
                   {rateToday !== null ? `${rateToday}%` : '—'}
                 </p>
-                {rating && <p style={{ fontSize: 15, fontWeight: 800, color: 'rgba(255,255,255,0.9)', marginTop: 4 }}>{rating.label}</p>}
+                {rating && <p style={{ fontSize: 15, fontWeight: W.semibold, color: 'rgba(255,255,255,0.9)', marginTop: 4 }}>{rating.label}</p>}
               </div>
               {rating && (
                 <div style={{ textAlign: 'right' }}>
@@ -2338,10 +2339,10 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
             <div className="grid grid-cols-2 gap-2">
               {rateYesterday !== null && (
                 <Ticket accent={C.border}>
-                  <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ontem</p>
-                  <p className="font-display" style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginTop: 2 }}>{rateYesterday}%</p>
+                  <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ontem</p>
+                  <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginTop: 2 }}>{rateYesterday}%</p>
                   {rateToday !== null && (
-                    <p style={{ fontSize: 12, fontWeight: 800, marginTop: 4,
+                    <p style={{ fontSize: 12, fontWeight: W.semibold, marginTop: 4,
                       color: rateToday > rateYesterday ? C.success : rateToday < rateYesterday ? C.critical : C.muted }}>
                       {rateToday > rateYesterday ? `▲ +${rateToday - rateYesterday}pp` :
                        rateToday < rateYesterday ? `▼ ${rateToday - rateYesterday}pp` : '= igual'}
@@ -2351,10 +2352,10 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
               )}
               {avg7 !== null && (
                 <Ticket accent={C.border}>
-                  <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Média 7 dias</p>
-                  <p className="font-display" style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginTop: 2 }}>{avg7}%</p>
+                  <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Média 7 dias</p>
+                  <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginTop: 2 }}>{avg7}%</p>
                   {rateToday !== null && (
-                    <p style={{ fontSize: 12, fontWeight: 800, marginTop: 4,
+                    <p style={{ fontSize: 12, fontWeight: W.semibold, marginTop: 4,
                       color: rateToday > avg7 ? C.success : rateToday < avg7 ? C.critical : C.muted }}>
                       {rateToday > avg7 ? `▲ acima da média` : rateToday < avg7 ? `▼ abaixo da média` : '= na média'}
                     </p>
@@ -2376,7 +2377,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                       background: r >= 80 ? C.success : r >= 50 ? unit.color : C.critical,
                       borderRadius: 3, transition: 'height 0.3s ease',
                     }} />
-                    <p style={{ fontSize: 9, color: C.muted, fontWeight: 600 }}>{r}%</p>
+                    <p style={{ fontSize: 9, color: C.muted, fontWeight: W.semibold }}>{r}%</p>
                   </div>
                 ))}
               </div>
@@ -2398,9 +2399,9 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
             return (
               <Ticket key={key} accent={allDone ? C.success : anyOverdue ? C.critical : unit.color}>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="font-display" style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{label}</p>
+                  <p className="font-display" style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>{label}</p>
                   <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 12, fontWeight: 800, color: allDone ? C.success : anyOverdue ? C.critical : unit.color }}>
+                    <span style={{ fontSize: 12, fontWeight: W.semibold, color: allDone ? C.success : anyOverdue ? C.critical : unit.color }}>
                       {doneCount}/{typeTemplates.length}
                     </span>
                     {allDone && <CheckCircle2 size={16} color={C.success} />}
@@ -2421,7 +2422,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                       <div key={sector}>
                         <div className="flex items-center justify-between gap-2">
                           <div style={{ minWidth: 0 }}>
-                            <p style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{sector}</p>
+                            <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>{sector}</p>
                             <p style={{ fontSize: 11, color: C.muted }}>
                               {comp
                                 ? `${comp.operatorName} · ${new Date(comp.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
@@ -2429,7 +2430,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                             </p>
                           </div>
                           <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                            <span className="font-mono-ibr" style={{ fontSize: 12, fontWeight: 600, color: doneItems === totalItems && totalItems > 0 ? C.success : C.muted }}>
+                            <span className="font-mono-ibr" style={{ fontSize: 12, fontWeight: W.semibold, color: doneItems === totalItems && totalItems > 0 ? C.success : C.muted }}>
                               {doneItems}/{totalItems}
                             </span>
                             <StatusBadge status={status} />
@@ -2440,7 +2441,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                             {photoItems.map(i => (
                               <button key={i.id} onClick={() => setViewingPhoto({ recordId: comp.id, item: i })}
                                 className="flex items-center gap-1"
-                                style={{ fontSize: 10, fontWeight: 800, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px' }}>
+                                style={{ fontSize: 10, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px' }}>
                                 <Camera size={10} /> Foto
                               </button>
                             ))}
@@ -2494,7 +2495,7 @@ function PainelView({ unit, templates, completions, closures, canSeeAllUnits, cu
                             )}
                           </div>
                         </div>
-                        <span className="font-display" style={{ fontSize: 16, fontWeight: 800, color: barColor, flexShrink: 0 }}>{collab.rate}%</span>
+                        <span className="font-display" style={{ fontSize: 16, fontWeight: W.semibold, color: barColor, flexShrink: 0 }}>{collab.rate}%</span>
                       </div>
                       <div style={{ width: '100%', height: 5, background: C.border, borderRadius: 999, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${collab.rate}%`, background: barColor, borderRadius: 999, transition: 'width 0.5s ease' }} />
@@ -2571,7 +2572,7 @@ function NotificationHistory({ templates, last7, today, unit }) {
     if (!open) loadLog();
   };
 
-  const UNIT_COLORS = { ibr1: '#1B6CA8', ibr2: '#C6842A', ibr3: '#0B3C5C' };
+  const UNIT_COLORS = { ibr1: '#1B6CA8', ibr2: C.warning, ibr3: '#0B3C5C' };
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -2582,7 +2583,7 @@ function NotificationHistory({ templates, last7, today, unit }) {
       >
         <div className="flex items-center gap-2">
           <Bell size={15} color={C.muted} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Histórico de notificações</span>
+          <span style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>Histórico de notificações</span>
         </div>
         <ChevronRight size={15} color={C.muted} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
       </button>
@@ -2599,10 +2600,10 @@ function NotificationHistory({ templates, last7, today, unit }) {
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: UNIT_COLORS[entry.unitId] || C.muted, marginTop: 5, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="flex items-center justify-between gap-2">
-                  <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {entry.templateName}
                   </p>
-                  <span style={{ fontSize: 10, color: C.muted, flexShrink: 0, fontWeight: 700 }}>
+                  <span style={{ fontSize: 10, color: C.muted, flexShrink: 0, fontWeight: W.semibold }}>
                     {entry.unitId?.toUpperCase()} · {entry.deadline}
                   </span>
                 </div>
@@ -2627,7 +2628,7 @@ function StatCard({ label, value, sub, accent }) {
   return (
     <Ticket accent={accent}>
       <Eyebrow>{label}</Eyebrow>
-      <p className="font-display" style={{ fontSize: T.display, fontWeight: W.bold, color: C.ink, marginTop: 4 }}>{value}</p>
+      <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginTop: 4 }}>{value}</p>
       {sub && <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>{sub}</p>}
     </Ticket>
   );
@@ -2650,13 +2651,13 @@ const formatDateTime = iso => {
 // marca vertical em 100 (média da empresa) como referência visual.
 function ProdRow({ entry, accent }) {
   const score = entry.score;
-  const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? '#C6842A' : C.critical;
+  const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? C.warning : C.critical;
   const barPct = score == null ? 0 : Math.min(score, 150) / 1.5;
   return (
     <Ticket accent={color}>
       <div className="flex items-center justify-between gap-2">
         <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</p>
-        <p className="font-display" style={{ fontWeight: 800, color, flexShrink: 0 }}>
+        <p className="font-display" style={{ fontWeight: W.semibold, color, flexShrink: 0 }}>
           {score == null ? 'sem ritmo' : score}
         </p>
       </div>
@@ -2674,10 +2675,23 @@ function ProdRow({ entry, accent }) {
   );
 }
 
-function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, activeTypes = CHECKLIST_TYPE_ORDER }) {
+// Paginação das execuções no Relatórios. 25 por página: cabe numa tela de
+// desktop sem rolar e ainda é uma leitura razoável no celular.
+const EXEC_PAGE_SIZE = 25;
+const execPagerBtn = {
+  width: 30, height: 30, borderRadius: R.sm, border: `1px solid ${C.borderStrong}`,
+  background: 'white', color: C.ink, fontSize: T.bodyLg, lineHeight: 1,
+  display: 'grid', placeItems: 'center', fontFamily: 'inherit',
+};
+
+export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
+  const [execPage, setExecPage] = useState(1);
   const [period, setPeriod] = useState('7d');
+  // Trocar de filtro estando na página 7 mostraria "nenhuma execução" num
+  // recorte que tem dados — a página precisa voltar ao início.
+  useEffect(() => { setExecPage(1); }, [period, unit?.id]);
   const [customFrom, setCustomFrom] = useState(todayStr());
   const [customTo, setCustomTo] = useState(todayStr());
   const [selectedMonth, setSelectedMonth] = useState(todayStr().slice(0, 7));
@@ -2976,7 +2990,8 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="zc-view space-y-4 zc-rep">
+      <div className="zc-rep-filters space-y-4">
       <Eyebrow>Período</Eyebrow>
       <div className="flex flex-wrap gap-2">
         {PERIODS.map(p => (
@@ -2991,10 +3006,10 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
             value={selectedMonth}
             max={todayStr().slice(0, 7)}
             onChange={e => setSelectedMonth(e.target.value)}
-            style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${unit.color}`, borderRadius: 8, outline: 'none' }}
+            style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${unit.color}`, borderRadius: 8, outline: 'none' }}
           />
           {selectedMonth && (
-            <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>
+            <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>
               {new Date(`${selectedMonth}-15`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </span>
           )}
@@ -3005,12 +3020,12 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
         <div className="flex items-center gap-2">
           <input
             type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)}
-            style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+            style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
           />
-          <span style={{ fontSize: 12, color: C.muted, fontWeight: 800 }}>até</span>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>até</span>
           <input
             type="date" value={customTo} min={customFrom} max={todayStr()} onChange={e => setCustomTo(e.target.value)}
-            style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+            style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
           />
         </div>
       )}
@@ -3033,14 +3048,16 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       <select
         value={filterUserId} onChange={e => setFilterUserId(e.target.value)}
         className="w-full"
-        style={{ fontSize: 13, fontWeight: 700, color: C.ink, background: 'white', padding: '10px 10px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+        style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '10px 10px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
       >
         <option value="">Todos</option>
         {users
           .filter(u => !u.unitId || u.unitId === filterUnitId)
           .map(u => <option key={u.id} value={u.id}>{truncName(u.name, 30)}</option>)}
       </select>
+      </div>
 
+      <div className="zc-rep-results space-y-4">
       <div className="grid grid-cols-2 gap-2">
         <StatCard
           label="Checklists concluídos" accent={unit.color}
@@ -3072,8 +3089,8 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
           {collaborators.map(c => (
             <Ticket key={c.key} accent={unit.color}>
               <div className="flex items-center justify-between gap-2">
-                <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{c.name}</p>
-                <p className="font-display" style={{ fontWeight: 800, color: c.rate == null ? C.muted : c.rate >= 80 ? C.success : c.rate >= 50 ? unit.color : C.critical }}>{c.rate == null ? '—' : `${c.rate.toFixed(0)}%`}</p>
+                <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{c.name}</p>
+                <p className="font-display" style={{ fontWeight: W.semibold, color: c.rate == null ? C.muted : c.rate >= 80 ? C.success : c.rate >= 50 ? unit.color : C.critical }}>{c.rate == null ? '—' : `${c.rate.toFixed(0)}%`}</p>
               </div>
               <RateBar rate={c.rate || 0} accent={unit.color} />
               <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
@@ -3095,8 +3112,8 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
           {groups.map(g => (
             <Ticket key={g.key} accent={unit.color}>
               <div className="flex items-center justify-between gap-2">
-                <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{g.key}</p>
-                <p className="font-display" style={{ fontWeight: 800, color: g.rate >= 80 ? C.success : g.rate >= 50 ? unit.color : C.critical }}>{g.rate.toFixed(0)}%</p>
+                <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{g.key}</p>
+                <p className="font-display" style={{ fontWeight: W.semibold, color: g.rate >= 80 ? C.success : g.rate >= 50 ? unit.color : C.critical }}>{g.rate.toFixed(0)}%</p>
               </div>
               <RateBar rate={g.rate} accent={unit.color} />
               <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
@@ -3116,7 +3133,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Empresa (período)</p>
-                <p className="font-display" style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginTop: 2 }}>
+                <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginTop: 2 }}>
                   {prod.company.rate != null ? `${prod.company.rate.toFixed(1)} pts/h` : '—'}
                 </p>
               </div>
@@ -3189,13 +3206,13 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
                   return (
                     <div key={dia} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       {r !== null && (
-                        <p style={{ fontSize: 10, fontWeight: 800, color }}>{r}%</p>
+                        <p style={{ fontSize: 10, fontWeight: W.semibold, color }}>{r}%</p>
                       )}
                       {r === null && (
                         <p style={{ fontSize: 9, color: C.muted }}>—</p>
                       )}
                       <div style={{ width: '100%', height: h, background: color, borderRadius: 4, opacity: r === null ? 0.3 : 1, transition: 'height 0.4s ease' }} />
-                      <p style={{ fontSize: 10, fontWeight: 700, color: C.muted }}>{dia}</p>
+                      <p style={{ fontSize: 10, fontWeight: W.semibold, color: C.muted }}>{dia}</p>
                       {byDow[i].count > 0 && (
                         <p style={{ fontSize: 9, color: C.muted }}>{byDow[i].count}x</p>
                       )}
@@ -3216,9 +3233,11 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       <Eyebrow>Execuções do período</Eyebrow>
       <div className="space-y-1.5" style={{ marginBottom: 16 }}>
         {(() => {
-          const recentes = [...filtered]
-            .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-            .slice(0, 20);
+          const ordenadas = [...filtered]
+            .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+          const totalPag = Math.max(1, Math.ceil(ordenadas.length / EXEC_PAGE_SIZE));
+          const pagAtual = Math.min(execPage, totalPag);
+          const recentes = ordenadas.slice((pagAtual - 1) * EXEC_PAGE_SIZE, pagAtual * EXEC_PAGE_SIZE);
           if (recentes.length === 0) {
             return <p style={{ fontSize: T.caption, color: C.muted }}>Nenhuma execução no período com os filtros atuais.</p>;
           }
@@ -3252,10 +3271,24 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
                   </div>
                 );
               })}
-              {filtered.length > 20 && (
-                <p style={{ fontSize: T.label, color: C.muted }}>
-                  Mostrando as 20 mais recentes de {filtered.length} — refine os filtros ou exporte o CSV para o total.
-                </p>
+              {/* Antes: corte em 20 com "refine os filtros ou exporte o CSV para o
+                  total" — uma limitação de tela pequena que virou limitação de
+                  produto, mandando o gestor para o Excel. Agora pagina. */}
+              {totalPag > 1 && (
+                <div className="flex items-center gap-2" style={{ paddingTop: 8 }}>
+                  <button type="button" onClick={() => setExecPage(p => Math.max(1, p - 1))}
+                    disabled={pagAtual === 1} aria-label="Página anterior"
+                    style={{ ...execPagerBtn, opacity: pagAtual === 1 ? 0.4 : 1, cursor: pagAtual === 1 ? 'default' : 'pointer' }}>‹</button>
+                  <span style={{ fontSize: T.label, color: C.muted }}>
+                    Página {pagAtual} de {totalPag}
+                  </span>
+                  <button type="button" onClick={() => setExecPage(p => Math.min(totalPag, p + 1))}
+                    disabled={pagAtual === totalPag} aria-label="Próxima página"
+                    style={{ ...execPagerBtn, opacity: pagAtual === totalPag ? 0.4 : 1, cursor: pagAtual === totalPag ? 'default' : 'pointer' }}>›</button>
+                  <span style={{ fontSize: T.label, color: C.muted, marginLeft: 'auto' }}>
+                    {ordenadas.length} execuções
+                  </span>
+                </div>
               )}
             </>
           );
@@ -3267,14 +3300,14 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
         <button
           onClick={exportCSV}
           className="flex-1 flex items-center justify-center gap-2 py-3"
-          style={{ borderRadius: 10, border: `1.5px solid ${C.border}`, fontWeight: 800, fontSize: 13, color: C.ink, background: 'white', cursor: 'pointer' }}
+          style={{ borderRadius: 10, border: `1.5px solid ${C.border}`, fontWeight: W.semibold, fontSize: 13, color: C.ink, background: 'white', cursor: 'pointer' }}
         >
           ⬇ Excel / CSV
         </button>
         <button
           onClick={exportPDF}
           className="flex-1 flex items-center justify-center gap-2 py-3"
-          style={{ borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 13, color: 'white', background: unit.color, cursor: 'pointer', boxShadow: `0 2px 8px ${unit.color}44` }}
+          style={{ borderRadius: 10, border: 'none', fontWeight: W.semibold, fontSize: 13, color: 'white', background: unit.color, cursor: 'pointer', boxShadow: `0 2px 8px ${unit.color}44` }}
         >
           🖨 Exportar PDF
         </button>
@@ -3283,6 +3316,7 @@ function ReportsView({ unit, templates, completions, closures, users, canSeeAllU
       {viewingPhoto && (
         <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
       )}
+      </div>
     </div>
   );
 }
@@ -3315,7 +3349,7 @@ function ItemGuidanceEditor({ item, accent, apply }) {
 
   return (
     <div className="mt-2" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>
+      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>
         Orientação — aparece no botão "Ver mais"
       </p>
 
@@ -3329,21 +3363,21 @@ function ItemGuidanceEditor({ item, accent, apply }) {
       />
 
       {/* Fotos de referência */}
-      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Fotos de referência</p>
+      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Fotos de referência</p>
       <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
         {(item.refPhotos || []).map((photo, pi) => (
           <div key={pi} style={{ position: 'relative' }}>
             <img src={photo} alt={`ref ${pi+1}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: `1px solid ${C.border}` }} />
             <button
               onClick={() => apply(i => ({ refPhotos: (i.refPhotos || []).filter((_, x) => x !== pi) }))}
-              style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: C.critical, border: 'none', color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, lineHeight: 1 }}
+              style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: C.critical, border: 'none', color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: W.semibold, lineHeight: 1 }}
             >×</button>
           </div>
         ))}
         {(item.refPhotos || []).length < 5 && (
           <label style={{ width: 72, height: 72, borderRadius: 6, border: `2px dashed ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 4 }}>
             <Camera size={18} color={C.muted} />
-            <span style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>Adicionar</span>
+            <span style={{ fontSize: 10, color: C.muted, fontWeight: W.semibold }}>Adicionar</span>
             <input type="file" accept="image/*" style={{ display: 'none' }}
               onChange={async e => {
                 const file = e.target.files?.[0];
@@ -3358,7 +3392,7 @@ function ItemGuidanceEditor({ item, accent, apply }) {
       </div>
 
       {/* Documentos de referência (POP) */}
-      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP, manual — PDF, Word etc.)</p>
+      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Documentos (POP, manual — PDF, Word etc.)</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
         {(item.refDocs || []).map((doc, di) => (
           <div key={di} className="flex items-center gap-2" style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px' }}>
@@ -3371,7 +3405,7 @@ function ItemGuidanceEditor({ item, accent, apply }) {
           </div>
         ))}
         {(item.refDocs || []).length < 3 && (
-          <label className="flex items-center gap-2" style={{ width: 'fit-content', fontSize: 11, fontWeight: 700, color: docUploading ? C.muted : accent, border: `1.5px dashed ${docUploading ? C.border : accent}`, borderRadius: 6, padding: '7px 12px', cursor: docUploading ? 'default' : 'pointer' }}>
+          <label className="flex items-center gap-2" style={{ width: 'fit-content', fontSize: 11, fontWeight: W.semibold, color: docUploading ? C.muted : accent, border: `1.5px dashed ${docUploading ? C.border : accent}`, borderRadius: 6, padding: '7px 12px', cursor: docUploading ? 'default' : 'pointer' }}>
             <Plus size={13} />
             {docUploading ? 'Enviando…' : 'Anexar documento'}
             <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" style={{ display: 'none' }}
@@ -3398,11 +3432,11 @@ function ItemGuidanceEditor({ item, accent, apply }) {
             />
           </label>
         )}
-        {docError && <p style={{ fontSize: 11, fontWeight: 700, color: C.critical }}>{docError}</p>}
+        {docError && <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.critical }}>{docError}</p>}
       </div>
 
       {/* Vídeo externo (YouTube etc.) */}
-      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo externo (YouTube — passo a passo da tarefa)</p>
+      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Vídeo externo (YouTube — passo a passo da tarefa)</p>
       <input
         value={item.refVideo || ''}
         onChange={e => { const v = e.target.value; apply(() => ({ refVideo: v })); }}
@@ -3411,7 +3445,7 @@ function ItemGuidanceEditor({ item, accent, apply }) {
       />
 
       {/* Link externo */}
-      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (documento online, Drive etc.)</p>
+      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Link externo (documento online, Drive etc.)</p>
       <input
         value={item.refLink || ''}
         onChange={e => { const v = e.target.value; apply(() => ({ refLink: v })); }}
@@ -3521,7 +3555,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
   };
 
   return (
-    <div className="p-4" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
+    <div className="zc-view" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
       <BackBar onBack={onCancel} label={template?.name?.includes(' — ') ? template.name.split(' — ')[0] : (sector || '')} accent={unit.color} />
 
       <div className="mb-3">
@@ -3530,25 +3564,25 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
           <input
             value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Abertura — Salão"
             className="w-full mt-1 mb-3"
-            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 700, color: C.ink }}
+            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: W.semibold, color: C.ink }}
           />
           <Eyebrow>Prazo (opcional)</Eyebrow>
           <input
             type="time" value={deadline} onChange={e => setDeadline(e.target.value)}
             className="mt-1"
-            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 600, color: C.ink }}
+            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: W.semibold, color: C.ink }}
           />
         </Ticket>
       </div>
 
       <Eyebrow>Itens do checklist</Eyebrow>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Segure e arraste o <span style={{ fontWeight: 800 }}>≡</span> para reordenar. Toque no número para mover para uma posição específica.</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Segure e arraste o <span style={{ fontWeight: W.semibold }}>≡</span> para reordenar. Toque no número para mover para uma posição específica.</p>
       <div className="space-y-2 mt-2" id="item-list-container">
         {dragState && (
           <div style={{
             position: 'sticky', top: 8, zIndex: 10, textAlign: 'center',
             background: unit.color, color: 'white', borderRadius: 20,
-            padding: '4px 14px', fontSize: 12, fontWeight: 800,
+            padding: '4px 14px', fontSize: 12, fontWeight: W.semibold,
             width: 'fit-content', margin: '0 auto 4px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           }}>
@@ -3593,7 +3627,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
                   title="Toque para mover para posição específica"
                 >
-                  <span className="font-mono-ibr" style={{ fontSize: 10, color: unit.color, fontWeight: 800, lineHeight: 1, textDecoration: 'underline dotted' }}>{index + 1}</span>
+                  <span className="font-mono-ibr" style={{ fontSize: 10, color: unit.color, fontWeight: W.semibold, lineHeight: 1, textDecoration: 'underline dotted' }}>{index + 1}</span>
                 </button>
               </div>
               <textarea
@@ -3617,28 +3651,28 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
             <div className="flex flex-wrap gap-3 mt-2">
               <label
                 className="flex items-center gap-1.5"
-                style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.critical ? C.critical : C.muted }}
+                style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.critical ? C.critical : C.muted }}
               >
                 <input type="checkbox" checked={!!item.critical} onChange={e => updateItem(item.id, { critical: e.target.checked })} />
                 Crítico
               </label>
               <label
                 className="flex items-center gap-1.5"
-                style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.required ? unit.color : C.muted }}
+                style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.required ? unit.color : C.muted }}
               >
                 <input type="checkbox" checked={!!item.required} onChange={e => updateItem(item.id, { required: e.target.checked })} />
                 Obrigatório (bloqueia avanço)
               </label>
               <label
                 className="flex items-center gap-1.5"
-                style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.photoRequired ? unit.color : C.muted }}
+                style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.photoRequired ? unit.color : C.muted }}
               >
                 <input type="checkbox" checked={!!item.photoRequired} onChange={e => updateItem(item.id, { photoRequired: e.target.checked })} />
                 Exigir foto
               </label>
             </div>
             <div className="mt-2">
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
+              <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
                 {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
               </p>
               <div className="flex gap-1">
@@ -3653,7 +3687,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                         updateItem(item.id, { recurrence: next.length ? next : null });
                       }}
                       style={{
-                        width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: 800,
+                        width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: W.semibold,
                         border: `1px solid ${C.border}`,
                         background: active ? unit.color : 'white',
                         color: active ? C.bg : C.muted,
@@ -3684,7 +3718,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
               const appearsIn = item.appearsIn || (currentType ? [currentType] : ALL_TYPES.map(t => t.id));
               return (
                 <div className="mt-2" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
-                  <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>
+                  <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>
                     Aparece em:
                   </p>
                   <div className="flex flex-wrap gap-2">
@@ -3701,7 +3735,7 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                             updateItem(item.id, { appearsIn: next });
                           }}
                           style={{
-                            fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                            fontSize: 12, fontWeight: W.semibold, padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
                             background: active ? unit.color : 'white',
                             color: active ? 'white' : C.muted,
                             border: `1.5px solid ${active ? unit.color : C.border}`,
@@ -3724,16 +3758,16 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
       <button
         onClick={addItem}
         className="flex items-center justify-center gap-2 w-full py-2.5 mt-2"
-        style={{ borderRadius: 6, border: `1px dashed ${C.border}`, fontWeight: 800, color: C.muted, background: 'none' }}
+        style={{ borderRadius: 6, border: `1px dashed ${C.border}`, fontWeight: W.semibold, color: C.muted, background: 'none' }}
       >
         <Plus size={16} /> Adicionar item
       </button>
 
-      <div className="fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}` }}>
-        <button onClick={onCancel} className="flex-1 py-3" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white' }}>
+      <div className="zc-actionbar fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(var(--zc-nav-h) + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}`, zIndex: 90 }}>
+        <button onClick={onCancel} className="flex-1 py-3" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
           Cancelar
         </button>
-        <button onClick={save} className="font-display flex-1 py-3" style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: C.bg, background: unit.color }}>
+        <button onClick={save} className="font-display flex-1 py-3" style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: C.bg, background: unit.color }}>
           Salvar checklist
         </button>
       </div>
@@ -3920,10 +3954,10 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   const bloqueados = (preview || []).length - novos.length;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
-      <div style={{ width: '100%', maxWidth: 560, background: C.bg, borderRadius: '16px 16px 0 0', maxHeight: '92vh', overflowY: 'auto', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }} onClick={e => e.stopPropagation()}>
+    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
+      <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 560, background: C.bg, borderRadius: '20px 20px 0 0', maxHeight: '92vh', overflowY: 'auto', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>Importar checklists via CSV</h2>
+          <h2 style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink }}>Importar checklists via CSV</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={20} /></button>
         </div>
         <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>
@@ -3935,17 +3969,17 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
           {' '}<strong>Pode selecionar vários arquivos de uma vez.</strong>
         </p>
         <div className="flex gap-2" style={{ marginBottom: 10 }}>
-          <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+          <label style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
             {reading ? 'Lendo…' : 'Carregar arquivos'}
             <input type="file" accept=".csv,text/csv" multiple onChange={onFile} style={{ display: 'none' }} />
           </label>
-          <button onClick={baixarModelo} style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Baixar modelo</button>
+          <button onClick={baixarModelo} style={{ padding: '8px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>Baixar modelo</button>
         </div>
 
         {/* Arquivos lidos no lote */}
         {loaded.length > 0 && !result && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>
+            <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>
               {loaded.length} arquivo{loaded.length > 1 ? 's' : ''} lido{loaded.length > 1 ? 's' : ''}
             </p>
             {loaded.map(f => (
@@ -3960,11 +3994,11 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
             style={{ width: '100%', fontSize: 13, fontFamily: 'ui-monospace, monospace', color: C.ink, background: 'white', padding: 12, border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
         )}
 
-        {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginBottom: 10 }}>{error}</p>}
+        {error && <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical, marginBottom: 10 }}>{error}</p>}
         {/* Linhas descartadas na leitura — antes sumiam em silêncio. */}
         {warnings.length > 0 && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura</p>
+            <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Avisos na leitura</p>
             {warnings.map((w, i) => (
               <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {w}</p>
             ))}
@@ -3972,7 +4006,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
         )}
         {preview && !result && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <p style={{ fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+            <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, marginBottom: 6 }}>
               {novos.length} a importar{bloqueados > 0 ? ` · ${bloqueados} bloqueado${bloqueados > 1 ? 's' : ''}` : ''}
             </p>
             {preview.map(p => {
@@ -3983,7 +4017,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
                     {p.name} · {p.unitName} / {p.sector} · {p.items.length} itens
                     {p.source ? <span style={{ color: C.mutedLight }}> · {p.source}</span> : null}
                   </p>
-                  <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: b.cor, whiteSpace: 'nowrap' }}>{b.texto}</span>
+                  <span style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: b.cor, whiteSpace: 'nowrap' }}>{b.texto}</span>
                 </div>
               );
             })}
@@ -3997,7 +4031,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
         )}
         {result && (
           <div style={{ marginBottom: 10 }}>
-            <p style={{ fontSize: result.error ? 13 : 15, fontWeight: 800, color: result.error ? C.critical : (result.created > 0 ? C.success : C.critical) }}>
+            <p style={{ fontSize: result.error ? 13 : 15, fontWeight: W.semibold, color: result.error ? C.critical : (result.created > 0 ? C.success : C.critical) }}>
               {result.error
                 ? result.error
                 : result.created > 0
@@ -4021,14 +4055,14 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
             tela é o resultado, não mais um arquivo esperando importação. */}
         {result?.created > 0 ? (
           <button onClick={onClose}
-            style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: C.success, color: 'white', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+            style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: C.success, color: 'white', fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}>
             Concluir
           </button>
         ) : (
           <div className="flex gap-2">
-            <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
+            <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}>Fechar</button>
             <button onClick={doImport} disabled={!novos.length || importing}
-              style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!novos.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: 800, fontSize: 14, cursor: (!novos.length || importing) ? 'not-allowed' : 'pointer' }}>
+              style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (!novos.length || importing) ? C.muted : C.ink, color: 'white', fontWeight: W.semibold, fontSize: 14, cursor: (!novos.length || importing) ? 'not-allowed' : 'pointer' }}>
               {importing ? 'Importando…' : novos.length > 1 ? `Importar ${novos.length} checklists` : 'Importar'}
             </button>
           </div>
@@ -4038,7 +4072,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   );
 }
 
-function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [showImport, setShowImport] = useState(false);
   const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
 
@@ -4333,12 +4367,12 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
     const pracaLabel = t => t.name.includes(' — ') ? t.name.split(' — ')[0] : t.name;
 
     return (
-      <div className="p-4 space-y-3">
+      <div className="zc-view space-y-3">
         <BackBar onBack={() => setSector(null)} label={`${typeConfig.label} · ${sector}`} accent={unit.color} />
         {saveSuccess && (
           <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#E8F4F0', borderRadius: 8, border: `1px solid ${C.success}` }}>
             <CheckCircle2 size={16} color={C.success} />
-            <p style={{ fontSize: 13, fontWeight: 700, color: C.success }}>Checklist salvo com sucesso!</p>
+            <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.success }}>Checklist salvo com sucesso!</p>
           </div>
         )}
         <div className="space-y-2">
@@ -4346,7 +4380,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
             <Ticket key={t.id} accent={unit.color}>
               <div className="flex items-center justify-between gap-2">
                 <div style={{ minWidth: 0 }}>
-                  <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{pracaLabel(t)}</p>
+                  <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{pracaLabel(t)}</p>
                   <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                     {t.items.length} itens · {t.items.filter(i => i.critical).length} críticos{t.items.filter(i => i.photoRequired).length > 0 ? ` · ${t.items.filter(i => i.photoRequired).length} com foto` : ''}{t.deadline ? ` · até ${t.deadline}` : ''}
                   </p>
@@ -4369,7 +4403,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         <button
           onClick={() => setEditing('new')}
           className="flex items-center justify-center gap-2 w-full py-3"
-          style={{ borderRadius: 6, border: `2px dashed ${unit.color}`, fontWeight: 800, color: unit.color, background: 'none' }}
+          style={{ borderRadius: 6, border: `2px dashed ${unit.color}`, fontWeight: W.semibold, color: unit.color, background: 'none' }}
         >
           <Plus size={16} /> Novo checklist
         </button>
@@ -4382,7 +4416,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
     const typeConfig = activeTypes.find(c => c.key === checklistType);
     const isIbr1 = unit.id === 'ibr1';
     return (
-      <div className="p-4 space-y-3">
+      <div className="zc-view space-y-3">
         <BackBar onBack={() => setChecklistType(null)} label={typeConfig.label} accent={unit.color} />
         {isIbr1 ? (
           // IBR1: show sectors grouped (Salão / Cozinha) then praças inside
@@ -4402,7 +4436,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                         <Ticket accent={unit.color}>
                           <div className="flex items-center justify-between gap-2">
                             <div style={{ minWidth: 0 }}>
-                              <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{label}</p>
+                              <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{label}</p>
                               <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                                 {t.items.length} itens · {t.items.filter(i => i.critical).length} críticos{t.deadline ? ` · até ${t.deadline}` : ''}
                               </p>
@@ -4427,7 +4461,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                   <Ticket accent={unit.color}>
                     <div className="flex items-center justify-between gap-2">
                       <div style={{ minWidth: 0 }}>
-                        <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{s}</p>
+                        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{s}</p>
                         <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                           {count} checklist{count !== 1 ? 's' : ''} cadastrado{count !== 1 ? 's' : ''}
                         </p>
@@ -4456,7 +4490,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
         ].map(tab => (
           <button key={tab.id} onClick={() => setGerenciarTab(tab.id)}
             className="flex-1 py-3"
-            style={{ background: 'none', border: 'none', fontWeight: 800, fontSize: 12,
+            style={{ background: 'none', border: 'none', fontWeight: W.semibold, fontSize: 12,
               textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer',
               color: gerenciarTab === tab.id ? unit.color : C.muted,
               borderBottom: `2px solid ${gerenciarTab === tab.id ? unit.color : 'transparent'}`,
@@ -4469,16 +4503,16 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
       {/* Importar CSV — abre DENTRO do app (usa a sessão atual, sem logoff).
           Ao lado, atalho fixo para subir/trocar o logo da empresa (pedido 18/07). */}
       <div className="flex flex-wrap gap-2" style={{ padding: '10px 16px 0' }}>
-        <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
+        <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
           📥 Importar checklists via CSV
         </button>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: headerLogoBusy ? 'default' : 'pointer', opacity: headerLogoBusy ? 0.6 : 1 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.ink, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: headerLogoBusy ? 'default' : 'pointer', opacity: headerLogoBusy ? 0.6 : 1 }}>
           🖼️ {headerLogoBusy ? 'Enviando…' : (company?.logo_url ? 'Trocar logo' : 'Subir logo')}
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickHeaderLogo} disabled={headerLogoBusy} style={{ display: 'none' }} />
         </label>
         {company?.logo_url && !headerLogoBusy && (
           <button onClick={onRemoveHeaderLogo}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: C.critical, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: W.semibold, color: C.critical, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', background: 'white', cursor: 'pointer' }}>
             Remover logo
           </button>
         )}
@@ -4490,7 +4524,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
       {/* ── ABA: EDITAR ── */}
       {gerenciarTab === 'editar' && (
-        <div className="p-4 space-y-3">
+        <div className="zc-view space-y-3">
           <Eyebrow>Gerenciar — {unit.name}</Eyebrow>
           <div className="space-y-2">
             {activeTypes.map(({ key, label, match }) => {
@@ -4500,7 +4534,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                   <Ticket accent={unit.color}>
                     <div className="flex items-center justify-between gap-2">
                       <div style={{ minWidth: 0 }}>
-                        <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{label}</p>
+                        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{label}</p>
                         <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                           {total} checklist{total !== 1 ? 's' : ''} em {unit.sectors.length} setores
                         </p>
@@ -4517,7 +4551,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                   <div style={{ minWidth: 0 }}>
                     <div className="flex items-center gap-2">
                       <Calendar size={16} color={C.muted} />
-                      <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>Folgas e dias fechados</p>
+                      <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>Folgas e dias fechados</p>
                     </div>
                     <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                       {closures.filter(c => c.unitId === unit.id).length} dia{closures.filter(c => c.unitId === unit.id).length !== 1 ? 's' : ''} marcado{closures.filter(c => c.unitId === unit.id).length !== 1 ? 's' : ''} para {unit.name}
@@ -4541,7 +4575,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
       {/* Tela de escolha — três caminhos, hierarquia deliberada */}
       {gerenciarTab === 'novo' && novoMode === null && (
-        <div className="p-4 space-y-3">
+        <div className="zc-view space-y-3">
           <p style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink }}>Como você quer começar?</p>
 
           <button onClick={() => setNovoMode('biblioteca')} className="w-full text-left"
@@ -4568,7 +4602,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
       {/* Biblioteca setorial */}
       {gerenciarTab === 'novo' && novoMode === 'biblioteca' && !libPreview && (
-        <div className="p-4 space-y-4">
+        <div className="zc-view space-y-4">
           <button onClick={() => setNovoMode(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
             ← Outras formas de criar
           </button>
@@ -4609,12 +4643,12 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
       {/* Preview do modelo — read-only, adoção exige loja + setor */}
       {gerenciarTab === 'novo' && novoMode === 'biblioteca' && libPreview && (
-        <div className="p-4 space-y-4">
+        <div className="zc-view space-y-4">
           <button onClick={() => setLibPreview(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
             ← Modelos
           </button>
           <div>
-            <p style={{ fontSize: T.h3, fontWeight: W.semibold, color: C.ink }}>{libPreview.area} — {libPreview.momento}</p>
+            <p style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{libPreview.area} — {libPreview.momento}</p>
             <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
               Ao adotar, isto vira uma cópia sua — você pode editar tudo depois.
             </p>
@@ -4661,7 +4695,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
 
       {/* Duplicar de existente */}
       {gerenciarTab === 'novo' && novoMode === 'duplicar' && (
-        <div className="p-4 space-y-4">
+        <div className="zc-view space-y-4">
           <button onClick={() => { setDupSource(null); setNovoMode(null); }} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
             ← Outras formas de criar
           </button>
@@ -4719,7 +4753,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
       )}
 
       {gerenciarTab === 'novo' && novoMode === 'zero' && (
-        <div className="p-4 space-y-4">
+        <div className="zc-view space-y-4">
           <button onClick={() => setNovoMode(null)} style={{ background: 'none', border: 'none', fontSize: T.caption, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: 0 }}>
             ← Outras formas de criar
           </button>
@@ -4731,7 +4765,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
               {(allUnits?.length > 0 ? allUnits : UNITS).map(u => (
                 <button key={u.id} onClick={() => { setNovoUnit(u.id); setNovoSector(''); }}
                   className="flex-1 py-2"
-                  style={{ borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer',
+                  style={{ borderRadius: 8, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer',
                     background: novoUnit === u.id ? u.color : 'white',
                     color: novoUnit === u.id ? 'white' : C.ink,
                     border: `1.5px solid ${novoUnit === u.id ? u.color : C.border}` }}>
@@ -4747,7 +4781,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
             <div className="flex flex-wrap gap-2 mt-1">
               {novoSectorOptions.map(s => (
                 <button key={s} onClick={() => setNovoSector(s)}
-                  style={{ borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
+                  style={{ borderRadius: 8, fontWeight: W.semibold, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
                     background: novoSector === s ? unit.color : 'white',
                     color: novoSector === s ? 'white' : C.ink,
                     border: `1.5px solid ${novoSector === s ? unit.color : C.border}` }}>
@@ -4763,7 +4797,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
             <div className="flex flex-wrap gap-2 mt-1">
               {availableTypes.map(t => (
                 <button key={t.id} onClick={() => setNovoType(t.id)}
-                  style={{ borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
+                  style={{ borderRadius: 8, fontWeight: W.semibold, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
                     background: novoType === t.id ? unit.color : 'white',
                     color: novoType === t.id ? 'white' : C.ink,
                     border: `1.5px solid ${novoType === t.id ? unit.color : C.border}` }}>
@@ -4771,7 +4805,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                 </button>
               ))}
               <button onClick={() => setNovoType('__custom__')}
-                style={{ borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
+                style={{ borderRadius: 8, fontWeight: W.semibold, fontSize: 12, cursor: 'pointer', padding: '6px 14px',
                   background: novoType === '__custom__' ? C.ink : 'white',
                   color: novoType === '__custom__' ? 'white' : C.muted,
                   border: `1.5px solid ${novoType === '__custom__' ? C.ink : C.border}` }}>
@@ -4813,13 +4847,13 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                 return (
                   <div key={item.id} style={{ background: guideOpen ? 'white' : 'none', border: guideOpen ? `1px solid ${C.border}` : 'none', borderRadius: 10, padding: guideOpen ? 10 : 0 }}>
                     <div className="flex items-center gap-2">
-                      <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, width: 20, textAlign: 'right', flexShrink: 0 }}>{idx + 1}</span>
+                      <span style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold, width: 20, textAlign: 'right', flexShrink: 0 }}>{idx + 1}</span>
                       <input value={item.text}
                         onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, text: e.target.value } : i))}
                         placeholder="Descreva a tarefa"
                         className="flex-1 px-3 py-2"
                         style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', color: C.ink, minWidth: 0 }} />
-                      <label className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: item.critical ? C.critical : C.muted, flexShrink: 0 }}>
+                      <label className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: W.semibold, color: item.critical ? C.critical : C.muted, flexShrink: 0 }}>
                         <input type="checkbox" checked={!!item.critical} onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, critical: e.target.checked } : i))} />
                         ⚠
                       </label>
@@ -4846,13 +4880,13 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                       </button>
                     </div>
                     {item.photoRequired && (
-                      <p style={{ marginTop: 4, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: unit.color }}>
+                      <p style={{ marginTop: 4, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: unit.color }}>
                         📷 Exigir foto na execução
                       </p>
                     )}
                     {novoOptsOpen[item.id] && (
                       <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}` }}>
-                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
+                        <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
                           {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
                         </p>
                         <div className="flex gap-1">
@@ -4865,7 +4899,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
                                   const next = active ? rec.filter(d => d !== day) : [...rec, day].sort((a, b) => a - b);
                                   setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, recurrence: next.length ? next : null } : i));
                                 }}
-                                style={{ width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: 800, border: `1px solid ${C.border}`, background: active ? unit.color : 'white', color: active ? C.bg : C.muted }}>
+                                style={{ width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: W.semibold, border: `1px solid ${C.border}`, background: active ? unit.color : 'white', color: active ? C.bg : C.muted }}>
                                 {label[0]}
                               </button>
                             );
@@ -4884,7 +4918,7 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
               })}
               <button onClick={() => setNovoItems(prev => [...prev, { id: uid(), text: '', critical: false, required: false, photoRequired: false, recurrence: null }])}
                 className="flex items-center gap-2 w-full py-2"
-                style={{ borderRadius: 8, border: `2px dashed ${C.border}`, fontWeight: 700, color: C.muted, background: 'none', fontSize: 13 }}>
+                style={{ borderRadius: 8, border: `2px dashed ${C.border}`, fontWeight: W.semibold, color: C.muted, background: 'none', fontSize: 13 }}>
                 <Plus size={14} /> Adicionar item
               </button>
             </div>
@@ -4894,13 +4928,13 @@ function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosu
               exatamente o que falta (antes ficava cinza sem explicação). */}
           <button onClick={handleSaveNovo} disabled={novoSaving}
             className="w-full py-3 font-display"
-            style={{ borderRadius: 8, border: 'none', fontWeight: 800, color: 'white',
+            style={{ borderRadius: 8, border: 'none', fontWeight: W.semibold, color: 'white',
               background: novoMissing.length ? C.muted : unit.color,
               cursor: 'pointer' }}>
             {novoSaving ? 'Criando…' : 'Criar checklist'}
           </button>
           {novoMissing.length > 0 && (
-            <p style={{ fontSize: 12, fontWeight: 700, color: C.critical, textAlign: 'center', lineHeight: 1.5, marginTop: -6 }}>
+            <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.critical, textAlign: 'center', lineHeight: 1.5, marginTop: -6 }}>
               Para criar, falta: {novoMissing.join(' · ')}.
             </p>
           )}
@@ -4987,18 +5021,18 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="zc-view space-y-4">
       {success && (
         <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#E8F4F0', borderRadius: 8, border: `1px solid ${C.success}` }}>
           <CheckCircle2 size={16} color={C.success} />
-          <p style={{ fontSize: 13, fontWeight: 700, color: C.success }}>{success}</p>
+          <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.success }}>{success}</p>
         </div>
       )}
 
       <div className="flex gap-2">
         {[{id:'tipos',label:'Tipos'},{id:'lojas',label:'Lojas'},{id:'setores',label:'Setores'}].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontWeight: 800, fontSize: 12,
+            style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontWeight: W.semibold, fontSize: 12,
               background: tab === t.id ? unit.color : 'white', color: tab === t.id ? 'white' : C.muted,
               border: `1.5px solid ${tab === t.id ? unit.color : C.border}`, cursor: 'pointer' }}>
             {t.label}
@@ -5012,7 +5046,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
           <Eyebrow>Tipos de checklist</Eyebrow>
           {(checklistTypes || []).map(t => (
             <Ticket key={t.id} accent={unit.color}>
-              <p style={{ fontWeight: 700, color: C.ink }}>{t.name}</p>
+              <p style={{ fontWeight: W.semibold, color: C.ink }}>{t.name}</p>
               {t.shift && <p style={{ fontSize: 11, color: C.muted }}>{t.shift}</p>}
             </Ticket>
           ))}
@@ -5023,7 +5057,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
               style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none' }}
               onKeyDown={e => e.key === 'Enter' && addType()} />
             <button onClick={addType} disabled={saving || !newTypeName.trim()}
-              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer' }}>
               <Plus size={16} />
             </button>
           </div>
@@ -5039,12 +5073,12 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
             <div style={{ width: 56, height: 56, borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
               {company?.logo_url ? <img src={company.logo_url} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 10, color: C.muted }}>sem logo</span>}
             </div>
-            <label style={{ padding: '9px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: logoBusy ? 'default' : 'pointer', opacity: logoBusy ? 0.6 : 1 }}>
+            <label style={{ padding: '9px 14px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 13, cursor: logoBusy ? 'default' : 'pointer', opacity: logoBusy ? 0.6 : 1 }}>
               {logoBusy ? '...' : (company?.logo_url ? 'Trocar' : 'Subir logo')}
               <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickCompanyLogo} disabled={logoBusy} style={{ display: 'none' }} />
             </label>
             {company?.logo_url && !logoBusy && (
-              <button onClick={removeCompanyLogo} style={{ background: 'none', border: 'none', color: C.critical, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Remover</button>
+              <button onClick={removeCompanyLogo} style={{ background: 'none', border: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>Remover</button>
             )}
           </div>
 
@@ -5057,13 +5091,13 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
                     style={{ width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
                   <input value={editUnit.name} onChange={e => setEditUnit(p => ({ ...p, name: e.target.value }))}
                     className="flex-1 px-2 py-2" style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', minWidth: 0 }} />
-                  <button onClick={saveEditUnit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>Salvar</button>
+                  <button onClick={saveEditUnit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: W.semibold, fontSize: 13, flexShrink: 0 }}>Salvar</button>
                   <button onClick={() => setEditUnit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: u.color, flexShrink: 0 }} />
-                  <p style={{ fontWeight: 700, color: C.ink, flex: 1, minWidth: 0 }}>{u.name}</p>
+                  <p style={{ fontWeight: W.semibold, color: C.ink, flex: 1, minWidth: 0 }}>{u.name}</p>
                   <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color })} title="Editar"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><Settings2 size={16} /></button>
                   {(allUnits || UNITS).length > 1 && (
@@ -5083,7 +5117,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
             <input type="color" value={newUnitColor} onChange={e => setNewUnitColor(e.target.value)}
               style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2 }} />
             <button onClick={addUnit} disabled={saving || !newUnitName.trim()}
-              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer' }}>
               <Plus size={16} />
             </button>
           </div>
@@ -5096,7 +5130,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
           <Eyebrow>Setores por loja</Eyebrow>
           {(allUnits || UNITS).map(u => (
             <div key={u.id}>
-              <p style={{ fontSize: 11, fontWeight: 800, color: u.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{u.name}</p>
+              <p style={{ fontSize: 11, fontWeight: W.semibold, color: u.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{u.name}</p>
               <div className="space-y-1">
                 {(u.sectors || []).map(s => (
                   <div key={s} className="px-3 py-2" style={{ background: 'white', borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, color: C.ink }}>
@@ -5117,7 +5151,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
               style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none' }}
               onKeyDown={e => e.key === 'Enter' && addSector()} />
             <button onClick={addSector} disabled={saving || !newSectorName.trim()}
-              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer' }}>
               <Plus size={16} />
             </button>
           </div>
@@ -5174,7 +5208,7 @@ function UserEditor({ user, onSave, onCancel }) {
   };
 
   return (
-    <div className="p-4" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
+    <div className="zc-view" style={{ paddingBottom: "calc(160px + env(safe-area-inset-bottom, 0px))" }}>
       <BackBar onBack={onCancel} label="Usuários" accent={C.ink} />
 
       <div className="mb-3">
@@ -5183,7 +5217,7 @@ function UserEditor({ user, onSave, onCancel }) {
           <input
             value={name} onChange={e => setName(e.target.value)} placeholder="Nome do usuário"
             className="w-full mt-1 mb-3"
-            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 700, color: C.ink }}
+            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: W.semibold, color: C.ink }}
           />
           <Eyebrow>PIN de acesso (4 dígitos){user?.id ? ' — deixe em branco para manter o atual' : ''}</Eyebrow>
           <input
@@ -5191,7 +5225,7 @@ function UserEditor({ user, onSave, onCancel }) {
             value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
             placeholder={user?.id ? '(manter atual)' : '0000'}
             className="mt-1"
-            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 700, letterSpacing: '0.3em', color: C.ink }}
+            style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: W.semibold, letterSpacing: '0.3em', color: C.ink }}
           />
         </Ticket>
       </div>
@@ -5203,7 +5237,7 @@ function UserEditor({ user, onSave, onCancel }) {
             <Ticket accent={r === role ? ROLE_COLORS[r] : C.border}>
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="font-display" style={{ fontWeight: 800, color: r === role ? ROLE_COLORS[r] : C.ink }}>{ROLE_LABELS[r]}</p>
+                  <p className="font-display" style={{ fontWeight: W.semibold, color: r === role ? ROLE_COLORS[r] : C.ink }}>{ROLE_LABELS[r]}</p>
                   <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</p>
                 </div>
                 {r === role
@@ -5236,7 +5270,7 @@ function UserEditor({ user, onSave, onCancel }) {
                 <Ticket accent={sectorId === sg.id ? unitObj?.color : C.border}>
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="font-display" style={{ fontWeight: 800, color: sectorId === sg.id ? unitObj?.color : C.ink }}>{sg.label}</p>
+                      <p className="font-display" style={{ fontWeight: W.semibold, color: sectorId === sg.id ? unitObj?.color : C.ink }}>{sg.label}</p>
                       <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{sg.desc}</p>
                     </div>
                     {sectorId === sg.id
@@ -5269,7 +5303,7 @@ function UserEditor({ user, onSave, onCancel }) {
             }}
           >
             <div style={{ textAlign: 'left' }}>
-              <p style={{ fontSize: 13, fontWeight: 800, color: suspended ? C.critical : C.success }}>
+              <p style={{ fontSize: 13, fontWeight: W.semibold, color: suspended ? C.critical : C.success }}>
                 {suspended ? '🔒 Acesso suspenso' : '✅ Acesso ativo'}
               </p>
               <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
@@ -5294,13 +5328,13 @@ function UserEditor({ user, onSave, onCancel }) {
         </div>
       )}
 
-      {error && <p style={{ fontSize: 12, fontWeight: 800, color: C.critical, marginTop: 12 }}>{error}</p>}
+      {error && <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.critical, marginTop: 12 }}>{error}</p>}
 
-      <div className="fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}` }}>
-        <button onClick={onCancel} className="flex-1 py-3" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white' }}>
+      <div className="zc-actionbar fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(var(--zc-nav-h) + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}`, zIndex: 90 }}>
+        <button onClick={onCancel} className="flex-1 py-3" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
           Cancelar
         </button>
-        <button onClick={save} className="font-display flex-1 py-3" style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: C.bg, background: suspended ? C.critical : C.ink }}>
+        <button onClick={save} className="font-display flex-1 py-3" style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: C.bg, background: suspended ? C.critical : C.ink }}>
           Salvar usuário
         </button>
       </div>
@@ -5321,7 +5355,7 @@ function CopyLinkButton({ url }) {
     <button onClick={copy} style={{
       background: copied ? C.success : C.ink,
       color: 'white', border: 'none', borderRadius: 6,
-      padding: '6px 12px', fontSize: 12, fontWeight: 800,
+      padding: '6px 12px', fontSize: 12, fontWeight: W.semibold,
       cursor: 'pointer', flexShrink: 0,
       transition: 'background 0.2s',
       minWidth: 70,
@@ -5355,7 +5389,7 @@ function SelfieViewer({ path }) {
   );
 }
 
-function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult }) {
+export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [onlineUsers, setOnlineUsers] = useState(new Set());
 
@@ -5570,18 +5604,18 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
     const showSector = !isAlteracao && approvalRole === 'colaborador' && req.unit_id === 'ibr1';
 
     return (
-      <div className="p-4 space-y-3" style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom, 0px))" }}>
+      <div className="zc-view space-y-3" style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom, 0px))" }}>
         <BackBar onBack={() => { setReviewingRequest(null); setEditingReq({}); setApprovalUnit(null); setApprovalUnits([]); }} label="Solicitações" accent={C.ink} />
 
         {/* Tipo badge + cabeçalho */}
         <Ticket accent={isAlteracao ? C.ink : C.warning}>
           <div className="flex items-center gap-2 mb-2">
-            <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '2px 8px', borderRadius: 20 }}>
+            <span style={{ fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '2px 8px', borderRadius: 20 }}>
               {isAlteracao ? '✎ Alteração de dados' : '+ Novo cadastro'}
             </span>
             <span style={{ fontSize: 11, color: C.muted }}>{new Date(req.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
           </div>
-          <p className="font-display" style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>{editingReq.name ?? req.name}</p>
+          <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>{editingReq.name ?? req.name}</p>
           <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{unitObj?.name || req.unit_id || '—'}</p>
         </Ticket>
 
@@ -5601,16 +5635,16 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                 { label: 'Loja', field: null, value: unitObj?.name || req.unit_id },
               ].map(({ label, field, value, placeholder }, i) => (
                 <div key={label} style={{ padding: '10px 14px', borderBottom: i < 5 ? `1px solid ${C.border}` : 'none' }}>
-                  <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
+                  <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
                   {field ? (
                     <input
                       value={editingReq[field] !== undefined ? editingReq[field] : (value || '')}
                       onChange={e => setEditingReq(prev => ({ ...prev, [field]: e.target.value }))}
                       placeholder={placeholder}
-                      style={{ width: '100%', fontSize: 14, fontWeight: 700, color: C.ink, background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
+                      style={{ width: '100%', fontSize: 14, fontWeight: W.semibold, color: C.ink, background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
                     />
                   ) : (
-                    <p style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{value || '—'}</p>
+                    <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>{value || '—'}</p>
                   )}
                 </div>
               ))}
@@ -5632,7 +5666,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                   <Ticket accent={r === approvalRole ? ROLE_COLORS[r] : C.border}>
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="font-display" style={{ fontWeight: 800, color: r === approvalRole ? ROLE_COLORS[r] : C.ink }}>{ROLE_LABELS[r]}</p>
+                        <p className="font-display" style={{ fontWeight: W.semibold, color: r === approvalRole ? ROLE_COLORS[r] : C.ink }}>{ROLE_LABELS[r]}</p>
                         <p style={{ fontSize: 12, color: C.muted }}>{ROLE_DESCRIPTIONS[r]}</p>
                       </div>
                       {r === approvalRole ? <CheckCircle2 size={20} color={ROLE_COLORS[r]} /> : <Circle size={20} color={C.mutedLight} />}
@@ -5672,7 +5706,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                           }
                         }}
                         className="flex-1 py-2"
-                        style={{ borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer',
+                        style={{ borderRadius: 8, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer',
                           background: selected ? u.color : 'white',
                           color: selected ? 'white' : C.ink,
                           border: `1.5px solid ${selected ? u.color : C.border}`,
@@ -5702,7 +5736,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                       <button key={String(sg.id)} onClick={() => setApprovalSector(sg.id)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                         <Ticket accent={approvalSector === sg.id ? unitColor : C.border}>
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-display" style={{ fontWeight: 800, color: approvalSector === sg.id ? unitColor : C.ink }}>{sg.label}</p>
+                            <p className="font-display" style={{ fontWeight: W.semibold, color: approvalSector === sg.id ? unitColor : C.ink }}>{sg.label}</p>
                             {approvalSector === sg.id ? <CheckCircle2 size={20} color={unitColor} /> : <Circle size={20} color={C.mutedLight} />}
                           </div>
                         </Ticket>
@@ -5737,18 +5771,18 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                   const fieldKey = `alt_${label}`;
                   return (
                     <div key={label} style={{ padding: '10px 14px', borderBottom: i < fields.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
+                      <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
                       <input
                         value={editingReq[fieldKey] !== undefined ? editingReq[fieldKey] : value}
                         onChange={e => setEditingReq(prev => ({ ...prev, [fieldKey]: e.target.value }))}
-                        style={{ width: '100%', fontSize: 14, fontWeight: 700, color: C.ink, background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
+                        style={{ width: '100%', fontSize: 14, fontWeight: W.semibold, color: C.ink, background: 'transparent', border: 'none', outline: 'none', padding: 0 }}
                       />
                     </div>
                   );
                 })}
                 {obs && (
                   <div style={{ padding: '10px 14px', background: C.bg }}>
-                    <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>Observação</p>
+                    <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>Observação</p>
                     <p style={{ fontSize: 13, color: C.ink }}>{obs}</p>
                   </div>
                 )}
@@ -5758,13 +5792,13 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
         })()}
 
         {/* Botões de ação */}
-        <div className="fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}` }}>
+        <div className="zc-actionbar fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(var(--zc-nav-h) + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}`, zIndex: 90 }}>
           <button onClick={() => rejectRequest(req)} disabled={!!processingId} className="flex-1 py-3"
-            style={{ borderRadius: 6, border: `1px solid ${C.critical}`, fontWeight: 800, color: C.critical, background: 'white', cursor: 'pointer' }}>
+            style={{ borderRadius: 6, border: `1px solid ${C.critical}`, fontWeight: W.semibold, color: C.critical, background: 'white', cursor: 'pointer' }}>
             {isAlteracao ? 'Recusar' : 'Rejeitar'}
           </button>
           <button onClick={() => approveRequest(req)} disabled={!!processingId} className="flex-1 py-3"
-            style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: 'white', background: C.success, cursor: 'pointer' }}>
+            style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: 'white', background: C.success, cursor: 'pointer' }}>
             {processingId ? 'Processando…' : isAlteracao ? 'Confirmar alteração' : 'Aprovar cadastro'}
           </button>
         </div>
@@ -5773,7 +5807,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
   }
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="zc-view space-y-3">
 
       {/* Solicitações — apenas Diretoria */}
       {currentUser?.role === 'gestao' && (
@@ -5803,7 +5837,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                   <Ticket accent={isAlteracao ? C.ink : C.warning}>
                     <div className="flex items-center justify-between gap-2">
                       <div style={{ minWidth: 0 }}>
-                        <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{truncName(req.name)}</p>
+                        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{truncName(req.name)}</p>
                         <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                           {unitObj?.name || req.unit_id || '—'} · {new Date(req.created_at).toLocaleDateString('pt-BR')}
                         </p>
@@ -5814,7 +5848,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
                         )}
                       </div>
                       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 10, fontWeight: W.semibold, color: isAlteracao ? C.ink : C.warning, background: isAlteracao ? `${C.ink}15` : `${C.warning}1A`, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
                           {isAlteracao ? '✎ Alteração' : '+ Novo cadastro'}
                         </span>
                         <ChevronRight size={16} color={C.muted} />
@@ -5836,7 +5870,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
           Compartilhe este link com colaboradores para acessar o app:
         </p>
         <div className="flex items-center gap-2">
-          <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, flex: 1, wordBreak: 'break-all' }}>
+          <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, flex: 1, wordBreak: 'break-all' }}>
             {typeof window !== 'undefined' ? window.location.origin : 'https://zcheckapp.com'}
           </p>
           <CopyLinkButton url={typeof window !== 'undefined' ? window.location.origin : 'https://zcheckapp.com'} />
@@ -5855,16 +5889,16 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
               <div className="flex items-center justify-between gap-2">
                 <div style={{ minWidth: 0 }}>
                   <div className="flex items-center gap-2">
-                    <p className="font-display" style={{ fontWeight: 800, color: C.ink }}>{truncName(u.name)}</p>
+                    <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{truncName(u.name)}</p>
                     <span title={onlineUsers.has(u.id) ? 'Online' : 'Offline'} style={{ width: 8, height: 8, borderRadius: '50%', background: onlineUsers.has(u.id) ? C.success : C.border, flexShrink: 0, display: 'inline-block' }} />
                     {u.suspended && (
-                      <span style={{ fontSize: 10, fontWeight: 800, color: C.critical, background: '#FFF3F0', border: `1px solid ${C.critical}`, borderRadius: 20, padding: '1px 7px', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: 10, fontWeight: W.semibold, color: C.critical, background: '#FFF3F0', border: `1px solid ${C.critical}`, borderRadius: 20, padding: '1px 7px', letterSpacing: '0.04em' }}>
                         SUSPENSO
                       </span>
                     )}
                   </div>
                   <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                    <span style={{ fontWeight: 800, color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
+                    <span style={{ fontWeight: W.semibold, color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
                     {' · '}{u.unitId ? units.find(x => x.id === u.unitId)?.name : 'Todas as lojas'}
                     {' · PIN '}{u.pin}
                   </p>
@@ -5892,7 +5926,7 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
       <button
         onClick={() => setEditing('new')}
         className="flex items-center justify-center gap-2 w-full py-3"
-        style={{ borderRadius: 6, border: `2px dashed ${C.ink}`, fontWeight: 800, color: C.ink, background: 'none' }}
+        style={{ borderRadius: 6, border: `2px dashed ${C.ink}`, fontWeight: W.semibold, color: C.ink, background: 'none' }}
       >
         <Plus size={16} /> Novo usuário
       </button>
@@ -5900,13 +5934,13 @@ function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, genera
       {confirmDelete && (
         <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.5)' }}>
           <div className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16 }}>
-            <p className="font-display" style={{ fontWeight: 800, color: C.ink, marginBottom: 8 }}>Remover {confirmDelete.name}?</p>
+            <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>Remover {confirmDelete.name}?</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 12 }}>Essa pessoa não poderá mais acessar o app com este usuário.</p>
             <div className="flex gap-2">
-              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white' }}>
+              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
                 Cancelar
               </button>
-              <button onClick={() => handleDelete(confirmDelete)} className="flex-1 py-2" style={{ borderRadius: 6, border: 'none', fontWeight: 800, color: 'white', background: C.critical }}>
+              <button onClick={() => handleDelete(confirmDelete)} className="flex-1 py-2" style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: 'white', background: C.critical }}>
                 Remover
               </button>
             </div>
@@ -5928,11 +5962,12 @@ function PushPermissionModal({ onAllow, onDismiss }) {
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="w-full"
+        className="w-full zc-sheet-panel"
         style={{
           maxWidth: 480, background: 'white',
-          borderRadius: '16px 16px 0 0',
+          borderRadius: '20px 20px 0 0',
           padding: '24px 24px 40px',
+          paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))',
         }}
       >
         <div className="flex items-center gap-3 mb-4">
@@ -5940,8 +5975,8 @@ function PushPermissionModal({ onAllow, onDismiss }) {
             <Bell size={24} color="#063C5C" />
           </div>
           <div>
-            <p className="font-display" style={{ fontWeight: 800, fontSize: 17, color: '#063C5C' }}>Ativar notificações</p>
-            <p style={{ fontSize: 13, color: '#6B8299', marginTop: 2 }}>Fique por dentro dos checklists atrasados</p>
+            <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: '#063C5C' }}>Ativar notificações</p>
+            <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Fique por dentro dos checklists atrasados</p>
           </div>
         </div>
 
@@ -5952,14 +5987,14 @@ function PushPermissionModal({ onAllow, onDismiss }) {
         <button
           onClick={onAllow}
           className="w-full py-3 mb-3"
-          style={{ borderRadius: 10, background: '#063C5C', color: 'white', fontWeight: 800, fontSize: 15, border: 'none', cursor: 'pointer' }}
+          style={{ borderRadius: 10, background: '#063C5C', color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: 'pointer' }}
         >
           Ativar notificações
         </button>
         <button
           onClick={onDismiss}
           className="w-full py-2"
-          style={{ borderRadius: 10, background: 'none', color: '#6B8299', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer' }}
+          style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}
         >
           Agora não
         </button>
@@ -6008,7 +6043,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
   const WD_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="zc-view space-y-4">
       <Eyebrow>Dias de folga / loja fechada</Eyebrow>
       <p style={{ fontSize: 13, color: C.muted }}>
         Dias marcados são excluídos dos checklists e não contabilizados nos relatórios.
@@ -6029,7 +6064,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
         <button onClick={() => shiftMonth(-1)} style={{ background: 'white', border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}>
           <ArrowLeft size={16} color={C.ink} />
         </button>
-        <p className="font-display" style={{ fontWeight: 800, fontSize: 15, color: C.ink, textTransform: 'capitalize' }}>{monthLabel}</p>
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 15, color: C.ink, textTransform: 'capitalize' }}>{monthLabel}</p>
         <button onClick={() => shiftMonth(1)} style={{ background: 'white', border: `1.5px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}>
           <ChevronRight size={16} color={C.ink} />
         </button>
@@ -6040,7 +6075,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
         {/* Weekday headers */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', background: C.bg, borderBottom: `1px solid ${C.border}` }}>
           {WD_LABELS.map((l, i) => (
-            <div key={i} style={{ padding: '6px 0', textAlign: 'center', fontSize: 11, fontWeight: 800, color: i === 0 || i === 6 ? C.critical : C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div key={i} style={{ padding: '6px 0', textAlign: 'center', fontSize: 11, fontWeight: W.semibold, color: i === 0 || i === 6 ? C.critical : C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {l}
             </div>
           ))}
@@ -6108,10 +6143,10 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
               const label = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
               return (
                 <div key={c.date} className="flex items-center justify-between px-3 py-2" style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.ink, textTransform: 'capitalize' }}>{label}</span>
+                  <span style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, textTransform: 'capitalize' }}>{label}</span>
                   <button
                     onClick={() => toggleDay(c.date)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.critical, fontWeight: 800, fontSize: 12 }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.critical, fontWeight: W.semibold, fontSize: 12 }}
                   >
                     <X size={16} />
                   </button>
@@ -6174,24 +6209,24 @@ function UserDataChangeModal({ currentUser, onClose }) {
     setLoading(false);
   };
 
-  const inputStyle = { width: '100%', fontSize: 14, fontWeight: 600, padding: '12px 10px', borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', background: 'white', color: C.ink, fontFamily: 'inherit', marginTop: 6 };
+  const inputStyle = { width: '100%', fontSize: 14, fontWeight: W.semibold, padding: '12px 10px', borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', background: 'white', color: C.ink, fontFamily: 'inherit', marginTop: 6 };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={onClose}>
-      <div className="w-full" style={{ maxWidth: 480, background: C.bg, borderRadius: '16px 16px 0 0', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 32 }} onClick={e => e.stopPropagation()}>
+      <div className="w-full zc-sheet-panel" style={{ maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 'calc(32px + env(safe-area-inset-bottom, 0px))' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-4 pb-2" style={{ borderBottom: `1px solid ${C.border}` }}>
-          <p className="font-display" style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>Solicitar alteração de dados</p>
+          <p className="font-display" style={{ fontSize: 16, fontWeight: W.semibold, color: C.ink }}>Solicitar alteração de dados</p>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
         {sent ? (
           <div style={{ textAlign: 'center', padding: '28px 24px' }}>
             <p style={{ fontSize: 40, marginBottom: 10 }}>✅</p>
-            <p style={{ fontSize: 15, fontWeight: 800, color: C.success, marginBottom: 6 }}>Solicitação enviada!</p>
+            <p style={{ fontSize: 15, fontWeight: W.semibold, color: C.success, marginBottom: 6 }}>Solicitação enviada!</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.5 }}>Sua solicitação será analisada em breve. Você será contatado quando houver retorno.</p>
-            <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+            <button onClick={onClose} style={{ padding: '10px 28px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
               Fechar
             </button>
           </div>
@@ -6203,7 +6238,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
             {/* Field selector */}
             <div>
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 8 }}>
+              <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 8 }}>
                 O que deseja alterar? (pode selecionar mais de um)
               </p>
               <div className="flex flex-wrap gap-2">
@@ -6211,7 +6246,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
                   const on = selected.has(f.id);
                   return (
                     <button key={f.id} onClick={() => toggleField(f.id)}
-                      style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 20,
+                      style={{ fontSize: 12, fontWeight: W.semibold, padding: '6px 14px', borderRadius: 20,
                         background: on ? C.ink : 'white', color: on ? 'white' : C.ink,
                         border: `1.5px solid ${on ? C.ink : C.border}`, cursor: 'pointer' }}>
                       {on ? '✓ ' : ''}{f.label}
@@ -6226,7 +6261,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
               const f = FIELDS.find(f=>f.id===id);
               return (
                 <div key={id} style={{ background: 'white', borderRadius: 10, padding: '14px 14px 10px', border: `1.5px solid ${C.border}` }}>
-                  <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>{f.label}</p>
+                  <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>{f.label}</p>
                   <input
                     type={f.type}
                     inputMode={f.type === 'tel' ? 'numeric' : undefined}
@@ -6242,7 +6277,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
             {/* Observação */}
             {selected.size > 0 && (
               <div style={{ background: 'white', borderRadius: 10, padding: '14px 14px 10px', border: `1.5px solid ${C.border}` }}>
-                <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Observação (opcional)</p>
+                <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>Observação (opcional)</p>
                 <textarea
                   value={note} onChange={e => setNote(e.target.value)}
                   placeholder="Motivo ou informação adicional…"
@@ -6252,10 +6287,10 @@ function UserDataChangeModal({ currentUser, onClose }) {
               </div>
             )}
 
-            {error && <p style={{ fontSize: 12, color: C.critical, fontWeight: 700 }}>{error}</p>}
+            {error && <p style={{ fontSize: 12, color: C.critical, fontWeight: W.semibold }}>{error}</p>}
 
             <button onClick={handleSubmit} disabled={loading || selected.size === 0}
-              style={{ width: '100%', padding: '13px', borderRadius: 10, background: selected.size > 0 ? C.ink : C.border, color: 'white', border: 'none', fontWeight: 800, fontSize: 14, cursor: selected.size > 0 ? 'pointer' : 'default', opacity: loading ? 0.6 : 1 }}>
+              style={{ width: '100%', padding: '13px', borderRadius: 10, background: selected.size > 0 ? C.ink : C.border, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 14, cursor: selected.size > 0 ? 'pointer' : 'default', opacity: loading ? 0.6 : 1 }}>
               {loading ? 'Enviando…' : `Enviar solicitação${selected.size > 1 ? ` (${selected.size} campos)` : ''}`}
             </button>
           </div>
@@ -6284,7 +6319,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       {trialDaysLeft != null && (
         <button onClick={onOpenPlans}
           style={{ width: '100%', border: 'none', cursor: 'pointer', background: C.ink, color: 'white',
-            fontSize: 12.5, fontWeight: 700, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            fontSize: 12.5, fontWeight: W.semibold, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <span>Teste grátis · {trialDaysLeft} {trialDaysLeft === 1 ? 'dia restante' : 'dias restantes'}</span>
           <span style={{ textDecoration: 'underline' }}>Assinar</span>
         </button>
@@ -6292,19 +6327,22 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       {!isOnline && (
         <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.critical, color: 'white' }}>
           <WifiOff size={14} />
-          <span style={{ fontSize: 12, fontWeight: 800 }}>Sem conexão — dados salvos localmente{pendingSync > 0 ? ` (${pendingSync} pendente${pendingSync > 1 ? 's' : ''})` : ''}</span>
+          <span style={{ fontSize: 12, fontWeight: W.semibold }}>Sem conexão — dados salvos localmente{pendingSync > 0 ? ` (${pendingSync} pendente${pendingSync > 1 ? 's' : ''})` : ''}</span>
         </div>
       )}
       {isOnline && syncing && (
-        <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.pending, color: C.ink }}>
+        <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.pending, color: '#fff' }}>
           <RefreshCw size={14} />
-          <span style={{ fontSize: 12, fontWeight: 800 }}>Sincronizando…</span>
+          <span style={{ fontSize: 12, fontWeight: W.semibold }}>Sincronizando…</span>
         </div>
       )}
       {/* ── HEADER ── Fundo claro + logo horizontal, igual à landing (era uma
           faixa azul #063C5C com o ícone). */}
       {/* Cabeçalho: logo do ZCheck FIXO, com link para a landing. */}
-      <div style={{
+      {/* No desktop esta faixa é redundante — o rail lateral já carrega o logo —
+          e custa 64px do recurso mais escasso da tela grande, que é altura.
+          `.zc-logoband` some >= 1024px (globals.css). No celular, intacta. */}
+      <div className="zc-logoband" style={{
         width: '100%', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '0 16px',
         height: 64, background: 'white', borderBottom: `1px solid ${C.border}`,
@@ -6324,15 +6362,15 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
           {company?.logo_url && (
             <img src={company.logo_url} alt={company?.name || 'Empresa'} style={{ maxHeight: 28, maxWidth: 80, objectFit: 'contain' }} />
           )}
-          <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: 600 }}>{dateLabel}</p>
+          <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: W.semibold }}>{dateLabel}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 26, height: 26, borderRadius: 999, background: `${roleColor}1A`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <User size={13} color={roleColor} />
           </div>
           <div>
-            <p style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>{truncName(currentUser.name, 16)}</p>
-            <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: roleColor }}>{ROLE_LABELS[currentUser.role]}</p>
+            <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink }}>{truncName(currentUser.name, 16)}</p>
+            <p style={{ fontSize: 9, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: roleColor }}>{ROLE_LABELS[currentUser.role]}</p>
           </div>
         </div>
       </div>
@@ -6344,14 +6382,14 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
           {/* Central de Ajuda — visível para todos os papéis */}
           <a href="/ajuda" title="Central de Ajuda"
             className="flex items-center gap-1"
-            style={{ color: C.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, textDecoration: 'none' }}>
+            style={{ color: C.muted, fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, textDecoration: 'none' }}>
             <HelpCircle size={15} /> Ajuda
           </a>
           {/* Tour guiado sob demanda — quem pulou no 1º acesso pode voltar quando quiser */}
           {onStartTour && MANAGER_ROLES.includes(currentUser.role) && (
             <button onClick={onStartTour} title="Tour guiado pelas funcionalidades"
               className="flex items-center gap-1"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
               <PlayCircle size={15} /> Tour
             </button>
           )}
@@ -6362,12 +6400,12 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
               style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, color: pushEnabled ? C.success : C.muted }}
             >
               {pushEnabled ? <Bell size={16} color={C.success} /> : <BellOff size={16} />}
-              <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <span style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 {pushEnabled ? 'Notif. ON' : 'Notif. OFF'}
               </span>
             </button>
           )}
-          <button onClick={onLogout} className="flex items-center gap-1" style={{ background: 'none', border: 'none', color: C.muted, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+          <button onClick={onLogout} className="flex items-center gap-1" style={{ background: 'none', border: 'none', color: C.muted, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
             <LogOut size={14} /> Sair
           </button>
           <button onClick={() => setShowDataChange(true)} title="Solicitar alteração de dados"
@@ -6384,7 +6422,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
               key={u.id} onClick={() => onSelectUnit(u.id)}
               className="flex-1 py-2"
               style={{
-                borderRadius: 6, fontSize: 14, fontWeight: 800,
+                borderRadius: 6, fontSize: 14, fontWeight: W.semibold,
                 background: u.id === unit.id ? u.color : 'white',
                 color: u.id === unit.id ? C.bg : u.color,
                 border: `1.5px solid ${u.color}`,
@@ -6397,7 +6435,7 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
       ) : (
         <div className="flex items-center gap-2 py-2 px-3" style={{ borderRadius: 6, background: unit.color, color: C.bg }}>
           <Store size={16} />
-          <span style={{ fontSize: 14, fontWeight: 800 }}>{unit.name}</span>
+          <span style={{ fontSize: 14, fontWeight: W.semibold }}>{unit.name}</span>
         </div>
       )}
       </div>
@@ -6406,19 +6444,11 @@ function Header({ unit, onSelectUnit, currentUser, canSwitchUnit, onLogout, isOn
 }
 
 function BottomNav({ tab, setTab, accent, allowedTabs }) {
-  const ALL_ITEMS = [
-    { id: 'executar', label: 'Executar', icon: ClipboardCheck },
-    { id: 'painel', label: 'Painel', icon: LayoutGrid },
-    { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
-    { id: 'gerenciar', label: 'Gerenciar', icon: Settings2 },
-    { id: 'usuarios', label: 'Usuários', icon: Users },
-    { id: 'id', label: 'Meu ID', icon: Award },
-    { id: 'equipe', label: 'Equipe', icon: Star },
-  ];
+  const ALL_ITEMS = BOTTOM_NAV_ORDER.map(id => NAV_ITEMS.find(it => it.id === id)).filter(Boolean);
   const items = ALL_ITEMS.filter(it => allowedTabs.includes(it.id));
   if (items.length <= 1) return null;
   return (
-    <nav className="sticky bottom-0 flex" style={{
+    <nav className="zc-bottomnav sticky bottom-0 flex" aria-label="Navegação principal" style={{
       background: 'white',
       borderTop: `1px solid ${C.border}`,
       paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -6429,11 +6459,12 @@ function BottomNav({ tab, setTab, accent, allowedTabs }) {
         return (
           <button
             key={it.id} onClick={() => setTab(it.id)}
+            aria-current={active ? 'page' : undefined}
             className="flex-1 flex flex-col items-center gap-1"
             style={{ background: 'none', border: 'none', padding: '10px 4px 12px', minHeight: 56 }}
           >
             <Icon size={22} color={active ? accent : C.mutedLight} />
-            <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? accent : C.mutedLight }}>
+            <span style={{ fontSize: 9, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? accent : C.mutedLight }}>
               {it.label}
             </span>
           </button>
@@ -6446,7 +6477,7 @@ function BottomNav({ tab, setTab, accent, allowedTabs }) {
 function LoadingScreen() {
   return (
     <div className="flex items-center justify-center" style={{ minHeight: '100vh', background: C.bg }}>
-      <p className="font-display" style={{ color: C.muted, fontWeight: 800, fontSize: 14, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+      <p className="font-display" style={{ color: C.muted, fontWeight: W.semibold, fontSize: 14, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
         Carregando…
       </p>
     </div>
@@ -6533,7 +6564,7 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
             value={selectedId}
             onChange={e => { setSelectedId(e.target.value); setPin(''); setError(''); }}
             className="w-full mt-1"
-            style={{ fontSize: 14, fontWeight: 700, color: C.ink, background: 'white', padding: '12px 10px',
+            style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '12px 10px',
               border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
           >
             <option value="">Selecione…</option>
@@ -6555,12 +6586,12 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
                 }}
                 disabled={loading}
                 className="text-center mt-1"
-                style={{ width: 160, fontSize: 28, fontWeight: 800, letterSpacing: '0.5em', padding: '12px 0',
+                style={{ width: 160, fontSize: 28, fontWeight: W.bold, letterSpacing: '0.5em', padding: '12px 0',
                   background: 'white', border: `1.5px solid ${error ? C.critical : C.border}`, borderRadius: 8, outline: 'none', color: C.ink }}
                 placeholder="••••"
               />
-              {loading && <p style={{ fontSize: 12, fontWeight: 800, color: C.muted, marginTop: 8 }}>Verificando…</p>}
-              {error && <p style={{ fontSize: 12, fontWeight: 800, color: C.critical, marginTop: 8 }}>{error}</p>}
+              {loading && <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, marginTop: 8 }}>Verificando…</p>}
+              {error && <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.critical, marginTop: 8 }}>{error}</p>}
             </div>
           )}
         </div>
@@ -6569,20 +6600,20 @@ function LoginScreen({ users: initialUsers, onLogin, company: initialCompany }) 
         <div style={{ marginTop: 32, textAlign: 'center' }}>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Não tem cadastro?</p>
           <a href="/cadastro"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800,
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: W.semibold,
               color: '#063C5C', padding: '10px 20px', borderRadius: 8, border: '1.5px solid #E2EAF0',
               background: 'white', textDecoration: 'none' }}>
             Solicitar acesso →
           </a>
           <div style={{ marginTop: 12 }}>
             <a href="/cadastro?status=1"
-              style={{ fontSize: 12, fontWeight: 700, color: '#6B8299', textDecoration: 'underline' }}>
+              style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, textDecoration: 'underline' }}>
               Verificar status de solicitação
             </a>
           </div>
           <div style={{ marginTop: 12 }}>
             <a href="/ajuda"
-              style={{ fontSize: 12, fontWeight: 700, color: '#6B8299', textDecoration: 'underline' }}>
+              style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, textDecoration: 'underline' }}>
               Central de Ajuda
             </a>
           </div>
@@ -6644,7 +6675,7 @@ function InstallPrompt() {
         onClick={handleInstall}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          fontSize: 13, fontWeight: 800, color: 'white',
+          fontSize: 13, fontWeight: W.semibold, color: 'white',
           padding: '10px 20px', borderRadius: 8, border: 'none',
           background: '#063C5C', cursor: 'pointer',
         }}
@@ -6660,7 +6691,7 @@ function InstallPrompt() {
       <button
         onClick={() => setShowIosGuide(v => !v)}
         style={{
-          fontSize: 12, fontWeight: 700, color: C.muted,
+          fontSize: 12, fontWeight: W.semibold, color: C.muted,
           background: 'none', border: 'none', cursor: 'pointer',
           textDecoration: 'underline',
         }}
@@ -6673,7 +6704,7 @@ function InstallPrompt() {
           background: 'white', border: '1.5px solid #E2EAF0',
           textAlign: 'left', maxWidth: 280, margin: '10px auto 0',
         }}>
-          <p style={{ fontSize: 12, fontWeight: 800, color: '#063C5C', marginBottom: 8 }}>
+          <p style={{ fontSize: 12, fontWeight: W.semibold, color: '#063C5C', marginBottom: 8 }}>
             Como instalar no iPhone / iPad:
           </p>
           <ol style={{ fontSize: 12, color: '#555', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
@@ -6695,13 +6726,13 @@ function InstallPrompt() {
     <div style={{ marginTop: 20, textAlign: 'center' }}>
       <button
         onClick={() => setShowIosGuide(v => !v)}
-        style={{ fontSize: 12, fontWeight: 700, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+        style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
       >
         📲 Adicionar à tela inicial
       </button>
       {showIosGuide && (
         <div style={{ marginTop: 10, padding: '12px 16px', borderRadius: 10, background: 'white', border: '1.5px solid #E2EAF0', textAlign: 'left', maxWidth: 280, margin: '10px auto 0' }}>
-          <p style={{ fontSize: 12, fontWeight: 800, color: '#063C5C', marginBottom: 8 }}>Como instalar no Android:</p>
+          <p style={{ fontSize: 12, fontWeight: W.semibold, color: '#063C5C', marginBottom: 8 }}>Como instalar no Android:</p>
           <ol style={{ fontSize: 12, color: '#555', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
             <li>Toque no menu <strong>⋮</strong> do navegador</li>
             <li>Toque em <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong></li>
@@ -6797,7 +6828,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
 
   const Btn = ({ children, onClick, primary, disabled }) => (
     <button onClick={onClick} disabled={disabled}
-      style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontWeight: 800, fontSize: 15, cursor: disabled ? 'default' : 'pointer',
+      style={{ width: '100%', padding: '14px 0', borderRadius: 12, fontWeight: W.semibold, fontSize: 15, cursor: disabled ? 'default' : 'pointer',
         background: primary ? (disabled ? C.muted : accent) : 'white',
         color: primary ? 'white' : C.muted,
         border: primary ? 'none' : `1px solid ${C.border}` }}>
@@ -6809,16 +6840,16 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(11,60,92,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 400, background: C.bg, borderRadius: 20, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.4)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ background: accent, padding: '22px 24px 18px', textAlign: 'center' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>
             Bem-vindo ao ZCheck
           </p>
-          <p style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>{company?.name || 'Sua empresa'} 🎉</p>
+          <p style={{ fontSize: 20, fontWeight: W.bold, color: 'white' }}>{company?.name || 'Sua empresa'} 🎉</p>
         </div>
 
         <div style={{ padding: '20px 22px' }}>
           {step === 0 && (
             <>
-              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: 700 }}>
+              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: W.semibold }}>
                 Vamos deixar sua operação pronta em 1 minuto.
               </p>
               <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>
@@ -6837,7 +6868,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                         border: `1.5px solid ${active ? accent : C.border}` }}>
                       <span style={{ fontSize: 22 }}>{VERTICAL_EMOJI[v.id] || '📋'}</span>
                       <span style={{ flex: 1 }}>
-                        <span style={{ display: 'block', fontSize: 14, fontWeight: 800, color: C.ink }}>{v.label}</span>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: W.semibold, color: C.ink }}>{v.label}</span>
                         <span style={{ display: 'block', fontSize: 11.5, color: C.muted }}>
                           {empty ? 'Modelos em breve — comece do zero' : `${count} checklists prontos${v.hint ? ` · ${v.hint}` : ''}`}
                         </span>
@@ -6856,7 +6887,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
 
           {step === 1 && (
             <>
-              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: 700 }}>
+              <p style={{ fontSize: 14.5, color: C.ink, lineHeight: 1.6, marginBottom: 6, fontWeight: W.semibold }}>
                 Estes checklists serão criados para você:
               </p>
               <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, marginBottom: 14 }}>
@@ -6865,7 +6896,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
                 {plan.map(({ model: m, unit: u, sector }, i) => (
                   <div key={i} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
-                    <p style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>{m.area} — {m.momento}</p>
+                    <p style={{ fontSize: 13.5, fontWeight: W.semibold, color: C.ink }}>{m.area} — {m.momento}</p>
                     <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>
                       {u.name} · setor {sector} · {(m.items || []).length} itens
                       {(m.items || []).some(x => x.critical) ? ` · ${(m.items || []).filter(x => x.critical).length} críticos` : ''}
@@ -6886,7 +6917,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
             <>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
                 <p style={{ fontSize: 48, marginBottom: 8 }}>✅</p>
-                <p style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>Checklists criados!</p>
+                <p style={{ fontSize: 16, fontWeight: W.semibold, color: C.ink }}>Checklists criados!</p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
                 {[
@@ -6968,13 +6999,13 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
   };
 
   return (
-    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))', zIndex: 150, padding: '0 12px', pointerEvents: 'none' }}>
+    <div className="zc-overlay" style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--zc-nav-h) + 8px + env(safe-area-inset-bottom, 0px))', zIndex: 150, padding: '0 12px', pointerEvents: 'none' }}>
       <div style={{ maxWidth: 480, margin: '0 auto', background: 'white', borderRadius: 16, border: `2px solid ${accent}`, boxShadow: '0 8px 32px rgba(6,60,92,0.35)', padding: '14px 16px', pointerEvents: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
+          <p style={{ fontSize: 10.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: accent }}>
             Tour guiado · {i + 1} de {steps.length}
           </p>
-          <button onClick={() => finish(false)} style={{ background: 'none', border: 'none', fontSize: 11.5, fontWeight: 700, color: C.muted, cursor: 'pointer', padding: '4px 6px', margin: '-4px -6px' }}>
+          <button onClick={() => finish(false)} style={{ background: 'none', border: 'none', fontSize: 11.5, fontWeight: W.semibold, color: C.muted, cursor: 'pointer', padding: '4px 6px', margin: '-4px -6px' }}>
             Pular tour
           </button>
         </div>
@@ -6983,20 +7014,20 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
             <div key={x} style={{ flex: 1, height: 3, borderRadius: 999, background: x <= i ? accent : C.border }} />
           ))}
         </div>
-        <p style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 4 }}>{step.icon} {step.title}</p>
+        <p style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>{step.icon} {step.title}</p>
         <p style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.55, marginBottom: 8 }}>{step.desc}</p>
-        <p style={{ fontSize: 12, color: accent, lineHeight: 1.5, fontWeight: 700, background: `${accent}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
+        <p style={{ fontSize: 12, color: accent, lineHeight: 1.5, fontWeight: W.semibold, background: `${accent}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
           💡 {step.dica}
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           {i > 0 && (
             <button onClick={() => setI(i - 1)}
-              style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
+              style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'white', color: C.muted, border: `1px solid ${C.border}`, fontWeight: W.semibold, fontSize: 13.5, cursor: 'pointer' }}>
               ← Voltar
             </button>
           )}
           <button onClick={() => (isLast ? finish(true) : setI(i + 1))}
-            style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
+            style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 13.5, cursor: 'pointer' }}>
             {isLast ? 'Concluir tour ✓' : 'Próximo →'}
           </button>
         </div>
@@ -7060,10 +7091,10 @@ function WelcomeScreen({ role, onClose }) {
       }}>
         {/* Header */}
         <div style={{ background: accentColor, padding: '20px 24px 16px', textAlign: 'center' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>
             Bem-vindo ao ZCheck
           </p>
-          <p style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>
+          <p style={{ fontSize: 20, fontWeight: W.bold, color: 'white' }}>
             {isLider ? 'Guia de Liderança' : 'Guia do Colaborador'}
           </p>
         </div>
@@ -7083,10 +7114,10 @@ function WelcomeScreen({ role, onClose }) {
         <div style={{ padding: '20px 24px' }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <p style={{ fontSize: 48, marginBottom: 10 }}>{steps[step].icon}</p>
-            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColor, marginBottom: 6 }}>
+            <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColor, marginBottom: 6 }}>
               Passo {step + 1} de {steps.length}
             </p>
-            <p className="font-display" style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginBottom: 8 }}>
+            <p className="font-display" style={{ fontSize: 'calc(20px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginBottom: 8 }}>
               {steps[step].title}
             </p>
             <p style={{ fontSize: 14, color: '#555', lineHeight: 1.6 }}>
@@ -7097,7 +7128,7 @@ function WelcomeScreen({ role, onClose }) {
           {/* Tips on last step */}
           {isLast && (
             <div style={{ background: 'white', borderRadius: 12, padding: 14, marginBottom: 8, border: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 10 }}>
+              <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 10 }}>
                 Dicas importantes
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -7115,13 +7146,13 @@ function WelcomeScreen({ role, onClose }) {
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             {step > 0 && (
               <button onClick={() => setStep(s => s - 1)}
-                style={{ flex: 1, padding: '12px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', fontWeight: 800, fontSize: 13, color: C.ink, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: '12px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', fontWeight: W.semibold, fontSize: 13, color: C.ink, cursor: 'pointer' }}>
                 ← Anterior
               </button>
             )}
             <button
               onClick={() => isLast ? onClose() : setStep(s => s + 1)}
-              style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: accentColor, color: 'white', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}
+              style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: accentColor, color: 'white', fontWeight: W.semibold, fontSize: 14, cursor: 'pointer' }}
             >
               {isLast ? '🚀 Começar!' : 'Próximo →'}
             </button>
@@ -7129,7 +7160,7 @@ function WelcomeScreen({ role, onClose }) {
 
           {!isLast && (
             <button onClick={onClose}
-              style={{ width: '100%', marginTop: 10, padding: '8px', background: 'none', border: 'none', fontSize: 12, color: C.muted, cursor: 'pointer', fontWeight: 700 }}>
+              style={{ width: '100%', marginTop: 10, padding: '8px', background: 'none', border: 'none', fontSize: 12, color: C.muted, cursor: 'pointer', fontWeight: W.semibold }}>
               Pular introdução
             </button>
           )}
@@ -7148,12 +7179,12 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ minHeight: '100vh', background: '#F7F9FB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui' }}>
           <p style={{ fontSize: 32, marginBottom: 16 }}>⚠️</p>
-          <p style={{ fontSize: 18, fontWeight: 800, color: '#063C5C', marginBottom: 8 }}>Algo deu errado</p>
-          <p style={{ fontSize: 12, color: '#6B8299', textAlign: 'center', maxWidth: 340, marginBottom: 8, fontFamily: 'monospace', background: '#fff', padding: 8, borderRadius: 6 }}>
+          <p style={{ fontSize: 18, fontWeight: W.semibold, color: '#063C5C', marginBottom: 8 }}>Algo deu errado</p>
+          <p style={{ fontSize: 12, color: C.muted, textAlign: 'center', maxWidth: 340, marginBottom: 8, fontFamily: 'monospace', background: '#fff', padding: 8, borderRadius: 6 }}>
             {this.state.error?.message}
           </p>
           <button onClick={() => window.location.reload()}
-            style={{ padding: '12px 24px', borderRadius: 8, background: '#063C5C', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+            style={{ padding: '12px 24px', borderRadius: 8, background: '#063C5C', color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer' }}>
             Recarregar
           </button>
         </div>
@@ -7479,16 +7510,18 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
 
   const Stat = ({ label, value, sub, color }) => (
     <div style={{ flex: 1, textAlign: 'center', padding: '10px 6px' }}>
-      <p style={{ fontSize: 26, fontWeight: 800, color: color || C.ink, lineHeight: 1 }}>{value}</p>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: 4, fontWeight: 700 }}>{label}</p>
+      <p style={{ fontSize: 26, fontWeight: W.bold, color: color || C.ink, lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 4, fontWeight: W.semibold }}>{label}</p>
       {sub && <p style={{ fontSize: 10, color: C.mutedLight, marginTop: 2 }}>{sub}</p>}
     </div>
   );
 
   return (
     <div onClick={onClose}
+      className="zc-sheet zc-sheet--drawer"
       style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
       <div onClick={e => e.stopPropagation()}
+        className="zc-sheet-panel"
         style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
         {/* Cabeçalho — sticky: o briefing é longo e o X ficava rolando para fora
             da tela junto com ele. */}
@@ -7501,8 +7534,8 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
             style={{ position: 'absolute', top: 12, right: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999,
               width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>
-          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
-          <p className="font-display" style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Briefing do dia</p>
+          <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6 }}>{greeting}{firstName ? `, ${firstName}` : ''}</p>
           <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2, textTransform: 'capitalize' }}>{dateLabel}</p>
         </div>
 
@@ -7549,23 +7582,23 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
             <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 18 }}>{insight.icon || '🧠'}</span>
-                <p style={{ fontSize: 10.5, fontWeight: 800, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>🧠 Análise do dia</p>
+                <p style={{ fontSize: 10.5, fontWeight: W.semibold, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>🧠 Análise do dia</p>
               </div>
-              <p className="font-display" style={{ fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
+              <p className="font-display" style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
               <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 12 }}>{insight.evidence}</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {insight.unitId && (
                   <button onClick={actOnInsight}
-                    style={{ padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+                    style={{ padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: W.semibold, cursor: 'pointer' }}>
                     {insightActioned ? '✓ Vou agir nisso' : 'Agir sobre isso →'}
                   </button>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                   {insightFeedback ? (
-                    <span style={{ fontSize: 11.5, color: C.success, fontWeight: 700 }}>Valeu pelo retorno!</span>
+                    <span style={{ fontSize: 11.5, color: C.success, fontWeight: W.semibold }}>Valeu pelo retorno!</span>
                   ) : (
                     <>
-                      <span style={{ fontSize: 11.5, color: C.mutedLight, fontWeight: 700 }}>Foi útil?</span>
+                      <span style={{ fontSize: 11.5, color: C.mutedLight, fontWeight: W.semibold }}>Foi útil?</span>
                       <button onClick={() => rateInsight('yes')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👍</button>
                       <button onClick={() => rateInsight('no')} style={{ padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, fontSize: 14, cursor: 'pointer' }}>👎</button>
                     </>
@@ -7577,7 +7610,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
 
           {/* Ontem */}
           <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Ontem</p>
+            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Ontem</p>
             <div style={{ display: 'flex' }}>
               <Stat label="Aderência" value={y.adherence != null ? `${y.adherence}%` : '—'} color={y.adherence == null ? C.mutedLight : y.adherence >= 80 ? C.success : C.critical} />
               <Stat label="Checklists" value={`${y.checklists}${y.expected ? `/${y.expected}` : ''}`} />
@@ -7587,7 +7620,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
 
           {/* Hoje */}
           <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Hoje</p>
+            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Hoje</p>
             <div style={{ display: 'flex' }}>
               <Stat label="Previstos" value={t.expected} />
               <Stat label="Concluídos" value={t.done} color={C.success} />
@@ -7598,7 +7631,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
 
           {/* Recomendações */}
           <div>
-            <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades de hoje</p>
+            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades de hoje</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {briefing.recommendations.map(rec => (
                 <div key={rec.id} onClick={() => clickRec(rec)}
@@ -7607,7 +7640,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
                   <p style={{ flex: 1, fontSize: 13.5, color: C.ink, lineHeight: 1.45 }}>{rec.text}</p>
                   {rec.type !== 'all_good' && (
                     <button onClick={e => actionRec(rec, e)}
-                      style={{ flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      style={{ flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: W.semibold, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {actioned[rec.id] ? '✓ No plano' : 'Tratar'}
                     </button>
                   )}
@@ -7658,10 +7691,10 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
           {/* Micro-pergunta qualitativa (§10) */}
           <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
             {survey ? (
-              <p style={{ fontSize: 13, color: C.success, fontWeight: 700 }}>Obrigado pelo retorno! 🙌</p>
+              <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno! 🙌</p>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: 600 }}>Esse briefing te ajudou a priorizar o dia?</p>
+                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>Esse briefing te ajudou a priorizar o dia?</p>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                   <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
                   <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
@@ -7670,7 +7703,7 @@ function DailyBriefing({ briefing, currentUser, accent, openSource, actionPlans,
             )}
           </div>
 
-          <button onClick={onClose} style={{ padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 2 }}>
+          <button onClick={onClose} style={{ padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: 'pointer', marginTop: 2 }}>
             Começar o dia →
           </button>
         </div>
@@ -7786,7 +7819,7 @@ function computeOperationalProfile(completions, userId, userName) {
   };
 }
 
-function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize }) {
+export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
   const p = useMemo(
     () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
@@ -7855,8 +7888,8 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
 
   const Metric = ({ value, label, color }) => (
     <div style={{ flex: 1, textAlign: 'center', padding: '10px 4px' }}>
-      <p style={{ fontSize: 24, fontWeight: 800, color: color || C.ink, lineHeight: 1 }}>{value}</p>
-      <p style={{ fontSize: 10.5, color: C.muted, marginTop: 4, fontWeight: 700 }}>{label}</p>
+      <p style={{ fontSize: 24, fontWeight: W.bold, color: color || C.ink, lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: 10.5, color: C.muted, marginTop: 4, fontWeight: W.semibold }}>{label}</p>
     </div>
   );
 
@@ -7865,7 +7898,7 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       <div style={{ padding: 20 }}>
         <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, padding: '28px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 44, marginBottom: 10 }}>🌱</div>
-          <p className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>
+          <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
             {isSelf ? 'Seu ID Operacional começa aqui' : `${firstName} ainda não tem histórico`}
           </p>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 8, lineHeight: 1.5, maxWidth: 300, marginInline: 'auto' }}>
@@ -7883,14 +7916,14 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Cabeçalho — identidade + nível */}
       <div style={{ background: accent, color: 'white', borderRadius: 16, padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 999, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, flexShrink: 0 }}>{initial}</div>
+          <div style={{ width: 52, height: 52, borderRadius: 999, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: W.bold, flexShrink: 0 }}>{initial}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="font-display" style={{ fontSize: 18, fontWeight: 800 }}>{targetUser.name}</p>
+            <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold }}>{targetUser.name}</p>
             <p style={{ fontSize: 12, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ROLE_LABELS[targetUser.role] || targetUser.role}</p>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
-            <p style={{ fontSize: 10, opacity: 0.8, fontWeight: 700 }}>NÍVEL</p>
-            <p className="font-display" style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>{p.level}</p>
+            <p style={{ fontSize: 10, opacity: 0.8, fontWeight: W.semibold }}>NÍVEL</p>
+            <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, lineHeight: 1 }}>{p.level}</p>
           </div>
         </div>
         <div style={{ marginTop: 14 }}>
@@ -7906,7 +7939,7 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Reconhecer (visão do líder — H3) */}
       {!isSelf && (
         <button onClick={() => onRecognize && onRecognize(p)}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 14.5, cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 14.5, cursor: 'pointer' }}>
           🏅 Reconhecer {firstName}
         </button>
       )}
@@ -7914,11 +7947,11 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Reconhecimentos recebidos (visão do próprio colaborador) */}
       {isSelf && recognitions.length > 0 && (
         <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.success}55`, padding: 14 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>🏅 Reconhecimentos recebidos</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>🏅 Reconhecimentos recebidos</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {recognitions.slice(0, 5).map(r => (
               <div key={r.id} style={{ borderLeft: `3px solid ${C.success}`, paddingLeft: 10 }}>
-                {r.metricLabel && <p style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>{r.metricLabel}</p>}
+                {r.metricLabel && <p style={{ fontSize: 12.5, fontWeight: W.semibold, color: C.ink }}>{r.metricLabel}</p>}
                 {r.message && <p style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.4 }}>"{r.message}"</p>}
                 <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>— {r.fromUserName || 'Liderança'}</p>
               </div>
@@ -7932,7 +7965,7 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
         <Metric value={p.checklists} label="Checklists" />
         <Metric value={p.tasksDone} label="Tarefas" />
         <Metric value={p.criticalDone} label="Críticas feitas" color={p.criticalDone > 0 ? C.success : C.ink} />
-        <Metric value={`${p.avgRate}%`} label="Conclusão" color={p.avgRate >= 80 ? C.success : p.avgRate >= 50 ? '#C6842A' : C.critical} />
+        <Metric value={`${p.avgRate}%`} label="Conclusão" color={p.avgRate >= 80 ? C.success : p.avgRate >= 50 ? C.warning : C.critical} />
         <Metric value={p.criticalRate != null ? `${p.criticalRate}%` : '—'} label="Críticos em dia" color={p.criticalRate != null && p.criticalRate >= 90 ? C.success : C.ink} />
         <Metric value={`${p.streak}${p.streak ? '🔥' : ''}`} label="Sequência" />
       </div>
@@ -7940,16 +7973,16 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Score de produtividade — mesma régua do Relatórios (100 = média da empresa) */}
       {(() => {
         const score = prodScore?.score ?? null;
-        const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? '#C6842A' : C.critical;
+        const color = score == null ? C.muted : score >= 110 ? C.success : score >= 90 ? accent : score >= 70 ? C.warning : C.critical;
         const barPct = score == null ? 0 : Math.min(score, 150) / 1.5;
         return (
           <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Score de produtividade</p>
+                <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Score de produtividade</p>
                 <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>100 = média da empresa</p>
               </div>
-              <p className="font-display" style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1, flexShrink: 0 }}>
+              <p className="font-display" style={{ fontSize: 'calc(32px * var(--zc-t-scale))', fontWeight: W.bold, color, lineHeight: 1, flexShrink: 0 }}>
                 {score == null ? '—' : score}
               </p>
             </div>
@@ -7968,14 +8001,14 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
 
       {/* Evolução */}
       <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
-        <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Sua evolução (conclusão por semana)</p>
+        <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Sua evolução (conclusão por semana)</p>
         {p.weekly.length === 0 ? (
           <p style={{ fontSize: 12, color: C.mutedLight }}>Ainda sem histórico semanal.</p>
         ) : (
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 96 }}>
             {p.weekly.map(w => (
               <div key={w.week} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: C.muted }}>{w.rate}%</span>
+                <span style={{ fontSize: 10, fontWeight: W.semibold, color: C.muted }}>{w.rate}%</span>
                 <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'flex-end' }}>
                   <div style={{ width: '100%', height: `${Math.max(6, (w.rate / maxWeekRate) * 64)}px`, background: w.rate >= 80 ? C.success : w.rate >= 50 ? accent : C.critical, borderRadius: '6px 6px 0 0' }} />
                 </div>
@@ -7989,15 +8022,15 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Conquistas */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, paddingInline: 2 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conquistas</p>
-          <p style={{ fontSize: 11, fontWeight: 700, color: C.muted }}>{earnedCount}/{p.achievements.length}</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conquistas</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted }}>{earnedCount}/{p.achievements.length}</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {p.achievements.map(a => (
             <div key={a.id} style={{ background: 'white', borderRadius: 12, border: `1px solid ${a.earned ? `${C.success}55` : C.border}`, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', opacity: a.earned ? 1 : 0.5 }}>
               <span style={{ fontSize: 22, filter: a.earned ? 'none' : 'grayscale(1)' }}>{a.icon}</span>
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>{a.title}</p>
+                <p style={{ fontSize: 12.5, fontWeight: W.semibold, color: C.ink }}>{a.title}</p>
                 <p style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.3 }}>{a.desc}</p>
               </div>
             </div>
@@ -8008,7 +8041,7 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {/* Histórico recente */}
       {p.recent.length > 0 && (
         <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Histórico recente</p>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Histórico recente</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {p.recent.map(c => {
               const done = (c.items || []).filter(i => i.done).length;
@@ -8016,10 +8049,10 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
               const rate = total ? Math.round((done / total) * 100) : 0;
               return (
                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: 999, background: rate >= 80 ? C.success : rate >= 50 ? '#C6842A' : C.critical, flexShrink: 0 }} />
+                  <div style={{ width: 6, height: 6, borderRadius: 999, background: rate >= 80 ? C.success : rate >= 50 ? C.warning : C.critical, flexShrink: 0 }} />
                   <p style={{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{truncName(c.templateName, 28)}</p>
                   <span style={{ fontSize: 11, color: C.muted }}>{c.date.slice(8, 10)}/{c.date.slice(5, 7)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: rate >= 80 ? C.success : C.muted, width: 34, textAlign: 'right' }}>{rate}%</span>
+                  <span style={{ fontSize: 11, fontWeight: W.semibold, color: rate >= 80 ? C.success : C.muted, width: 34, textAlign: 'right' }}>{rate}%</span>
                 </div>
               );
             })}
@@ -8031,10 +8064,10 @@ function OperationalIdView({ targetUser, viewer, completions, accent, onRecogniz
       {isSelf && (
         <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
           {survey ? (
-            <p style={{ fontSize: 13, color: C.success, fontWeight: 700 }}>Obrigado pelo retorno! 🙌</p>
+            <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno! 🙌</p>
           ) : (
             <>
-              <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: 600 }}>Ver sua evolução aqui te motiva?</p>
+              <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>Ver sua evolução aqui te motiva?</p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                 <button onClick={() => answerSurvey('yes')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👍</button>
                 <button onClick={() => answerSurvey('no')} style={{ padding: '7px 20px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, fontSize: 18, cursor: 'pointer' }}>👎</button>
@@ -8083,14 +8116,14 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))' }}>
+    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <p className="font-display" style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>🏅 Reconhecer {firstName}</p>
+          <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>🏅 Reconhecer {firstName}</p>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
-        <p style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ancorar numa métrica</p>
+        <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ancorar numa métrica</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {anchors.map(a => (
             <button key={a.ref} onClick={() => setMetricRef(a.ref)}
@@ -8108,7 +8141,7 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
           rows={3} style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, resize: 'none', marginBottom: 14, background: 'white', color: C.ink }} />
 
         <button onClick={send} disabled={sending}
-          style={{ width: '100%', padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: 800, fontSize: 15, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.7 : 1 }}>
+          style={{ width: '100%', padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.7 : 1 }}>
           {sending ? 'Enviando…' : 'Enviar reconhecimento'}
         </button>
       </div>
@@ -8116,7 +8149,7 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
   );
 }
 
-function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits }) {
+export function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits }) {
   const [selected, setSelected] = useState(null);
   const [recognizeFor, setRecognizeFor] = useState(null);
   const [toast, setToast] = useState('');
@@ -8147,7 +8180,7 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
           />
         )}
         {toast && (
-          <div style={{ position: 'fixed', bottom: 'calc(72px + env(safe-area-inset-bottom,0px))', left: 16, right: 16, zIndex: 220, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: 700 }}>{toast}</div>
+          <div className="zc-overlay" style={{ position: 'fixed', bottom: 'calc(var(--zc-nav-h) + 16px + env(safe-area-inset-bottom, 0px))', left: 16, right: 16, zIndex: 220, background: C.ink, color: 'white', borderRadius: 12, padding: '12px 16px', textAlign: 'center', fontSize: 13, fontWeight: W.semibold }}>{toast}</div>
         )}
       </div>
     );
@@ -8156,7 +8189,7 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
   // Lista da equipe
   return (
     <div style={{ padding: '14px 14px 28px' }}>
-      <p style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+      <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
         Sua equipe · reconheça pelo desempenho
       </p>
       {team.length === 0 ? (
@@ -8166,11 +8199,11 @@ function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits })
           {team.map(({ user, profile }) => (
             <button key={user.id} onClick={() => { setSelected(user); }}
               style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 999, background: `${accent}18`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, flexShrink: 0 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 999, background: `${accent}18`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: W.semibold, flexShrink: 0 }}>
                 {(user.name || '?').trim().charAt(0).toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, fontWeight: 800, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
                 <p style={{ fontSize: 11.5, color: C.muted }}>
                   {profile.checklists} checklists · {profile.tasksDone} tarefas · {profile.avgRate}% conclusão{profile.streak ? ` · ${profile.streak}🔥` : ''}
                 </p>
@@ -8340,6 +8373,23 @@ function AppInner() {
 
   // Active UNITS — dynamic when loaded from DB, fallback to hardcoded for IBR
   const ACTIVE_UNITS = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
+
+  // Aba e loja na URL. Precisa ficar AQUI, acima dos returns antecipados de
+  // carregamento (LoadingScreen, login, paywall) — hook não pode vir depois de
+  // return condicional. `ready` segura a aplicação da URL até o papel existir:
+  // sem isso, o link de um gestor abriria uma aba que o colaborador não pode ver.
+  const urlAllowedTabs = useMemo(
+    () => (currentUser ? ROLE_TABS[currentUser.role] : []),
+    [currentUser],
+  );
+  const urlUnitIds = useMemo(() => ACTIVE_UNITS.map(u => u.id), [ACTIVE_UNITS]);
+  useAppUrlState({
+    ready: !!currentUser,
+    tab, setTab, allowedTabs: urlAllowedTabs,
+    unitId, setUnitId,
+    canSwitchUnit: currentUser ? currentUser.unitId == null : false,
+    unitIds: urlUnitIds,
+  });
 
   // Active checklist types — dynamic when loaded, fallback to hardcoded.
   // Os tipos-padrão que NÃO existem no banco entram no fim: empresa antiga (IBR,
@@ -8774,7 +8824,7 @@ function AppInner() {
   const offlineBanner = !isOnline ? (
     <div className="flex items-center justify-center gap-2 px-4 py-2" style={{ background: C.critical, color: 'white', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999 }}>
       <WifiOff size={14} />
-      <span style={{ fontSize: 12, fontWeight: 800 }}>Sem conexão — dados salvos localmente</span>
+      <span style={{ fontSize: 12, fontWeight: W.semibold }}>Sem conexão — dados salvos localmente</span>
     </div>
   ) : null;
 
@@ -8810,6 +8860,8 @@ function AppInner() {
   const allowedTabs = ROLE_TABS[currentUser.role];
   const canSwitchUnit = currentUser.unitId == null;
   const activeTab = allowedTabs.includes(tab) ? tab : allowedTabs[0];
+  // Contexto do rail lateral quando o papel tem poucos destinos (colaborador).
+  const sideNavDate = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
   // A unidade ativa sai das unidades DA EMPRESA (ACTIVE_UNITS), não da constante
   // UNITS do IBR. `unitId` nulo (login recém-feito) cai na primeira da empresa.
   const unit = ACTIVE_UNITS.find(u => u.id === unitId) || ACTIVE_UNITS[0];
@@ -8839,12 +8891,12 @@ function AppInner() {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, maxWidth: 380, textAlign: 'center' }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 8 }}>Configuração pendente</h2>
+          <h2 style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>Configuração pendente</h2>
           <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
             A empresa ainda está sendo configurada. Peça ao gestor para concluir o primeiro acesso.
           </p>
           <button onClick={doLogout}
-            style={{ padding: '10px 20px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            style={{ padding: '10px 20px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.muted, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
             Sair
           </button>
         </div>
@@ -8855,9 +8907,14 @@ function AppInner() {
   return (
     <UnitsContext.Provider value={ACTIVE_UNITS}>
     <SectorsContext.Provider value={dynamicSectors}>
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.ink, fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column' }}>
+    <div className="zc-root" style={{ minHeight: '100vh', color: C.ink }}>
+      {/* `.font-display` NÃO estava morta — estava nociva: este bloco forçava
+          `system-ui` (anulando a Inter) e reimpunha `font-weight: 800` em 59
+          elementos. Agora ela mora em globals.css e é só papel óptico
+          (tabular-nums + tracking). `background`/`display`/`fontFamily` saíram
+          do style inline para a classe `.zc-root` — estilo inline vence classe,
+          e sem isso o desktop não consegue trocar a coluna por linha. */}
       <style>{`
-        .font-display { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 800; }
         .font-mono-ibr { font-family: ui-monospace, 'SF Mono', 'Roboto Mono', monospace; }
         * { box-sizing: border-box; }
         input, textarea, button { font-family: inherit; }
@@ -8871,6 +8928,18 @@ function AppInner() {
         <SubscribePanel mode="modal" company={company} currentUser={currentUser} onClose={() => setShowPlans(false)} />
       )}
 
+      <a className="zc-skip" href="#zc-main-content">Pular para o conteúdo</a>
+
+      {/* Rail lateral: só aparece >= 1024px (CSS). No celular fica display:none
+          e a BottomNav segue sendo a navegação, sem nenhuma mudança. */}
+      <SideNav
+        tab={activeTab} setTab={setTab} allowedTabs={allowedTabs}
+        pendingCount={pendingRequestsCount}
+        unitName={unit?.name} dateLabel={sideNavDate}
+      />
+
+      {/* `display: contents` no celular — este div não existe para o layout. */}
+      <div className="zc-main">
       <Header
         unit={unit} onSelectUnit={setUnitId} allUnits={ACTIVE_UNITS}
         currentUser={currentUser} canSwitchUnit={canSwitchUnit}
@@ -8930,8 +8999,8 @@ function AppInner() {
         />
       )}
       {showRequestsPopup && currentUser?.role === 'gestao' && !popupMinimized && (
-        <div style={{
-          position: 'fixed', bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        <div className="zc-on-dark zc-requests-popup" style={{
+          position: 'fixed', bottom: 'calc(var(--zc-nav-h) + 8px + env(safe-area-inset-bottom, 0px))',
           left: 12, right: 12, zIndex: 100,
           background: '#063C5C', borderRadius: 14, padding: '14px 16px',
           boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
@@ -8939,7 +9008,7 @@ function AppInner() {
         }}>
           <span style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>🔔</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 14, fontWeight: 800, color: 'white', marginBottom: 3 }}>
+            <p style={{ fontSize: 14, fontWeight: W.semibold, color: 'white', marginBottom: 3 }}>
               {pendingRequestsCount === 1
                 ? '1 solicitação pendente'
                 : `${pendingRequestsCount} solicitações pendentes`}
@@ -8952,19 +9021,19 @@ function AppInner() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => { setTab('usuarios'); setShowRequestsPopup(false); }}
-                style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'white', color: '#063C5C', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'white', color: '#063C5C', border: 'none', fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}
               >
                 Ver agora
               </button>
               <button
                 onClick={() => setPopupMinimized(true)}
-                style={{ padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+                style={{ padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 12, cursor: 'pointer' }}
               >
                 Minimizar
               </button>
               <button
                 onClick={() => setShowRequestsPopup(false)}
-                style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', fontWeight: 700, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}
+                style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}
               >
                 ×
               </button>
@@ -8977,12 +9046,13 @@ function AppInner() {
       {showRequestsPopup && currentUser?.role === 'gestao' && popupMinimized && (
         <button
           onClick={() => setPopupMinimized(false)}
+          className="zc-on-dark zc-requests-popup"
           style={{
-            position: 'fixed', bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+            position: 'fixed', bottom: 'calc(var(--zc-nav-h) + 16px + env(safe-area-inset-bottom, 0px))',
             right: 16, zIndex: 100,
             background: '#063C5C', color: 'white',
             border: 'none', borderRadius: 999, padding: '8px 14px',
-            fontSize: 12, fontWeight: 800, cursor: 'pointer',
+            fontSize: 12, fontWeight: W.semibold, cursor: 'pointer',
             boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
             display: 'flex', alignItems: 'center', gap: 6,
           }}
@@ -8993,7 +9063,7 @@ function AppInner() {
 
 
 
-      <main style={{ flex: 1 }} key={unitId}>
+      <main id="zc-main-content" tabIndex={-1} className="zc-content" style={{ flex: 1 }} key={unitId}>
         {MANAGER_ROLES.includes(currentUser.role) && !showBriefing && (
           <div style={{ padding: '10px 14px 0' }}>
             {/* Badge = há sinal que você ainda não viu. É como sinal de meio de
@@ -9042,6 +9112,7 @@ function AppInner() {
       </main>
 
       <BottomNav tab={activeTab} setTab={setTab} accent={unit.color} allowedTabs={allowedTabs} />
+      </div>
     </div>
     </SectorsContext.Provider>
     </UnitsContext.Provider>
@@ -9107,7 +9178,7 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Lock size={18} color={C.ink} />
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>
+            <h2 style={{ fontSize: 20, fontWeight: W.bold, color: C.ink }}>
               {isBlock ? 'Seu teste terminou' : 'Escolha seu plano'}
             </h2>
           </div>
@@ -9129,7 +9200,7 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
             <div style={{ display: 'flex', gap: 8, marginBottom: 14 }} role="group" aria-label="Plano">
               {[['annual', 'Anual · R$ 97/loja · −24%'], ['monthly', 'Mensal · R$ 127/loja']].map(([id, label]) => (
                 <button key={id} type="button" onClick={() => setCycle(id)} aria-pressed={cycle === id}
-                  style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: W.semibold, cursor: 'pointer',
                     border: `1.5px solid ${cycle === id ? C.ink : C.border}`,
                     background: cycle === id ? C.ink : 'white', color: cycle === id ? 'white' : C.muted }}>
                   {label}
@@ -9140,17 +9211,17 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
             {/* Quantidade de lojas */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Quantas lojas?</p>
+              <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>Quantas lojas?</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <button type="button" aria-label="Menos uma loja" disabled={units <= 1}
                   onClick={() => setUnits(u => Math.max(1, u - 1))}
                   style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
-                    fontSize: 18, fontWeight: 800, color: units <= 1 ? C.border : C.ink, cursor: units <= 1 ? 'default' : 'pointer' }}>−</button>
-                <span style={{ fontSize: 18, fontWeight: 800, color: C.ink, minWidth: 26, textAlign: 'center' }}>{units}</span>
+                    fontSize: 18, fontWeight: W.semibold, color: units <= 1 ? C.border : C.ink, cursor: units <= 1 ? 'default' : 'pointer' }}>−</button>
+                <span style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, minWidth: 26, textAlign: 'center' }}>{units}</span>
                 <button type="button" aria-label="Mais uma loja" disabled={units >= MAX_SELF_SERVICE_UNITS}
                   onClick={() => setUnits(u => Math.min(MAX_SELF_SERVICE_UNITS, u + 1))}
                   style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
-                    fontSize: 18, fontWeight: 800, color: units >= MAX_SELF_SERVICE_UNITS ? C.border : C.ink,
+                    fontSize: 18, fontWeight: W.semibold, color: units >= MAX_SELF_SERVICE_UNITS ? C.border : C.ink,
                     cursor: units >= MAX_SELF_SERVICE_UNITS ? 'default' : 'pointer' }}>+</button>
               </div>
             </div>
@@ -9158,8 +9229,8 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
             {/* Conta transparente + assinar */}
             {price && (
               <div aria-live="polite" style={{ textAlign: 'center', marginBottom: 14 }}>
-                <p style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>
-                  {brl(price.monthlyCharge)}<span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>/mês</span>
+                <p style={{ fontSize: 22, fontWeight: W.bold, color: C.ink }}>
+                  {brl(price.monthlyCharge)}<span style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted }}>/mês</span>
                 </p>
                 <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                   {units} {units === 1 ? 'loja' : 'lojas'} × {brl(price.perUnit)}
@@ -9168,18 +9239,18 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
                     : <> · sem fidelidade, cancele quando quiser</>}
                 </p>
                 {annual && (
-                  <p style={{ fontSize: 11.5, fontWeight: 700, color: C.success, marginTop: 6 }}>
+                  <p style={{ fontSize: 11.5, fontWeight: W.semibold, color: C.success, marginTop: 6 }}>
                     ✓ Implantação assistida incluída — nossa equipe configura com você.
                   </p>
                 )}
               </div>
             )}
             <button onClick={subscribe} disabled={loading}
-              style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 15,
+              style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: W.semibold, fontSize: 15,
                 color: 'white', background: loading ? C.muted : C.ink, cursor: loading ? 'not-allowed' : 'pointer' }}>
               {loading ? 'Abrindo pagamento...' : 'Assinar'}
             </button>
-            {err && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, textAlign: 'center', marginTop: 12 }}>{err}</p>}
+            {err && <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical, textAlign: 'center', marginTop: 12 }}>{err}</p>}
             <p style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 16 }}>
               Cancele quando quiser, sem multa ou fidelidade no mensal.
             </p>
@@ -9195,7 +9266,7 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
         {isBlock && (
           <button onClick={onLogout}
             style={{ width: '100%', marginTop: 20, padding: '12px', borderRadius: 10, border: `1.5px solid ${C.border}`,
-              background: 'white', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              background: 'white', color: C.muted, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
             Sair
           </button>
         )}
@@ -9211,18 +9282,18 @@ function TrialNudge({ daysLeft, onDismiss, onOpen }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, maxWidth: 380, width: '100%', padding: 24, textAlign: 'center' }}>
         <div style={{ fontSize: 34, marginBottom: 8 }}>⏳</div>
-        <h3 style={{ fontSize: 18, fontWeight: 800, color: C.ink, marginBottom: 6 }}>
+        <h3 style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, marginBottom: 6 }}>
           {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'} de teste` : 'Seu teste está acabando'}
         </h3>
         <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
           Assine para não perder o acesso nem os dados da sua operação quando o teste terminar.
         </p>
         <button onClick={onOpen}
-          style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 14, color: 'white', background: C.ink, cursor: 'pointer', marginBottom: 8 }}>
+          style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: W.semibold, fontSize: 14, color: 'white', background: C.ink, cursor: 'pointer', marginBottom: 8 }}>
           Ver planos
         </button>
         <button onClick={onDismiss}
-          style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: 'none', color: C.muted, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+          style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
           Agora não
         </button>
       </div>
@@ -9240,7 +9311,7 @@ const ONB_SEGMENTS = {
   padaria:     { label: 'Padaria',     units: ['Padaria'],       sectors: ['Atendimento', 'Produção', 'Caixa'], types: ['Abertura', 'Produção Diária', 'Fechamento'] },
   personalizado: { label: 'Personalizado', units: ['Unidade 1'], sectors: [], types: ['Abertura', 'Fechamento'] },
 };
-const ONB_COLORS = ['#063C5C', '#1A6B4A', '#C6842A', '#7B3FA0', '#B5451B', '#1E7A6E', '#8B4513', '#2C5F8A'];
+const ONB_COLORS = ['#063C5C', '#1A6B4A', C.warning, '#7B3FA0', '#B5451B', '#1E7A6E', '#8B4513', '#2C5F8A'];
 const nid = () => Math.random().toString(36).slice(2, 10);
 const ONB_STEPS = ['Segmento', 'Lojas', 'Setores', 'Checklists', 'Marca'];
 
@@ -9252,13 +9323,13 @@ function Step({ n, label, active, done }) {
     <div className="flex flex-col items-center gap-1" style={{ flex: 1, minWidth: 0 }}>
       <div style={{
         width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontWeight: 800, fontSize: 12,
+        fontWeight: W.semibold, fontSize: 12,
         background: done ? C.success : active ? C.ink : C.border,
         color: done || active ? 'white' : C.muted, transition: 'all 0.2s',
       }}>
         {done ? '✓' : n}
       </div>
-      <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: active ? C.ink : C.muted, textAlign: 'center' }}>{label}</span>
+      <span style={{ fontSize: 8, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.04em', color: active ? C.ink : C.muted, textAlign: 'center' }}>{label}</span>
     </div>
   );
 }
@@ -9339,15 +9410,15 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
   };
 
   const fieldRow = { display: 'flex', alignItems: 'center', gap: 8 };
-  const inputStyle = { flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' };
-  const addBtn = { width: '100%', padding: '12px', borderRadius: 10, border: `2px dashed ${C.border}`, fontWeight: 700, color: C.muted, background: 'none', cursor: 'pointer', fontSize: 14 };
+  const inputStyle = { flex: 1, minWidth: 0, fontSize: 14, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', fontFamily: 'inherit' };
+  const addBtn = { width: '100%', padding: '12px', borderRadius: 10, border: `2px dashed ${C.border}`, fontWeight: W.semibold, color: C.muted, background: 'none', cursor: 'pointer', fontSize: 14 };
   const rm = (setter) => (id) => setter(prev => prev.length > 1 ? prev.filter(x => x.id !== id) : prev);
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", overflowX: 'hidden' }}>
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '28px 20px 96px', width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink }}>Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
+          <h1 style={{ fontSize: 22, fontWeight: W.bold, color: C.ink }}>Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Vamos configurar <strong>{company.name}</strong> em poucos passos.</p>
         </div>
 
@@ -9359,12 +9430,12 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
         {step === 1 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Qual o seu segmento?</h2>
+            <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Qual o seu segmento?</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Pré-carregamos lojas, setores e checklists típicos — você ajusta tudo nos próximos passos.</p>
             <div className="flex flex-wrap gap-2">
               {Object.entries(ONB_SEGMENTS).map(([id, t]) => (
                 <button key={id} onClick={() => applySegment(id)}
-                  style={{ padding: '10px 16px', borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                  style={{ padding: '10px 16px', borderRadius: 20, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer',
                     background: segment === id ? C.ink : 'white', color: segment === id ? 'white' : C.muted,
                     border: `1.5px solid ${segment === id ? C.ink : C.border}` }}>{t.label}</button>
               ))}
@@ -9374,7 +9445,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
         {step === 2 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
+            <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Cada loja ou unidade operacional que você acompanha.</p>
             <div className="space-y-3">
               {units.map((u, i) => (
@@ -9392,14 +9463,14 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
         {step === 3 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Setores</h2>
+            <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Setores</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>As áreas da operação (ex: Salão, Cozinha, Recepção). Opcional.</p>
             <div className="space-y-3">
               {sectors.map((s, i) => (
                 <div key={s.id} style={fieldRow}>
                   {units.filter(u => u.name.trim()).length > 1 && (
                     <select value={s.unitId || ''} onChange={e => setSectors(prev => prev.map(x => x.id === s.id ? { ...x, unitId: e.target.value } : x))}
-                      style={{ fontSize: 12, fontWeight: 700, color: C.ink, background: 'white', padding: '12px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, flexShrink: 0 }}>
+                      style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '12px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, flexShrink: 0 }}>
                       {units.filter(u => u.name.trim()).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   )}
@@ -9414,7 +9485,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
         {step === 4 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Tipos de checklist</h2>
+            <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Tipos de checklist</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Ex: Abertura, Fechamento, Vistoria. Você cria os itens de cada um depois, em Gerenciar.</p>
             <div className="space-y-3">
               {types.map((t, i) => (
@@ -9430,17 +9501,17 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
 
         {step === 5 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Marca da empresa</h2>
+            <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Marca da empresa</h2>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Seu logo e a cor aparecem no app para a equipe.</p>
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Logotipo</p>
+              <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Logotipo</p>
               {!skipLogo && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <div style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px solid ${C.border}`, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                       {logoPreview ? <img src={logoPreview} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 11, color: C.muted }}>sem logo</span>}
                     </div>
-                    <label style={{ padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    <label style={{ padding: '10px 16px', borderRadius: 10, border: `1.5px solid ${C.border}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
                       {logoFile ? 'Trocar imagem' : 'Escolher imagem'}
                       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onPickLogo} style={{ display: 'none' }} />
                     </label>
@@ -9458,7 +9529,7 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
               </label>
             </div>
             <div>
-              <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8, marginTop: 8 }}>Cor principal</p>
+              <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8, marginTop: 8 }}>Cor principal</p>
               <div className="flex flex-wrap gap-2">
                 {ONB_COLORS.map(c => (
                   <button key={c} onClick={() => setPrimaryColor(c)}
@@ -9469,15 +9540,15 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
           </div>
         )}
 
-        {error && <p style={{ fontSize: 13, fontWeight: 700, color: C.critical, marginTop: 16, textAlign: 'center' }}>{error}</p>}
+        {error && <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical, marginTop: 16, textAlign: 'center' }}>{error}</p>}
 
         <div className="flex gap-3" style={{ marginTop: 30 }}>
           {step > 1 && !saving && (
             <button onClick={() => { setError(''); setStep(s => s - 1); }}
-              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: 800, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>← Voltar</button>
+              style={{ flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white', cursor: 'pointer', fontSize: 15 }}>← Voltar</button>
           )}
           <button onClick={next} disabled={saving}
-            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: 800, color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
+            style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', fontWeight: W.semibold, color: 'white', background: saving ? C.muted : C.ink, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 15 }}>
             {saving ? 'Salvando...' : step === 5 ? 'Concluir configuração →' : 'Próximo →'}
           </button>
         </div>

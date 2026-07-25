@@ -29,7 +29,7 @@ export default function UsagePage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Uso Operacional</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Uso Operacional</h1>
         <UpdatedAt updatedAt={updatedAt} onRefresh={refresh} loading={loading} />
       </div>
 
@@ -123,7 +123,7 @@ export default function UsagePage() {
             empty="Nenhum item falhado no período."
             rows={failedItems.map(f => [
               <span key="t" style={{ whiteSpace: 'normal', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {f.critical && <span title="crítico" style={{ fontSize: 10, fontWeight: 800, color: 'white', background: C.critical, borderRadius: 4, padding: '1px 5px' }}>CRÍTICO</span>}
+                {f.critical && <span title="crítico" style={{ fontSize: 10, fontWeight: 600, color: 'white', background: C.critical, borderRadius: 4, padding: '1px 5px' }}>CRÍTICO</span>}
                 {f.item_text}
               </span>,
               <span key="c" style={{ color: C.muted }}>{f.template_name}</span>,

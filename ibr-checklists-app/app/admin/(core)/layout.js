@@ -58,7 +58,7 @@ export default function CoreLayout({ children }) {
       >
         <div style={{ padding: '18px 16px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <img src="/zcheck-logo.png" alt="ZCheck" style={{ height: 26, width: 'auto' }} />
-          <span style={{ fontSize: 11, fontWeight: 800, color: C.ink, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Core</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.ink, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Core</span>
         </div>
 
         <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible" style={{ padding: '6px 10px 12px' }}>
@@ -66,7 +66,7 @@ export default function CoreLayout({ children }) {
             <Link key={item.href} href={item.href} style={{ ...linkStyle(pathname === item.href), display: 'flex', alignItems: 'center', gap: 8 }}>
               {item.label}
               {item.href === '/admin/alertas' && openAlerts > 0 && (
-                <span style={{ background: C.critical, color: 'white', borderRadius: 999, fontSize: 11, fontWeight: 800, padding: '1px 7px', lineHeight: '16px' }}>
+                <span style={{ background: C.critical, color: 'white', borderRadius: 999, fontSize: 11, fontWeight: 600, padding: '1px 7px', lineHeight: '16px' }}>
                   {openAlerts}
                 </span>
               )}

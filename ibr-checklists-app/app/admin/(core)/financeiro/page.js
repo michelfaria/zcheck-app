@@ -25,7 +25,7 @@ export default function FinancePage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Financeiro</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Financeiro</h1>
         <UpdatedAt updatedAt={updatedAt} onRefresh={refresh} loading={loading} />
       </div>
 
@@ -102,9 +102,9 @@ export default function FinancePage() {
               <span key="n" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <HealthDot status={c.completions_7d > 0 ? 'green' : c.completions_30d > 0 ? 'yellow' : 'never'} />
                 <strong>{c.name}</strong>
-                {!c.active && <span style={{ fontSize: 10, fontWeight: 800, color: C.critical }}>INATIVA</span>}
+                {!c.active && <span style={{ fontSize: 10, fontWeight: 600, color: C.critical }}>INATIVA</span>}
               </span>,
-              <span key="s" style={{ fontSize: 10, fontWeight: 800, color: 'white', background: s.color, borderRadius: 4, padding: '2px 6px' }}>
+              <span key="s" style={{ fontSize: 10, fontWeight: 600, color: 'white', background: s.color, borderRadius: 4, padding: '2px 6px' }}>
                 {s.label}{c.state === 'trialing' && c.trial_days_left != null ? ` ${c.trial_days_left}d` : ''}
               </span>,
               c.plan_tier || (c.state === 'trialing' ? 'trial' : '—'),

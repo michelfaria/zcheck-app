@@ -51,12 +51,251 @@ html, body {
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  /* Fallback DENTRO do var(): sem ele, se `--font-inter` não resolver, a
+     declaração inteira fica inválida em computed-value time e a tipografia do
+     app inteiro cai para o serifado padrão do navegador. */
+  font-family: var(--font-inter, -apple-system), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 input, textarea, button, select {
   font-family: inherit;
+}
+
+/* `font-display` está em 59 lugares do app e não era inerte — era NOCIVA: um
+   <style> inline em app/app/page.js forçava `system-ui` (anulando a Inter) e
+   reimpunha `font-weight: 800`. Aqui ela vira o que sempre quis ser: papel
+   ÓPTICO, não outra família.
+
+   Só `tabular-nums`. Tracking negativo NÃO entra aqui: a classe é usada de 13px
+   a 56px e em vários rótulos MAIÚSCULOS, onde apertar é errado por definição.
+   A direção aprovada pede tracking a partir de 20px — isso entra junto com a
+   escala tipográfica desktop, por elemento, não numa classe cega. */
+.font-display {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAMADA DESKTOP
+   O mobile é o default; o desktop é ADITIVO. Tudo que muda a aparência em tela
+   grande vive dentro de `@media (min-width: 1024px)`. A 390px esse bloco não é
+   avaliado — o celular fica preservado por propriedade da linguagem, não por
+   promessa de quem escreveu.
+   Valores do :root abaixo = os números que já estavam hardcoded no app.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --zc-nav-h: 56px;      /* altura da BottomNav — 9 barras fixas dependiam deste número */
+  --zc-nav-w: 0px;       /* largura do rail lateral (0 no celular: não existe) */
+  --zc-canvas: #F7F9FB;  /* C.bg */
+  --zc-pad-view: 16px;
+  --zc-content-max: none;
+
+  --zc-t-display: 26px;
+  --zc-t-h1: 24px;
+  --zc-t-h2: 20px;
+  --zc-t-h3: 17px;
+
+  /* Multiplicador do texto de DISPLAY (título e número-herói).
+     Por que multiplicador e não uma escala fixa: o app tem ~50 tamanhos
+     literais de display, de 17 a 56px, e trocar cada um por um degrau nomeado
+     (h1/h2/h3) exigiria decidir o papel de cada elemento — decisão que não dá
+     para tomar sem ver as telas logadas, e é exatamente o tipo de substituição
+     em massa que já quebrou o layout deste app antes.
+     O multiplicador preserva a hierarquia RELATIVA que já existe e vale 1 no
+     celular: mobile fica idêntico por aritmética, não por promessa.
+     Só display. O CORPO não cresce — corpo maior é menos densidade. */
+  --zc-t-scale: 1;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --zc-nav-h: 0px;       /* a barra inferior some — ver .zc-bottomnav */
+    --zc-nav-w: 240px;
+    --zc-canvas: #E8EFF5;  /* C.shell */
+    --zc-pad-view: 32px;
+    --zc-content-max: 1120px;  /* CT.app */
+
+    --zc-t-display: 34px;
+    --zc-t-h1: 28px;
+    --zc-t-h2: 22px;
+    --zc-t-h3: 18px;
+    --zc-t-scale: 1.15;
+  }
+}
+
+/* No desktop o teclado é modo primário de uso, e o app não tinha NENHUM estado
+   de foco visível — nasceu para toque. `:focus-visible` só pinta quando o
+   navegador julga que o foco veio do teclado, então o clique de mouse continua
+   sem anel. WCAG 2.4.7.
+ *
+ * O `!important` NÃO é preguiça: existem 58 `outline: 'none'` em style inline
+ * pelo app (30 só em app/app/page.js), quase todos em input/textarea/select.
+ * Declaração inline vence qualquer seletor sem `!important`, então sem ele o
+ * anel apareceria nos botões e sumiria justamente nos campos de texto — os
+ * controles onde o teclado é o único modo de entrada.
+ *
+ * Sem `border-radius` aqui: declará-lo reescreveria o raio DO ELEMENTO focado
+ * (todo botão pill viraria quase-quadrado ao receber foco). O outline já
+ * acompanha o raio do elemento nos navegadores atuais. */
+:root { --zc-focus: #063C5C; }             /* C.ink — 11.00:1 sobre bg, 10.01:1 sobre shell */
+.zc-sidenav, .zc-on-dark { --zc-focus: #4ADE80; }  /* greenOnDark — 6.66:1 sobre ink */
+
+/* Vale em TODA tela, inclusive no celular. Isso muda o mobile de propósito:
+   antes, nenhum controle mostrava foco em lugar nenhum (WCAG 2.4.7), e o app é
+   usado também com teclado externo em tablet. `:focus-visible` só pinta quando
+   o navegador julga que o foco merece indicador — no iOS isso inclui campo de
+   texto tocado, que é justamente onde ver o foco ajuda. */
+:focus-visible {
+  outline: 2px solid var(--zc-focus) !important;
+  outline-offset: 2px;
+}
+/* O rail tem `overflow-y: auto`, o que força `overflow-x: auto` — e outline é
+   ink overflow, então seria cortado nas laterais. Offset negativo traz o anel
+   para dentro do botão. */
+.zc-sidenav :focus-visible { outline-offset: -2px; }
+
+/* Link de pulo: no celular a navegação vinha DEPOIS do conteúdo; no desktop o
+   rail vem antes, e sem isso quem usa só teclado atravessa 7 botões a cada
+   recarga. WCAG 2.4.1. */
+.zc-skip {
+  position: absolute; left: -9999px; top: 0; z-index: 1000;
+  background: #063C5C; color: #fff; padding: 10px 16px;
+  border-radius: 0 0 8px 0; font-size: 14px; font-weight: 600;
+}
+.zc-skip:focus { left: 0; }
+
+/* Hover só onde existe ponteiro fino: `@media (hover: hover)` impede que o
+   celular fique com estado "grudado" após o toque. */
+@media (hover: hover) and (min-width: 1024px) {
+  .zc-sidenav button:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+}
+
+/* Segundo passo: em monitor grande cresce a COLUNA, não a fonte. Densidade não
+   é escala — a escala tipográfica para em 1024 e só o layout continua. */
+@media (min-width: 1440px) {
+  :root { --zc-content-max: 1440px; --zc-pad-view: 40px; }
+}
+
+/* Raiz do app. `display/flexDirection/background` moram AQUI e não no style
+   inline porque estilo inline vence classe — sem isso o desktop não consegue
+   trocar a coluna por linha. */
+.zc-root {
+  display: flex;
+  flex-direction: column;
+  background: var(--zc-canvas);
+}
+
+/* Envelope de Header + main + BottomNav. `display: contents` faz este div
+   DESAPARECER do layout no celular: os filhos seguem sendo itens flex da raiz,
+   exatamente como antes de ele existir. Zero mudança no mobile, por construção. */
+.zc-main { display: contents; }
+
+.zc-sidenav { display: none; }
+
+/* Raiz de view. Substitui o `p-4` do Tailwind nas 19 raízes: no celular vale
+   exatamente os mesmos 16px, no desktop respira. Os `p-4` que sobraram no app
+   são CARDS — dar 32px de padding a um card seria o oposto de densidade. */
+.zc-view { padding: var(--zc-pad-view); }
+
+@media (min-width: 1024px) {
+  .zc-root { flex-direction: row; align-items: stretch; }
+  .zc-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;          /* sem isso, tabela larga estoura o grid */
+    min-height: 100vh;
+  }
+  .zc-sidenav { display: flex; }
+  .zc-bottomnav { display: none !important; }
+
+  /* Coluna de leitura: o app não tinha teto nenhum e esticava até 1440px,
+     produzindo linha de texto de 200 caracteres. Alinhado à ESQUERDA — nada
+     centralizado em tela larga. */
+  .zc-content { max-width: var(--zc-content-max); }
+
+  /* Barras de ação fixas: eram `left-0 right-0` e passariam por baixo do rail.
+     Também precisam acompanhar a COLUNA — esticadas até a borda de um monitor
+     de 1920px sobra meia tela de barra sem conteúdo acima dela.
+     Sem `!important`: estas regras vêm depois de `@tailwind utilities` e têm a
+     mesma especificidade das utilitárias, então já vencem por ordem de origem. */
+  .zc-actionbar {
+    left: var(--zc-nav-w);
+    right: auto;
+    width: min(var(--zc-content-max), 100% - var(--zc-nav-w));
+  }
+
+  /* Overlays fixos (toasts, popups, coachmarks) desciam para o pé da tela e
+     cobriam os 240px do rail, porque `--zc-nav-h` é 0 aqui. */
+  .zc-overlay { left: calc(var(--zc-nav-w) + 12px) !important; }
+  .zc-overlay-center { left: calc(50% + var(--zc-nav-w) / 2) !important; }
+
+  /* O badge de pendências no rail SUBSTITUI o popup de takeover — era esse o
+     ponto: interrupção vira status permanente. Mostrar os dois é o oposto. */
+  .zc-requests-popup { display: none !important; }
+
+  /* ── Overlays: bottom sheet deixa de existir no desktop ──────────────────
+     Uma gaveta de 480px colada na borda de baixo de um monitor de 1440px é
+     metade do diagnóstico deste estudo: o conteúdo esticava sem limite
+     enquanto a CAIXA DE DECISÃO ficava espremida onde o olho não está.
+     `!important` é necessário — `alignItems`/`borderRadius` são inline. */
+  .zc-sheet {
+    align-items: center !important;
+    padding: 24px !important;
+  }
+  .zc-sheet-panel {
+    border-radius: 12px !important;               /* R.md */
+    max-height: min(86vh, 860px) !important;
+    overflow-y: auto !important;
+    box-shadow: 0 1px 2px rgba(8, 20, 30, .06), 0 16px 40px -16px rgba(8, 20, 30, .22) !important;
+    padding-bottom: 20px !important;              /* safe-area é irrelevante aqui */
+  }
+  /* Leitura longa vira gaveta lateral, não modal: o briefing navega para abas,
+     e ver o Painel atrás enquanto se lê é o ponto. */
+  .zc-sheet--drawer {
+    align-items: stretch !important;
+    justify-content: flex-end !important;
+    padding: 0 !important;
+  }
+  .zc-sheet--drawer > .zc-sheet-panel {
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+    height: 100vh;
+    max-width: 480px !important;
+  }
+  /* O cabeçalho colorido do briefing tinha raio de sheet. */
+  .zc-sheet--drawer > .zc-sheet-panel > div:first-child { border-radius: 0 !important; }
+
+  /* ── Relatórios ──────────────────────────────────────────────────────────
+     A tarefa é um LOOP: ver → ajustar filtro → ver. Empilhados, os filtros
+     comem ~600px de altura e empurram todo o resultado para fora da tela: cada
+     ajuste custava duas rolagens e nunca se via filtro e dado ao mesmo tempo.
+     Era a fricção mais cara do app no desktop. */
+  .zc-rep {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  /* Neutraliza o `space-y-4` do Tailwind entre as duas colunas: em grid ele
+     viraria um deslocamento vertical da coluna da direita. Mesma
+     especificidade da utilitária, mas declarado depois — vence por ordem. */
+  .zc-rep.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
+
+  .zc-rep-filters {
+    position: sticky;
+    top: 16px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  /* Os 4 StatCards eram 2×2 mesmo em 1440px. */
+  .zc-rep-results .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* A faixa do logo ZCheck é redundante quando o rail já o exibe.
+     `!important` É necessário aqui: o div tem `display: flex` inline. */
+  .zc-logoband { display: none !important; }
 }
 
 @layer base {

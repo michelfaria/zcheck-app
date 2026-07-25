@@ -70,7 +70,7 @@ function PinGate({ onAuth }) {
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 360 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Importar via CSV</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Importar via CSV</h1>
         <p style={{ fontSize: 13, color: C.muted, marginBottom: 24 }}>
           {company ? `${company.name} · ` : ''}Entre com um perfil de gestão.
         </p>
@@ -81,23 +81,23 @@ function PinGate({ onAuth }) {
           <p style={{ fontSize: 13, color: C.muted }}>Nenhum perfil de gestão disponível.</p>
         ) : (
           <>
-            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Usuário</p>
+            <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>Usuário</p>
             <select value={selectedId} onChange={e => { setSelectedId(e.target.value); setError(''); }} style={{ ...box, marginBottom: 16, fontWeight: 700 }}>
               <option value="">Selecione…</option>
               {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
 
-            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN</p>
+            <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>PIN</p>
             <input type="password" inputMode="numeric" maxLength={4} value={pin} autoComplete="off"
               onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') submit(); }}
               placeholder="••••"
-              style={{ ...box, textAlign: 'center', letterSpacing: '0.5em', fontSize: 22, fontWeight: 800 }} />
+              style={{ ...box, textAlign: 'center', letterSpacing: '0.5em', fontSize: 22, fontWeight: 700 }} />
 
             {error && <p style={{ fontSize: 12, color: C.critical, fontWeight: 700, marginTop: 8 }}>{error}</p>}
 
             <button onClick={submit} disabled={loading || !selectedId || pin.length !== 4}
-              style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 14,
+              style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 14,
                 color: 'white', background: C.ink, cursor: 'pointer', opacity: loading || !selectedId || pin.length !== 4 ? 0.5 : 1 }}>
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
@@ -250,7 +250,7 @@ export default function ImportarPage() {
         {/* Header */}
         <div style={{ marginBottom: 32 }}>
           <a href="/app" style={{ fontSize: 13, color: C.muted, textDecoration: 'none', fontWeight: 700 }}>← Voltar ao app</a>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.ink, marginTop: 16, marginBottom: 4 }}>Importar via CSV</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: C.ink, marginTop: 16, marginBottom: 4 }}>Importar via CSV</h1>
           <p style={{ fontSize: 13, color: C.muted }}>Importe checklists e tarefas em lote a partir de uma planilha.</p>
         </div>
 
@@ -260,7 +260,7 @@ export default function ImportarPage() {
             Importando como <strong style={{ color: C.ink }}>{user.name}</strong>
           </p>
           <button onClick={logout}
-            style={{ background: 'none', border: 'none', color: C.muted, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
+            style={{ background: 'none', border: 'none', color: C.muted, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
             Sair
           </button>
         </div>
@@ -269,7 +269,7 @@ export default function ImportarPage() {
         <div style={{ background: 'white', borderRadius: 12, padding: 20, border: `1px solid ${C.border}`, marginBottom: 24 }}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p style={{ fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Modelo de planilha</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Modelo de planilha</p>
               <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
                 Baixe o modelo CSV, preencha com seus checklists e importe abaixo.
                 Cada linha de <strong>checklist</strong> cria um novo checklist.
@@ -280,7 +280,7 @@ export default function ImportarPage() {
               </p>
             </div>
             <button onClick={downloadTemplate}
-              style={{ padding: '10px 16px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              style={{ padding: '10px 16px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
               ↓ Baixar modelo
             </button>
           </div>
@@ -295,7 +295,7 @@ export default function ImportarPage() {
 
         {/* Upload / paste */}
         <div style={{ marginBottom: 24 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Arquivo CSV</p>
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 8 }}>Arquivo CSV</p>
           <div className="flex gap-3" style={{ marginBottom: 12 }}>
             <button onClick={() => fileRef.current?.click()}
               style={{ padding: '10px 20px', borderRadius: 8, background: 'white', color: C.ink, border: `1.5px solid ${C.border}`, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
@@ -309,7 +309,7 @@ export default function ImportarPage() {
             style={{ width: '100%', fontSize: 12, color: C.ink, background: 'white', padding: '12px 14px', fontFamily: 'monospace',
               border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', resize: 'vertical' }} />
           <button onClick={() => handleParse(csvText)} disabled={!csvText.trim()}
-            style={{ marginTop: 8, padding: '10px 20px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: csvText.trim() ? 1 : 0.5 }}>
+            style={{ marginTop: 8, padding: '10px 20px', borderRadius: 8, background: C.ink, color: 'white', border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: csvText.trim() ? 1 : 0.5 }}>
             Pré-visualizar
           </button>
         </div>
@@ -324,7 +324,7 @@ export default function ImportarPage() {
         {/* Linhas descartadas na leitura — antes sumiam em silêncio. */}
         {warnings.length > 0 && (
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 24 }}>
-            <p style={{ fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Avisos na leitura do arquivo</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Avisos na leitura do arquivo</p>
             {warnings.map((w, i) => (
               <p key={i} style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>• {w}</p>
             ))}
@@ -334,7 +334,7 @@ export default function ImportarPage() {
         {/* Preview */}
         {preview && (
           <div style={{ marginBottom: 24 }}>
-            <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 12 }}>
               Pré-visualização — {preview.length} checklist{preview.length !== 1 ? 's' : ''} encontrado{preview.length !== 1 ? 's' : ''}
             </p>
             <div className="space-y-3">
@@ -342,7 +342,7 @@ export default function ImportarPage() {
                 <div key={tpl.id} style={{ background: 'white', borderRadius: 10, padding: 16, border: `1px solid ${C.border}` }}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>{tpl.name}</p>
+                      <p style={{ fontWeight: 600, color: C.ink, fontSize: 14 }}>{tpl.name}</p>
                       <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                         {tpl.unitName} · {tpl.sector}{tpl.deadline ? ` · até ${tpl.deadline}` : ''}
                       </p>
@@ -366,7 +366,7 @@ export default function ImportarPage() {
             </div>
 
             <button onClick={handleImport} disabled={importing}
-              style={{ marginTop: 16, width: '100%', padding: '14px', borderRadius: 12, border: 'none', fontWeight: 800,
+              style={{ marginTop: 16, width: '100%', padding: '14px', borderRadius: 12, border: 'none', fontWeight: 600,
                 color: 'white', background: importing ? C.muted : C.success, cursor: importing ? 'not-allowed' : 'pointer', fontSize: 15 }}>
               {importing ? 'Importando...' : `Importar ${preview.length} checklist${preview.length !== 1 ? 's' : ''} →`}
             </button>
@@ -382,7 +382,7 @@ export default function ImportarPage() {
                 <>
                   {/* "Concluída!" só quando algo entrou de fato — antes dizia isso
                       mesmo com 0 criados, contradizendo o próprio número abaixo. */}
-                  <p style={{ fontSize: 16, fontWeight: 800, color: importResult.created ? C.success : C.critical, marginBottom: 8 }}>
+                  <p style={{ fontSize: 16, fontWeight: 600, color: importResult.created ? C.success : C.critical, marginBottom: 8 }}>
                     {importResult.created ? '✓ Importação concluída!' : 'Nenhum checklist foi importado'}
                   </p>
                   <p style={{ fontSize: 13, color: C.muted }}>
@@ -397,7 +397,7 @@ export default function ImportarPage() {
                       ))}
                     </div>
                   )}
-                  <a href="/app" style={{ display: 'inline-block', marginTop: 16, padding: '10px 24px', background: C.ink, color: 'white', borderRadius: 8, fontWeight: 800, fontSize: 13, textDecoration: 'none' }}>
+                  <a href="/app" style={{ display: 'inline-block', marginTop: 16, padding: '10px 24px', background: C.ink, color: 'white', borderRadius: 8, fontWeight: 600, fontSize: 13, textDecoration: 'none' }}>
                     Ir para o app →
                   </a>
                 </>

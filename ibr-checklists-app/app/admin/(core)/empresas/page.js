@@ -13,7 +13,7 @@ function ContactEditor({ company, busy, onSave }) {
   };
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         Contato
       </span>
       <input style={input} type="email" placeholder="email do gestor"
@@ -93,7 +93,7 @@ export default function CompaniesPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Empresas</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>Empresas</h1>
         <UpdatedAt updatedAt={list.updatedAt} onRefresh={list.refresh} loading={list.loading} />
       </div>
 
@@ -107,7 +107,7 @@ export default function CompaniesPage() {
               <HealthDot status={c.health} />
               <strong>{c.name || c.company_id}</strong>
               <span style={{ color: C.mutedLight, fontSize: 12 }}>{c.slug}</span>
-              {!c.active && <span style={{ fontSize: 10, fontWeight: 800, color: C.critical }}>INATIVA</span>}
+              {!c.active && <span style={{ fontSize: 10, fontWeight: 600, color: C.critical }}>INATIVA</span>}
             </span>,
             <span key="p" style={{ color: C.muted }}>
               {c.subscription_status === 'trialing'
@@ -142,7 +142,7 @@ export default function CompaniesPage() {
         detail.data && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: C.ink }}>
                 {detail.data.company.name || selected}
               </h2>
               <HealthDot status={detail.data.company.health} withLabel />
@@ -193,7 +193,7 @@ export default function CompaniesPage() {
                   <button
                     onClick={() => act(selected, 'delete', { confirm: deleteConfirm.trim() })}
                     disabled={busy === 'delete' || deleteConfirm.trim() !== detail.data.company.slug}
-                    style={{ background: deleteConfirm.trim() === detail.data.company.slug ? C.critical : C.mutedLight, color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
+                    style={{ background: deleteConfirm.trim() === detail.data.company.slug ? C.critical : C.mutedLight, color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                   >
                     {busy === 'delete' ? 'Deletando…' : 'Deletar definitivamente'}
                   </button>

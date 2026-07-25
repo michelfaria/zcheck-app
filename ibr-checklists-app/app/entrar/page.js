@@ -61,12 +61,12 @@ export default function EntrarPage() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#102A3A', marginBottom: 8 }}>Acessar o ZCheck</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: '#102A3A', marginBottom: 8 }}>Acessar o ZCheck</h1>
             <p style={{ fontSize: 15, color: '#64748B' }}>Digite o código da sua empresa para continuar</p>
           </div>
 
           <form onSubmit={handleEntrar} style={{ background: '#fff', borderRadius: 16, border: '1px solid #E5E7EB', padding: 28, boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748B', marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748B', marginBottom: 8 }}>
               Código da empresa
             </label>
             <input
