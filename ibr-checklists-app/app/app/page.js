@@ -139,6 +139,10 @@ const ROLE_TABS = {
 // Papéis de gestão que recebem o J.I.T. (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
 const MANAGER_ROLES = ['lideranca', 'gerencia', 'gestao'];
 
+// Papéis que aparecem no ranking da equipe: quem tem loja fixa e executa
+// checklist nela. Gerência e diretoria ficam de fora (unitId null).
+const RANKED_ROLES = ['colaborador', 'lideranca'];
+
 // unitId === null means "todas as lojas" (gerência / gestão).
 // SEED_USERS: PINs removed from bundle — validation happens server-side via Supabase.
 // PINs are only seeded to Supabase once via saveUsers() on first run.
@@ -9437,8 +9441,14 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   const units = useUnits();
   const [groupBy, setGroupBy] = useState('unidade'); // 'unidade' | 'setor'
 
+  /**
+   * Liderança entra no ranking junto com o colaborador: quem lidera a loja
+   * também executa checklist, e deixar essa execução fora dava um quadro
+   * incompleto da unidade. Gerência e diretoria continuam fora — não têm
+   * unidade fixa, apareceriam em todas as unidades de uma vez.
+   */
   const people = useMemo(() => {
-    const list = (users || []).filter(u => u.role === 'colaborador' && !u.suspended);
+    const list = (users || []).filter(u => RANKED_ROLES.includes(u.role) && !u.suspended);
     return canSeeAllUnits ? list : list.filter(u => u.unitId === currentUser.unitId);
   }, [users, canSeeAllUnits, currentUser]);
 
@@ -9522,7 +9532,7 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
       </div>
 
       {groups.length === 0 ? (
-        <EmptyState title="Nenhum colaborador" desc="Não há colaboradores ativos com execuções no seu escopo." />
+        <EmptyState title="Ninguém na equipe" desc="Não há colaboradores nem liderança ativos com execuções no seu escopo." />
       ) : groups.map(g => (
         <div key={g.key} style={{ marginBottom: 18 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -9546,7 +9556,18 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
                   display: 'grid', placeItems: 'center', fontSize: T.bodyLg, fontWeight: W.semibold, flexShrink: 0,
                 }}>{(user.name || '?').trim().charAt(0).toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                    {/* O ranking mistura papéis desde que liderança entrou nele —
+                        sem a etiqueta não dá para saber quem é quem na lista. */}
+                    {user.role !== 'colaborador' && (
+                      <span style={{
+                        flexShrink: 0, fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase',
+                        letterSpacing: '0.05em', color: ROLE_COLORS[user.role] || C.muted,
+                        background: `${ROLE_COLORS[user.role] || C.muted}14`, borderRadius: R.pill, padding: '2px 8px',
+                      }}>{ROLE_LABELS[user.role] || user.role}</span>
+                    )}
+                  </div>
                   <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
                     {profile.checklists === 0 && profile.tasksDone === 0
                       ? 'Sem execuções no período'
