@@ -899,6 +899,11 @@ export async function deleteUnit(id) {
   if (error) throw error;
 }
 
+export async function deleteChecklistType(id) {
+  const { error } = await db().from('checklist_types').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function deleteSector(id) {
   const { error } = await db().from('sectors').delete().eq('id', id);
   if (error) throw error;

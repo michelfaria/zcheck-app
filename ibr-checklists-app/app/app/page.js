@@ -12,6 +12,7 @@ import {
   ThumbsUp, ThumbsDown, TrendingUp, TrendingDown, Download, Printer, Upload,
   Image as ImageIcon, Pencil, Smartphone, Lightbulb, KeyRound, Sprout, Flame,
   CalendarCheck, ShieldCheck, UtensilsCrossed, BedDouble, Tent, Dumbbell, PawPrint,
+  Hourglass, Share,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -4188,7 +4189,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   );
 }
 
-export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, usersPanel, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, usersPanel, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [showImport, setShowImport] = useState(false);
   const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
 
@@ -5182,7 +5183,9 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
 
       {gerenciarTab === 'estrutura' && (
         <EstruturView unit={unit} allUnits={allUnits} checklistTypes={checklistTypes} company={company}
+          templates={templates}
           onSaveUnit={onSaveUnit} onSaveSector={onSaveSector} onSaveChecklistType={onSaveChecklistType}
+          onDeleteChecklistType={onDeleteChecklistType} onDeleteSector={onDeleteSector}
           onDeleteUnit={onDeleteUnit} onSaveCompany={onSaveCompany} />
       )}
     </div>
@@ -5190,12 +5193,17 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
 }
 
 /* ─────────────────── Estrutura View ─────────────────── */
-function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteUnit, onSaveCompany }) {
+function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany }) {
   const [tab, setTab] = useState('tipos'); // 'tipos' | 'lojas' | 'setores'
   const [newTypeName, setNewTypeName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitColor, setNewUnitColor] = useState('#063C5C');
   const [editUnit, setEditUnit] = useState(null); // { id, name, color } em edição
+  const [editType, setEditType] = useState(null);   // { id, name }
+  const [editSector, setEditSector] = useState(null); // { id, name, unitId }
+  // Setores vêm das LINHAS reais (com id), não dos nomes em `unit.sectors`:
+  // sem id não há o que editar nem o que apagar.
+  const sectorRows = useSectors();
   const [logoBusy, setLogoBusy] = useState(false);
 
   const saveEditUnit = async () => {
@@ -5204,6 +5212,49 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
     try { await onSaveUnit?.({ id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(), color: editUnit.color }); flash('Loja atualizada!'); setEditUnit(null); }
     catch (e) { console.error(e); } finally { setSaving(false); }
   };
+  /** Quantos checklists usam este tipo/setor — o número entra no aviso, para a
+   *  confirmação dizer o tamanho do estrago em vez de um "tem certeza?" vazio. */
+  const usoDoTipo = (t) => (templates || []).filter(x => (x.checklistType || x.type) === t.id || x.typeName === t.name).length;
+  const usoDoSetor = (sec) => (templates || []).filter(x => x.unitId === (sec.unit_id || sec.unitId) && x.sector === sec.name).length;
+
+  const saveEditType = async () => {
+    const nome = editType?.name.trim();
+    if (!nome) return;
+    setSaving(true);
+    try { await onSaveChecklistType?.({ id: editType.id, companyId: company?.id, name: nome, shift: editType.shift ?? null }); flash('Tipo atualizado!'); setEditType(null); }
+    catch (e) { console.error(e); } finally { setSaving(false); }
+  };
+  const removeType = async (t) => {
+    const uso = usoDoTipo(t);
+    const aviso = uso
+      ? `Remover o tipo "${t.name}"? ${uso === 1
+          ? '1 checklist usa este tipo e deixará de aparecer agrupado por ele.'
+          : `${uso} checklists usam este tipo e deixarão de aparecer agrupados por ele.`}`
+      : `Remover o tipo "${t.name}"?`;
+    if (!confirm(aviso)) return;
+    try { await onDeleteChecklistType?.(t.id); flash('Tipo removido.'); } catch (e) { console.error(e); }
+  };
+
+  const saveEditSector = async () => {
+    const nome = editSector?.name.trim();
+    if (!nome) return;
+    setSaving(true);
+    try { await onSaveSector?.({ id: editSector.id, companyId: company?.id, unitId: editSector.unitId, name: nome }); flash('Setor atualizado!'); setEditSector(null); }
+    catch (e) { console.error(e); } finally { setSaving(false); }
+  };
+  const removeSector = async (sec) => {
+    const uso = usoDoSetor(sec);
+    // Frase montada com palavras inteiras, não sufixos colados: concatenar
+    // "está" + "ão" produzia "estáão".
+    const aviso = uso
+      ? `Remover o setor "${sec.name}"? ${uso === 1
+          ? '1 checklist está nele e ficará sem setor.'
+          : `${uso} checklists estão nele e ficarão sem setor.`}`
+      : `Remover o setor "${sec.name}"?`;
+    if (!confirm(aviso)) return;
+    try { await onDeleteSector?.(sec); flash('Setor removido.'); } catch (e) { console.error(e); }
+  };
+
   const removeUnit = async (u) => {
     if (!confirm(`Remover a loja "${u.name}"? Os checklists dela deixam de aparecer.`)) return;
     try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { console.error(e); }
@@ -5282,10 +5333,35 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
       {tab === 'tipos' && (
         <div className="space-y-3">
           <Eyebrow>Tipos de checklist</Eyebrow>
+          {(checklistTypes || []).length === 0 && (
+            <p style={{ fontSize: T.caption, color: C.mutedLight }}>Nenhum tipo próprio ainda — os padrões (Abertura, Intermediário, Fechamento) seguem valendo.</p>
+          )}
           {(checklistTypes || []).map(t => (
             <Ticket key={t.id} accent={unit.color}>
-              <p style={{ fontWeight: W.semibold, color: C.ink }}>{t.name}</p>
-              {t.shift && <p style={{ fontSize: 11, color: C.muted }}>{t.shift}</p>}
+              {editType?.id === t.id ? (
+                <div className="flex items-center gap-2">
+                  <input value={editType.name} autoFocus
+                    onChange={e => setEditType({ ...editType, name: e.target.value })}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEditType(); if (e.key === 'Escape') setEditType(null); }}
+                    className="flex-1 px-2 py-1"
+                    style={{ fontSize: T.bodySm, borderRadius: R.sm, border: `1.5px solid ${C.borderStrong}`, color: C.ink }} />
+                  <button onClick={saveEditType} disabled={saving || !editType.name.trim()}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: W.semibold, fontSize: T.caption, flexShrink: 0 }}>Salvar</button>
+                  <button onClick={() => setEditType(null)} aria-label="Cancelar edição"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: W.semibold, color: C.ink }}>{t.name}</p>
+                    {t.shift && <p style={{ fontSize: 11, color: C.muted }}>{t.shift}</p>}
+                  </div>
+                  <button onClick={() => setEditType({ id: t.id, name: t.name, shift: t.shift })} aria-label={`Editar ${t.name}`} title="Editar"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0, display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 8, }}><Settings2 size={16} /></button>
+                  <button onClick={() => removeType(t)} aria-label={`Remover ${t.name}`} title="Remover"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.critical, flexShrink: 0, display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 8, }}><Trash2 size={15} /></button>
+                </div>
+              )}
             </Ticket>
           ))}
           <div className="flex gap-2">
@@ -5366,18 +5442,54 @@ function EstruturView({ unit, allUnits, checklistTypes, company, onSaveUnit, onS
       {tab === 'setores' && (
         <div className="space-y-3">
           <Eyebrow>Setores por loja</Eyebrow>
-          {(allUnits || UNITS).map(u => (
-            <div key={u.id}>
-              <p style={{ fontSize: 11, fontWeight: W.semibold, color: u.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{u.name}</p>
-              <div className="space-y-1">
-                {(u.sectors || []).map(s => (
-                  <div key={s} className="px-3 py-2" style={{ background: 'white', borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, color: C.ink }}>
-                    {s}
-                  </div>
-                ))}
+          {(allUnits || UNITS).map(u => {
+            const linhas = sectorRows.filter(sr => (sr.unit_id || sr.unitId) === u.id);
+            // Empresa antiga pode ter setor só como nome, sem linha no banco:
+            // ali não há id, então mostra sem controles em vez de mentir que dá
+            // para editar.
+            const legados = linhas.length ? [] : (u.sectors || []);
+            return (
+              <div key={u.id}>
+                <p style={{ fontSize: 11, fontWeight: W.semibold, color: u.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{u.name}</p>
+                <div className="space-y-1">
+                  {linhas.length === 0 && legados.length === 0 && (
+                    <p style={{ fontSize: T.caption, color: C.mutedLight }}>Nenhum setor nesta loja.</p>
+                  )}
+                  {linhas.map(sr => (
+                    <div key={sr.id} className="px-3 py-2 flex items-center gap-2"
+                      style={{ background: 'white', borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, color: C.ink }}>
+                      {editSector?.id === sr.id ? (
+                        <>
+                          <input value={editSector.name} autoFocus
+                            onChange={e => setEditSector({ ...editSector, name: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') saveEditSector(); if (e.key === 'Escape') setEditSector(null); }}
+                            className="flex-1 px-2 py-1"
+                            style={{ fontSize: T.bodySm, borderRadius: R.sm, border: `1.5px solid ${C.borderStrong}`, color: C.ink }} />
+                          <button onClick={saveEditSector} disabled={saving || !editSector.name.trim()}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: W.semibold, fontSize: T.caption, flexShrink: 0 }}>Salvar</button>
+                          <button onClick={() => setEditSector(null)} aria-label="Cancelar edição"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ flex: 1, minWidth: 0 }}>{sr.name}</span>
+                          <button onClick={() => setEditSector({ id: sr.id, name: sr.name, unitId: u.id })} aria-label={`Editar ${sr.name}`} title="Editar"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0, display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 8, }}><Settings2 size={15} /></button>
+                          <button onClick={() => removeSector({ ...sr, unitId: u.id })} aria-label={`Remover ${sr.name}`} title="Remover"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.critical, flexShrink: 0, display: 'grid', placeItems: 'center', width: 32, height: 32, borderRadius: 8, }}><Trash2 size={14} /></button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {legados.map(nome => (
+                    <div key={nome} className="px-3 py-2" style={{ background: C.bg, borderRadius: 6, border: `1px dashed ${C.border}`, fontSize: 13, color: C.muted }}>
+                      {nome} <span style={{ fontSize: T.label }}>· setor antigo, sem registro editável</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div className="flex gap-2 mt-2">
             <select value={newSectorUnit} onChange={e => setNewSectorUnit(e.target.value)}
               style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, padding: '8px 10px', outline: 'none', color: C.ink }}>
@@ -7058,7 +7170,15 @@ function InstallPrompt() {
             Como instalar no iPhone / iPad:
           </p>
           <ol style={{ fontSize: 12, color: '#555', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
-            <li>Toque no botão <strong>Compartilhar</strong> <span style={{ fontSize: 14 }}>⎋</span> no Safari</li>
+            {/* O glifo aqui era ⎋ (U+238B), que é o símbolo da tecla ESC — outro
+                desenho, outro significado. Mandava procurar na tela um botão que
+                não existe. `Share` do lucide é a caixa com seta para cima, que é
+                o que o Safari realmente mostra. */}
+            <li>
+              Toque no botão <strong>Compartilhar</strong>{' '}
+              <Share size={13} aria-label="ícone Compartilhar" style={{ display: 'inline', verticalAlign: '-2px' }} />
+              {' '}no Safari
+            </li>
             <li>Role para baixo e toque em <strong>"Adicionar à Tela de Início"</strong></li>
             <li>Confirme tocando em <strong>"Adicionar"</strong></li>
           </ol>
@@ -10425,6 +10545,13 @@ function AppInner() {
             onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
             onSaveChecklistType={async t => { await import('../../lib/sync').then(m => m.saveChecklistType(t)); setDynamicTypes(prev => [...prev.filter(x => x.id !== t.id), t]); }}
+            onDeleteChecklistType={async id => { await import('../../lib/sync').then(m => m.deleteChecklistType(id)); setDynamicTypes(prev => prev.filter(t => t.id !== id)); }}
+            onDeleteSector={async sec => {
+              await import('../../lib/sync').then(m => m.deleteSector(sec.id));
+              setDynamicSectors(prev => prev.filter(x => x.id !== sec.id));
+              setDynamicUnits(prev => prev.map(u => u.id === (sec.unit_id || sec.unitId)
+                ? { ...u, sectors: (u.sectors || []).filter(nome => nome !== sec.name) } : u));
+            }}
             onReloadTemplates={async () => { const m = await import('../../lib/sync'); const tpl = await m.fetchTemplates([]); setTemplates(tpl); }}
             onDeleteUnit={async id => { await import('../../lib/sync').then(m => m.deleteUnit(id)); setDynamicUnits(prev => prev.filter(u => u.id !== id)); if (unitId === id) setUnitId(null); }}
             onSaveCompany={async patch => {
@@ -10612,7 +10739,7 @@ function TrialNudge({ daysLeft, onDismiss, onOpen }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(8,20,30,0.45)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, maxWidth: 380, width: '100%', padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 34, marginBottom: 8 }}>⏳</div>
+        <Hourglass size={34} color={C.warning} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 10px' }} />
         <h3 style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, marginBottom: 6 }}>
           {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'} de teste` : 'Seu teste está acabando'}
         </h3>
