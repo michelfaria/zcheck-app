@@ -9711,10 +9711,16 @@ function AppInner() {
           label: t.name,
           match: tpl => tpl.name.toLowerCase().includes(t.name.toLowerCase()),
         })),
+        // Tipo-padrão que a empresa NÃO cadastrou só entra se ela já tiver
+        // checklist com esse nome. Sem essa condição, "Intermediário" aparecia
+        // em Gerenciar para quem nunca o criou (só Abertura e Fechamento em
+        // Estrutura > Tipos) — o fallback existe para a empresa legada, que tem
+        // os checklists mas não tem as linhas em `checklist_types`.
         ...CHECKLIST_TYPE_ORDER.filter(std => {
           const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           const root = std.key === 'intermediario' ? 'intermedi' : norm(std.label);
-          return !dynamicTypes.some(d => norm(d.name).includes(root));
+          if (dynamicTypes.some(d => norm(d.name).includes(root))) return false;
+          return (templates || []).some(t => norm(t.name).includes(root));
         }),
       ]
     : CHECKLIST_TYPE_ORDER;
