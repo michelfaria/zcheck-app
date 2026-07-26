@@ -25,7 +25,7 @@ import {
   uploadPhoto, getPhotoUrl,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
-  reviewCompletion,
+  reviewCompletion, fetchTaskReviews,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission,
@@ -1057,6 +1057,34 @@ export function generateSimulatedCompletions(templates, users, days = 7) {
   }
   return completions;
 }
+
+/**
+ * Cola os vereditos da liderança nos itens das execuções, em memória.
+ *
+ * Por que anexar em vez de passar um Map adiante: `item.review` faz TODO
+ * consumidor de completions enxergar o veredito sem mudar assinatura —
+ * `computeOperationalProfile`, o ranking, o modal de conferência e o briefing.
+ * O preço é lembrar de tirá-lo antes de gravar, e é o que `pushCompletion` faz.
+ *
+ * A fonte da verdade continua sendo a tabela `task_reviews`; isto é projeção.
+ */
+function annotateReviews(completions, taskReviews) {
+  if (!taskReviews?.length) return completions || [];
+  const byKey = new Map(taskReviews.map(r => [`${r.completionId}|${r.itemId}`, r]));
+  return (completions || []).map(c => ({
+    ...c,
+    items: (c.items || []).map(i => {
+      const r = byKey.get(`${c.id}|${i.id}`);
+      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName } } : i;
+    }),
+  }));
+}
+
+// Tarefa reprovada pela liderança não conta como feita — é a consequência que
+// dá peso à conferência. "Ressalva" conta: o trabalho foi entregue, com
+// observação. Uma função só porque a regra aparece no índice do colaborador, no
+// briefing e no resumo do dia, e três cópias divergiriam.
+const taskCounts = i => !!i.done && i.review?.verdict !== 'reprovado';
 
 // Resizes and compresses an image file to a small JPEG data URL for proof-of-task photos.
 function compressImage(file, maxDim = 640, quality = 0.6) {
@@ -3503,14 +3531,18 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         </button>
       </div>
 
-      {viewingPhoto && (
-        <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
-      )}
       {reviewing && (
         <ReviewModal
           completion={reviewing} templates={templates} accent={unit.color}
           onClose={() => setReviewing(null)} onReview={onReview}
+          onOpenPhoto={item => setViewingPhoto({ recordId: reviewing.id, item })}
         />
+      )}
+      {/* PhotoModal DEPOIS do ReviewModal de propósito: os dois são z-50, então
+          quem vem por último no DOM fica por cima. Invertido, a foto abria
+          atrás da conferência e parecia não ter aberto. */}
+      {viewingPhoto && (
+        <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
       )}
       </div>
     </div>
@@ -3525,29 +3557,119 @@ export function ReportsView({ unit, templates, completions, closures, users, can
  * números seria carimbo, não revisão — e a nota da liderança (30% do índice)
  * ficaria valendo pelo clique, não pela leitura.
  */
-function ReviewModal({ completion: c, templates, accent, onClose, onReview }) {
+const VERDICTS = [
+  { id: 'aprovado',  label: 'Aprovar',  curto: 'Aprovado',  cor: C.success,  Icon: CheckCircle2 },
+  { id: 'ressalva',  label: 'Ressalva', curto: 'Ressalva',  cor: C.warning,  Icon: AlertTriangle },
+  { id: 'reprovado', label: 'Reprovar', curto: 'Reprovado', cor: C.critical, Icon: X },
+];
+
+function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOpenPhoto }) {
   const [note, setNote] = useState(c.reviewNote || '');
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
-  const itens = c.items || [];
-  const feitos = itens.filter(i => i.done).length;
-  const criticosPendentes = itens.filter(i => i.critical && !i.done).length;
-  const noPrazo = completionOnTime(c, templates);
+  const [soPendencias, setSoPendencias] = useState(false);
   const jaConferido = !!c.reviewedAt;
+  const noPrazo = completionOnTime(c, templates);
+
+  /**
+   * Veredito por tarefa: { [itemId]: { verdict, note } }.
+   *
+   * Começa do que já foi conferido antes (reconferência preserva) e, para o
+   * resto, PRÉ-MARCA "aprovado" nas tarefas concluídas. Exigir 40 cliques para
+   * confirmar o que já está certo transformaria a conferência num imposto — o
+   * trabalho da liderança é apontar o que destoa, e é isso que fica sem
+   * default. Tarefa não executada não recebe pré-marcação: julgar ausência é
+   * decisão de quem confere, não do formulário.
+   */
+  const [vereditos, setVereditos] = useState(() => {
+    const inicial = {};
+    (c.items || []).forEach(i => {
+      if (i.review?.verdict) inicial[i.id] = { verdict: i.review.verdict, note: i.review.note || '' };
+      else if (i.done) inicial[i.id] = { verdict: 'aprovado', note: '' };
+    });
+    return inicial;
+  });
+  const [notaAberta, setNotaAberta] = useState(null); // itemId com a caixa de observação aberta
+
+  const setVeredito = (itemId, verdict) => setVereditos(prev => ({
+    ...prev,
+    [itemId]: { verdict, note: prev[itemId]?.note || '' },
+  }));
+  const setVeredictoNota = (itemId, texto) => setVereditos(prev => ({
+    ...prev,
+    [itemId]: { verdict: prev[itemId]?.verdict || 'ressalva', note: texto },
+  }));
+
+  /**
+   * O checklist inteiro, item a item, com o que exige atenção já classificado.
+   *
+   * A execução guarda o texto do item (`i.text`), então a lista não depende do
+   * template — importante porque o template pode ter sido editado ou apagado
+   * depois. Quando o texto falta (execuções antigas e as de teste, que gravavam
+   * só o id), busca no template pelo id e, em último caso, mostra o id: melhor
+   * uma linha feia que uma linha invisível numa conferência.
+   *
+   * `photoRequired` só existe no template — é a única coisa que precisa do
+   * join, e é o que revela "marcou como feito e não anexou a prova".
+   */
+  const template = (templates || []).find(t => t.id === c.templateId);
+  const tplItens = template?.items || [];
+  const deadline = template?.deadline || null;
+
+  const itens = (c.items || []).map(i => {
+    const tpl = tplItens.find(x => x.id === i.id);
+    // Atraso POR ITEM, não do checklist: na execução colaborativa cada tarefa
+    // tem seu `doneAt`, e um item concluído às 22h num checklist entregue às
+    // 22h30 estava atrasado por conta própria. Sem `doneAt` (registro antigo),
+    // cai no horário de entrega do checklist inteiro.
+    const quando = i.doneAt || c.completedAt;
+    const atrasado = !!(i.done && deadline && c.date && quando
+      && new Date(quando) > new Date(`${c.date}T${deadline}:00`));
+    return {
+      ...i,
+      texto: i.text || tpl?.text || `Item ${i.id}`,
+      semTexto: !i.text && !tpl?.text,
+      faltouFoto: !!(tpl?.photoRequired && i.done && !i.hasPhoto),
+      atrasado,
+    };
+  });
+
+  const feitos = itens.filter(i => i.done).length;
+  const criticosPendentes = itens.filter(i => i.critical && !i.done);
+  const naoExecutados = itens.filter(i => !i.done);
+  const atrasados = itens.filter(i => i.atrasado);
+  const semFoto = itens.filter(i => i.faltouFoto);
+  const pendencias = itens.filter(i => !i.done || i.atrasado || i.faltouFoto);
+  const visiveis = soPendencias ? pendencias : itens;
 
   const commit = async reviewed => {
     setBusy(true); setErro('');
-    const ok = await onReview(c.id, { note: reviewed ? note : null, reviewed });
+    const items = Object.entries(vereditos)
+      .filter(([, v]) => v?.verdict)
+      .map(([item_id, v]) => ({ item_id, verdict: v.verdict, note: v.note || null }));
+    const ok = await onReview(c.id, { items, note: reviewed ? note : null, reviewed });
     setBusy(false);
     if (ok) onClose();
     else setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.');
   };
 
-  const Linha = ({ label, valor, cor }) => (
-    <div style={{ flex: 1, minWidth: 96 }}>
+  const semVeredito = itens.filter(i => !vereditos[i.id]?.verdict).length;
+  const reprovadas = itens.filter(i => vereditos[i.id]?.verdict === 'reprovado').length;
+  const comRessalva = itens.filter(i => vereditos[i.id]?.verdict === 'ressalva').length;
+
+  const Metrica = ({ label, valor, cor }) => (
+    <div style={{ flex: 1, minWidth: 92 }}>
       <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
       <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: cor || C.ink, marginTop: 2 }}>{valor}</p>
     </div>
+  );
+
+  const Tag = ({ cor, children }) => (
+    <span style={{
+      fontSize: 9.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em',
+      color: cor, background: `${cor}14`, border: `1px solid ${cor}44`,
+      borderRadius: R.pill, padding: '1px 6px', whiteSpace: 'nowrap',
+    }}>{children}</span>
   );
 
   return (
@@ -3557,52 +3679,195 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview }) {
         role="dialog" aria-modal="true" aria-label="Conferir execução"
         style={{
           maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0',
-          padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))',
+          // A folha vira coluna com altura limitada e só a LISTA rola: o
+          // cabeçalho (o que está sendo conferido) e os botões (a decisão)
+          // precisam ficar à vista num checklist de 40 itens.
+          display: 'flex', flexDirection: 'column', maxHeight: '88vh',
         }}>
-        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
-          {jaConferido ? 'Execução conferida' : 'Conferir execução'}
-        </p>
-        <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-          {c.sector} · {c.templateName} · {c.operatorName}
-        </p>
+        <div style={{ padding: '24px 24px 0' }}>
+          <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
+            {jaConferido ? 'Execução conferida' : 'Conferir execução'}
+          </p>
+          <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+            {c.sector} · {c.templateName} · {c.operatorName}
+          </p>
+          <p style={{ fontSize: 12, color: C.mutedLight, marginTop: 2 }}>
+            Entregue em {new Date(c.completedAt).toLocaleDateString('pt-BR')} às {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            {deadline ? ` · prazo ${deadline}` : ' · sem prazo definido'}
+          </p>
 
-        <div style={{ display: 'flex', gap: 14, margin: '16px 0', flexWrap: 'wrap' }}>
-          <Linha label="Tarefas" valor={`${feitos}/${itens.length}`} />
-          <Linha label="Críticos pendentes" valor={criticosPendentes || '0'} cor={criticosPendentes ? C.critical : C.success} />
-          <Linha label="Prazo"
-            valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
-            cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
+          <div style={{ display: 'flex', gap: 14, margin: '14px 0', flexWrap: 'wrap' }}>
+            <Metrica label="Tarefas" valor={`${feitos}/${itens.length}`}
+              cor={naoExecutados.length ? C.warning : C.success} />
+            <Metrica label="Críticos pendentes" valor={criticosPendentes.length || '0'}
+              cor={criticosPendentes.length ? C.critical : C.success} />
+            <Metrica label="Prazo"
+              valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
+              cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
+          </div>
+
+          {/* O resumo do que exige atenção, antes da lista: quem confere 40
+              itens precisa saber o que procurar antes de começar a rolar. */}
+          {pendencias.length > 0 && (
+            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}44`, borderRadius: R.sm, padding: '10px 12px', marginBottom: 12 }}>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.ink, marginBottom: 4 }}>
+                Precisa de atenção
+              </p>
+              <ul style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.7, listStyle: 'none' }}>
+                {criticosPendentes.length > 0 && (
+                  <li style={{ color: C.critical, fontWeight: W.semibold }}>
+                    {criticosPendentes.length} {criticosPendentes.length === 1 ? 'item crítico não executado' : 'itens críticos não executados'}
+                  </li>
+                )}
+                {naoExecutados.length > criticosPendentes.length && (
+                  <li>{naoExecutados.length - criticosPendentes.length} {naoExecutados.length - criticosPendentes.length === 1 ? 'item não executado' : 'itens não executados'}</li>
+                )}
+                {atrasados.length > 0 && <li>{atrasados.length} {atrasados.length === 1 ? 'item concluído fora do prazo' : 'itens concluídos fora do prazo'}</li>}
+                {semFoto.length > 0 && <li>{semFoto.length} {semFoto.length === 1 ? 'item exigia foto e não tem' : 'itens exigiam foto e não têm'}</li>}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+            <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
+              Checklist inteiro ({itens.length})
+            </PillButton>
+            {pendencias.length > 0 && (
+              <PillButton active={soPendencias} accent={accent} onClick={() => setSoPendencias(true)}>
+                Só pendências ({pendencias.length})
+              </PillButton>
+            )}
+          </div>
         </div>
 
-        {jaConferido && (
-          <p style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
-            Conferido por {c.reviewedByName || '—'} em {new Date(c.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(c.reviewedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+        {/* A lista, na ORDEM ORIGINAL do checklist. Reordenar por gravidade
+            ajudaria a triagem e atrapalharia a conferência: quem revisa segue a
+            mesma sequência em que a operação acontece na loja. */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px', minHeight: 80 }}>
+          {visiveis.length === 0 ? (
+            <p style={{ fontSize: 13, color: C.muted, padding: '8px 0' }}>Nada a listar.</p>
+          ) : visiveis.map((i, idx) => {
+            const cor = !i.done ? (i.critical ? C.critical : C.warning) : i.atrasado || i.faltouFoto ? C.warning : C.success;
+            const Icone = !i.done ? (i.critical ? AlertTriangle : Circle) : CheckCircle2;
+            return (
+              <div key={i.id || idx} style={{
+                display: 'flex', gap: 10, padding: '9px 0',
+                borderBottom: idx < visiveis.length - 1 ? `1px solid ${C.border}` : 'none',
+              }}>
+                <Icone size={16} color={cor} aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    fontSize: 13.5,
+                    color: !i.done && i.critical ? C.critical : C.ink,
+                    fontWeight: !i.done ? W.semibold : 400,
+                    fontStyle: i.semTexto ? 'italic' : 'normal',
+                  }}>{i.texto}</p>
+                  <div className="flex flex-wrap gap-1" style={{ marginTop: 3, alignItems: 'center' }}>
+                    {i.critical && <Tag cor={C.critical}>Crítico</Tag>}
+                    {!i.done && <Tag cor={C.critical}>Não executado</Tag>}
+                    {i.atrasado && <Tag cor={C.warning}>Fora do prazo</Tag>}
+                    {i.faltouFoto && <Tag cor={C.warning}>Faltou foto</Tag>}
+                    {i.hasPhoto && (
+                      <button onClick={() => onOpenPhoto && onOpenPhoto(i)}
+                        className="flex items-center gap-1"
+                        style={{ fontSize: 9.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: accent, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.pill, padding: '1px 6px', cursor: 'pointer' }}>
+                        <Camera size={10} aria-hidden /> Ver foto
+                      </button>
+                    )}
+                  </div>
+                  {/* Quem executou só aparece quando NÃO é quem entregou — na
+                      execução individual repetir o mesmo nome em 40 linhas é
+                      ruído que esconde as duas linhas em que ele muda. */}
+                  {i.done && i.doneByName && i.doneByName !== c.operatorName && (
+                    <p style={{ fontSize: 11, color: C.mutedLight, marginTop: 2 }}>por {i.doneByName}</p>
+                  )}
+                  {i.note && (
+                    <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2, fontStyle: 'italic' }}>“{i.note}”</p>
+                  )}
+
+                  {/* Julgamento da tarefa. Três botões e nada de menu: numa
+                      conferência de 40 linhas, cada toque a mais é um toque
+                      vezes 40. */}
+                  <div className="flex flex-wrap gap-1" style={{ marginTop: 6, alignItems: 'center' }}>
+                    {VERDICTS.map(v => {
+                      const ativo = vereditos[i.id]?.verdict === v.id;
+                      return (
+                        <button key={v.id} onClick={() => setVeredito(i.id, v.id)}
+                          aria-pressed={ativo}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 11, fontWeight: W.semibold,
+                            color: ativo ? 'white' : v.cor,
+                            background: ativo ? v.cor : `${v.cor}10`,
+                            border: `1px solid ${ativo ? v.cor : `${v.cor}55`}`,
+                            borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer',
+                          }}>
+                          <v.Icon size={11} aria-hidden /> {v.label}
+                        </button>
+                      );
+                    })}
+                    <button onClick={() => setNotaAberta(notaAberta === i.id ? null : i.id)}
+                      style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, background: 'none', border: `1px dashed ${C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
+                      {vereditos[i.id]?.note ? 'Editar comentário' : '+ Comentário'}
+                    </button>
+                  </div>
+
+                  {(notaAberta === i.id || vereditos[i.id]?.note) && (
+                    <textarea
+                      value={vereditos[i.id]?.note || ''}
+                      onChange={e => setVeredictoNota(i.id, e.target.value)}
+                      rows={2} disabled={busy}
+                      aria-label={`Comentário sobre ${i.texto}`}
+                      placeholder="O que o colaborador precisa saber sobre esta tarefa?"
+                      style={{ width: '100%', marginTop: 6, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: '14px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))', borderTop: `1px solid ${C.border}` }}>
+          {/* O que está prestes a ser gravado, em uma linha. Sem isto, a
+              liderança confirma sem saber quantas tarefas deixou sem julgar —
+              e o colaborador recebe um briefing com buracos. */}
+          <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+            {itens.length - semVeredito} de {itens.length} tarefas julgadas
+            {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
+            {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
+            {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
           </p>
-        )}
 
-        <label style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
-          Observação (opcional)
-        </label>
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} disabled={busy}
-          placeholder="O que precisa melhorar na próxima?"
-          style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, marginBottom: 16, resize: 'vertical' }} />
+          {jaConferido && (
+            <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
+              Conferido por {c.reviewedByName || '—'} em {new Date(c.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(c.reviewedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+            </p>
+          )}
 
-        {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 12 }}>{erro}</p>}
+          <label htmlFor="zc-review-note" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
+            Observação (opcional)
+          </label>
+          <textarea id="zc-review-note" value={note} onChange={e => setNote(e.target.value)} rows={2} disabled={busy}
+            placeholder="O que precisa melhorar na próxima?"
+            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, marginBottom: 12, resize: 'vertical' }} />
 
-        <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-3"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-          <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
-        </button>
-        {jaConferido && (
-          <button onClick={() => commit(false)} disabled={busy} className="w-full py-2 mb-1"
-            style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
-            Desfazer conferência
+          {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 10 }}>{erro}</p>}
+
+          <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+            <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
           </button>
-        )}
-        <button onClick={onClose} disabled={busy} className="w-full py-2"
-          style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
-          Cancelar
-        </button>
+          {jaConferido && (
+            <button onClick={() => commit(false)} disabled={busy} className="w-full py-2"
+              style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
+              Desfazer conferência
+            </button>
+          )}
+          <button onClick={onClose} disabled={busy} className="w-full py-2"
+            style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+            Cancelar
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -9046,10 +9311,12 @@ function computeOperationalProfile(completions, userId, userName) {
     .filter(c => c.operatorUserId === userId || c.operatorName === userName)
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
+  // `taskCounts` no lugar de `i.done`: tarefa reprovada pela liderança volta a
+  // valer como não executada, aqui e em todo lugar que mede execução.
   let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0, evidences = 0;
   mine.forEach(c => (c.items || []).forEach(i => {
-    totalItems++; if (i.done) doneItems++;
-    if (i.critical) { critTotal++; if (i.done) critDone++; }
+    totalItems++; if (taskCounts(i)) doneItems++;
+    if (i.critical) { critTotal++; if (taskCounts(i)) critDone++; }
     if (i.hasPhoto) evidences++;
   }));
 
@@ -9065,7 +9332,7 @@ function computeOperationalProfile(completions, userId, userName) {
   (completions || []).forEach(c => {
     const isSubmitter = c.operatorUserId === userId || c.operatorName === userName;
     (c.items || []).forEach(i => {
-      if (!i.done) return;
+      if (!taskCounts(i)) return;
       const executedByMe = i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
       if (!executedByMe) return;
       tasksDone++;
@@ -9084,7 +9351,7 @@ function computeOperationalProfile(completions, userId, userName) {
     const wk = weekStartStr(c.date);
     if (!wkMap.has(wk)) wkMap.set(wk, { week: wk, total: 0, done: 0, checklists: 0 });
     const s = wkMap.get(wk); s.checklists++;
-    (c.items || []).forEach(i => { s.total++; if (i.done) s.done++; });
+    (c.items || []).forEach(i => { s.total++; if (taskCounts(i)) s.done++; });
   });
   const weekly = [...wkMap.values()]
     .map(s => ({ ...s, rate: s.total ? Math.round((s.done / s.total) * 100) : 0 }))
@@ -9391,7 +9658,251 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   };
 }
 
-export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize, onChangePhoto }) {
+/**
+ * A tela do briefing. Folha inteira, não toast: é para ser LIDA antes do turno,
+ * e um aviso que some sozinho não provoca reflexão nenhuma.
+ */
+function BriefingScreen({ briefing: b, userName, accent, onClose }) {
+  const corTom = b.tom === 'otimo' ? C.success : b.tom === 'atencao' ? C.critical : b.tom === 'quase' ? C.warning : accent;
+  const dataLabel = new Date(`${b.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+
+  const VERD_LABEL = {
+    reprovado: { texto: 'Reprovada', cor: C.critical },
+    ressalva: { texto: 'Com ressalva', cor: C.warning },
+    'critico-nao-feito': { texto: 'Crítica não executada', cor: C.critical },
+    'nao-feito': { texto: 'Não executada', cor: C.muted },
+    aprovado: { texto: 'Aprovada', cor: C.success },
+  };
+
+  return (
+    <div className="fixed inset-0 z-50" style={{ background: C.bg, overflowY: 'auto' }}
+      role="dialog" aria-modal="true" aria-label="Resumo do seu dia">
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '28px 20px calc(40px + env(safe-area-inset-bottom, 0px))' }}>
+
+        <div style={{ background: corTom, color: 'white', borderRadius: 16, padding: 20, marginBottom: 16 }}>
+          <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.9, fontWeight: W.semibold }}>
+            Seu dia · {dataLabel}
+          </p>
+          <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6, lineHeight: 1.25 }}>
+            {b.titulo}
+          </p>
+          <p style={{ fontSize: 14, opacity: 0.92, marginTop: 8, lineHeight: 1.5 }}>{b.resumo}</p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          {[
+            ['Aprovadas', b.aprovadas, C.success],
+            ['Ressalvas', b.ressalvas, C.warning],
+            ['Reprovadas', b.reprovadas, C.critical],
+            ['Não feitas', b.naoFeitas, C.muted],
+          ].map(([label, valor, cor]) => (
+            <div key={label} style={{ flex: 1, minWidth: 72, background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: '12px 10px', textAlign: 'center' }}>
+              <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: valor ? cor : C.mutedLight }}>{valor}</p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* O que a liderança escreveu vem ANTES do texto automático: é a única
+            parte do briefing que uma pessoa pensou especificamente sobre esta
+            pessoa. */}
+        {b.comentarios.length > 0 && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16, marginBottom: 16 }}>
+            <Eyebrow>O que a liderança comentou</Eyebrow>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+              {b.comentarios.map((cm, n) => (
+                <div key={n} style={{ borderLeft: `3px solid ${VERD_LABEL[cm.verdict]?.cor || C.border}`, paddingLeft: 10 }}>
+                  {cm.tarefa && <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink }}>{cm.tarefa}</p>}
+                  <p style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.5, fontStyle: 'italic' }}>“{cm.texto}”</p>
+                  {cm.autor && <p style={{ fontSize: 11, color: C.mutedLight, marginTop: 2 }}>— {cm.autor}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {b.itensProblema.length > 0 && (
+          <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16, marginBottom: 16 }}>
+            <Eyebrow>Tarefas que precisam de atenção</Eyebrow>
+            <div style={{ marginTop: 8 }}>
+              {b.itensProblema.map((it, n) => (
+                <div key={n} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: n < b.itensProblema.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                  <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: R.pill, background: VERD_LABEL[it.verdict]?.cor || C.muted, flexShrink: 0, marginTop: 6 }} />
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: 13.5, color: C.ink }}>{it.texto}</p>
+                    <p style={{ fontSize: 11, color: VERD_LABEL[it.verdict]?.cor || C.muted, fontWeight: W.semibold, marginTop: 1 }}>
+                      {VERD_LABEL[it.verdict]?.texto || it.verdict}{it.checklist ? ` · ${it.checklist}` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ background: `${accent}0D`, border: `1px solid ${accent}33`, borderRadius: R.md, padding: 16, marginBottom: 20 }}>
+          <Eyebrow>Para hoje</Eyebrow>
+          <ul style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10, listStyle: 'none' }}>
+            {b.sugestoes.map((sg, n) => (
+              <li key={n} style={{ display: 'flex', gap: 8 }}>
+                <Lightbulb size={15} color={accent} aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
+                <span style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.5 }}>{sg}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <button onClick={onClose} className="w-full py-3"
+          style={{ borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: 'pointer' }}>
+          Começar o dia
+        </button>
+        <p style={{ fontSize: 11.5, color: C.mutedLight, textAlign: 'center', marginTop: 10 }}>
+          Você pode reler este resumo em Meu ID.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * BRIEFING DIÁRIO DO COLABORADOR
+ * ---------------------------------------------------------------------------
+ * "Como foi o meu dia", montado a partir do que a liderança conferiu. Aparece
+ * no primeiro acesso do dia seguinte, para a pessoa refletir antes de começar.
+ *
+ * Duas escolhas de produto que estão no código e não em configuração:
+ *
+ * 1. SÓ EXISTE BRIEFING DE DIA CONFERIDO. Sem conferência, o texto seria a
+ *    pessoa se autoavaliando pelo que ela mesma marcou — que é exatamente o
+ *    que a conferência veio corrigir. Dia não conferido não gera briefing;
+ *    não gera um briefing vazio.
+ * 2. O TEXTO É DERIVADO, NÃO GERADO. Cada frase sai de um número que a pessoa
+ *    pode conferir na própria tela. Um elogio genérico some no segundo dia;
+ *    "os 3 críticos do fechamento saíram" não.
+ *
+ * `buildBriefingText` está isolada de propósito: trocar as sugestões por IA
+ * (decisão de 26/07 — regras agora, IA depois) é substituir esta função, sem
+ * tocar em banco, em tela ou no gatilho.
+ */
+function buildDailyBriefing({ completions, userId, userName, today }) {
+  // O dia mais recente ANTES de hoje em que a pessoa executou algo e a
+  // liderança conferiu. Não varre o ano inteiro: se ninguém conferiu na última
+  // semana, o assunto esfriou e um briefing de dez dias atrás é ruído.
+  const JANELA = 7;
+  const dias = [];
+  for (let i = 1; i <= JANELA; i++) {
+    const d = new Date(`${today}T00:00:00`); d.setDate(d.getDate() - i);
+    dias.push(d.toISOString().slice(0, 10));
+  }
+
+  for (const dia of dias) {
+    const doDia = (completions || []).filter(c =>
+      c.date === dia && (c.operatorUserId === userId || c.operatorName === userName));
+    if (!doDia.length) continue;
+
+    const conferidos = doDia.filter(c => c.reviewedAt);
+    if (!conferidos.length) continue;   // ver escolha (1)
+
+    const itens = conferidos.flatMap(c => (c.items || []).map(i => ({ ...i, _c: c })));
+    const aprovadas = itens.filter(i => i.review?.verdict === 'aprovado');
+    const ressalvas = itens.filter(i => i.review?.verdict === 'ressalva');
+    const reprovadas = itens.filter(i => i.review?.verdict === 'reprovado');
+    const naoFeitas = itens.filter(i => !i.done);
+    const criticasNaoFeitas = naoFeitas.filter(i => i.critical);
+    const julgadas = aprovadas.length + ressalvas.length + reprovadas.length;
+
+    // Notas que a liderança escreveu — o que ela digitou vale mais que
+    // qualquer frase que este código consiga montar, então vem antes.
+    const comentarios = [
+      ...itens.filter(i => i.review?.note).map(i => ({
+        tarefa: i.text || `Item ${i.id}`,
+        verdict: i.review.verdict,
+        texto: i.review.note,
+        autor: i.review.byName,
+      })),
+    ];
+    const gerais = conferidos.filter(c => c.reviewNote)
+      .map(c => ({ tarefa: null, verdict: null, texto: c.reviewNote, autor: c.reviewedByName }));
+
+    const taxa = julgadas ? Math.round((aprovadas.length / julgadas) * 100) : null;
+
+    return {
+      date: dia,
+      checklists: doDia.length,
+      conferidos: conferidos.length,
+      aprovadas: aprovadas.length,
+      ressalvas: ressalvas.length,
+      reprovadas: reprovadas.length,
+      naoFeitas: naoFeitas.length,
+      criticasNaoFeitas: criticasNaoFeitas.length,
+      julgadas,
+      taxa,
+      comentarios: [...gerais, ...comentarios].slice(0, 6),
+      itensProblema: [...reprovadas, ...ressalvas, ...criticasNaoFeitas]
+        .slice(0, 6)
+        .map(i => ({
+          texto: i.text || `Item ${i.id}`,
+          verdict: i.review?.verdict || (i.critical ? 'critico-nao-feito' : 'nao-feito'),
+          checklist: i._c?.templateName,
+        })),
+      ...buildBriefingText({
+        userName, taxa,
+        aprovadas: aprovadas.length, ressalvas: ressalvas.length, reprovadas: reprovadas.length,
+        naoFeitas: naoFeitas.length, criticasNaoFeitas: criticasNaoFeitas.length,
+      }),
+    };
+  }
+  return null;
+}
+
+/**
+ * O texto do briefing: um veredito de uma linha e as sugestões para amanhã.
+ *
+ * TROCAR POR IA É SUBSTITUIR ESTA FUNÇÃO — nada fora dela sabe como as frases
+ * são produzidas.
+ *
+ * As sugestões saem em ordem de gravidade e no máximo três: uma lista de oito
+ * itens não é um plano, é uma bronca, e ninguém age sobre oito coisas antes do
+ * turno começar.
+ */
+function buildBriefingText({ userName, taxa, aprovadas, ressalvas, reprovadas, naoFeitas, criticasNaoFeitas }) {
+  const primeiro = (userName || '').split(' ')[0] || 'Você';
+  let titulo, tom;
+  if (reprovadas === 0 && naoFeitas === 0 && ressalvas === 0) {
+    titulo = `Dia limpo, ${primeiro}.`; tom = 'otimo';
+  } else if (criticasNaoFeitas > 0 || reprovadas > 1) {
+    titulo = `Ontem escapou coisa importante, ${primeiro}.`; tom = 'atencao';
+  } else if (reprovadas === 1 || ressalvas > 0 || naoFeitas > 0) {
+    titulo = `Quase lá, ${primeiro}.`; tom = 'quase';
+  } else {
+    titulo = `Seu dia de ontem, ${primeiro}.`; tom = 'neutro';
+  }
+
+  const resumo = taxa == null
+    ? 'A liderança conferiu seu trabalho e não apontou pendências.'
+    : `${aprovadas} de ${aprovadas + ressalvas + reprovadas} tarefas conferidas foram aprovadas${taxa === 100 ? ' — todas.' : ` (${taxa}%).`}`;
+
+  const sugestoes = [];
+  if (criticasNaoFeitas > 0) {
+    sugestoes.push(`Comece pelos itens críticos. ${criticasNaoFeitas === 1 ? 'Um ficou' : `${criticasNaoFeitas} ficaram`} sem execução ontem, e é o tipo de item que vira problema para a loja inteira.`);
+  }
+  if (reprovadas > 0) {
+    sugestoes.push(`${reprovadas === 1 ? 'Uma tarefa foi reprovada' : `${reprovadas} tarefas foram reprovadas`} — leia o comentário da liderança e refaça hoje com o padrão que ela pediu.`);
+  }
+  if (ressalvas > 0) {
+    sugestoes.push(`${ressalvas === 1 ? 'Uma tarefa passou com ressalva' : `${ressalvas} tarefas passaram com ressalva`}: foi entregue, mas dá para fazer melhor. Vale reler a observação antes de repetir a rotina.`);
+  }
+  if (naoFeitas > criticasNaoFeitas) {
+    sugestoes.push(`Sobraram ${naoFeitas - criticasNaoFeitas} tarefa(s) sem marcar. Se faltou tempo, avise a liderança durante o turno em vez de deixar em branco no fim.`);
+  }
+  if (!sugestoes.length) {
+    sugestoes.push('Mantenha o ritmo: o que funcionou ontem foi concluir tudo e registrar as evidências na hora, não no fim do turno.');
+  }
+
+  return { titulo, tom, resumo, sugestoes: sugestoes.slice(0, 3) };
+}
+
+export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize, onChangePhoto, briefing, onOpenBriefing }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
   // A tela é o perfil da pessoa, mas mostrava só nome e papel. Sem a loja, quem
   // abre o ID de um colaborador em empresa com várias unidades não sabe de onde
@@ -9546,6 +10057,26 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
           </div>
         </div>
       </div>
+
+      {/* Reler o briefing. A tela do briefing promete "você pode reler em Meu
+          ID" — sem este botão, seria uma promessa quebrada. */}
+      {briefing && onOpenBriefing && (
+        <button onClick={onOpenBriefing}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+            background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md,
+            padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+          <Lightbulb size={17} color={accent} aria-hidden style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>Resumo do seu dia</span>
+            <span style={{ display: 'block', fontSize: T.label, color: C.mutedLight, marginTop: 1 }}>
+              {new Date(`${briefing.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })} · conferido pela liderança
+            </span>
+          </span>
+          <ChevronRight size={18} color={C.mutedLight} style={{ flexShrink: 0 }} />
+        </button>
+      )}
 
       {/* Índice operacional — o mesmo número que ordena o ranking da Equipe.
           Um ranking cujo número não dá para inspecionar é só uma opinião: aqui
@@ -10924,10 +11455,14 @@ function AppInner() {
       fetchCompletions(),
       fetchUsers(isIbr ? SEED_USERS : []),
       fetchClosures(),
-    ]).then(async ([tpl, comp, usr, cls]) => {
+      fetchTaskReviews(),
+    ]).then(async ([tpl, comp, usr, cls, reviews]) => {
       if (cancelled) return;
       setTemplates(tpl);
-      setCompletions(comp);
+      // Os vereditos entram grudados nos itens (ver `annotateReviews`): daqui
+      // para a frente, tudo que lê `completions` já enxerga o que a liderança
+      // julgou, sem precisar receber uma segunda estrutura.
+      setCompletions(annotateReviews(comp, reviews));
       setUsers(usr);
       setClosures(cls);
       await seedSupabaseIfEmpty(tpl, usr);
@@ -11032,23 +11567,66 @@ function AppInner() {
    * a conferência muda o índice da liderança na hora, e esperar o próximo
    * carregamento faria o número parecer travado.
    */
-  const reviewCompletionAndSync = async (completionId, { note = null, reviewed = true } = {}) => {
+  const reviewCompletionAndSync = async (completionId, { items = [], note = null, reviewed = true } = {}) => {
     try {
-      await reviewCompletion(completionId, { note, reviewed });
+      await reviewCompletion(completionId, { items, note, reviewed });
+      const porItem = new Map(items.map(i => [i.item_id, i]));
       setCompletions(prev => (prev || []).map(c => (c.id === completionId ? {
         ...c,
         reviewedBy: reviewed ? currentUser.id : null,
         reviewedByName: reviewed ? currentUser.name : null,
         reviewedAt: reviewed ? new Date().toISOString() : null,
         reviewNote: reviewed ? (note || null) : null,
+        // Espelha os vereditos que acabaram de ser gravados. Sem isto o índice
+        // do colaborador e o briefing só mudariam no próximo carregamento —
+        // e a liderança reabriria a conferência achando que não salvou.
+        items: (c.items || []).map(it => {
+          const v = reviewed ? porItem.get(it.id) : null;
+          if (!v) { const { review: _r, ...limpo } = it; return limpo; }
+          return { ...it, review: { verdict: v.verdict, note: v.note || null, byName: currentUser.name } };
+        }),
       } : c)));
-      track('completion_reviewed', { source: 'relatorios', metadata: { completion_id: completionId, undone: !reviewed, has_note: !!note } });
+      track('completion_reviewed', { source: 'relatorios', metadata: {
+        completion_id: completionId, undone: !reviewed, has_note: !!note,
+        tarefas_julgadas: items.length,
+        reprovadas: items.filter(i => i.verdict === 'reprovado').length,
+        ressalvas: items.filter(i => i.verdict === 'ressalva').length,
+      } });
       return true;
     } catch (e) {
       console.error('reviewCompletion', e);
       return false;
     }
   };
+
+  // ── Briefing diário ────────────────────────────────────────────────────────
+  const [showBriefing, setShowBriefing] = useState(false);
+
+  const briefing = useMemo(() => {
+    if (!currentUser || !completions?.length) return null;
+    return buildDailyBriefing({
+      completions, userId: currentUser.id, userName: currentUser.name, today: todayStr(),
+    });
+  }, [completions, currentUser]);
+
+  /**
+   * Abre sozinho UMA vez por briefing. A chave guarda o DIA do briefing, não a
+   * data de hoje: se a liderança conferir a terça só na quinta, a pessoa vê o
+   * resumo da terça na quinta — e não vê de novo na sexta.
+   *
+   * Espera o onboarding e as boas-vindas saírem da frente; três telas cheias
+   * empilhadas no primeiro acesso é o mesmo que nenhuma.
+   */
+  useEffect(() => {
+    if (!briefing || !currentUser || showWelcome || showCompanyOnboarding) return;
+    try {
+      const key = `zc_briefing_visto_${currentUser.id}`;
+      if (localStorage.getItem(key) === briefing.date) return;
+      setShowBriefing(true);
+      localStorage.setItem(key, briefing.date);
+      track('briefing_shown', { source: 'app', metadata: { date: briefing.date, tom: briefing.tom, reprovadas: briefing.reprovadas } });
+    } catch (_) {}
+  }, [briefing, currentUser, showWelcome, showCompanyOnboarding]);
 
   // ── Foto de perfil ─────────────────────────────────────────────────────────
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -11302,6 +11880,12 @@ function AppInner() {
         <WelcomeScreen role={currentUser.role} onClose={() => setShowWelcome(false)} />
       )}
 
+      {/* Briefing do dia — o retorno da conferência da liderança */}
+      {showBriefing && briefing && (
+        <BriefingScreen briefing={briefing} userName={currentUser.name} accent={unit.color}
+          onClose={() => setShowBriefing(false)} />
+      )}
+
       {/* Daily J.I.T. (H1) — primeira tela do dia para gestão */}
       {showJit && !showWelcome && !showCompanyOnboarding && !showTour && jit && (
         <JitPanel
@@ -11464,7 +12048,7 @@ function AppInner() {
             </div>
           )
         )}
-        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} />}
+        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
         {activeTab === 'unidades' && (
           <UnidadesView
             units={ACTIVE_UNITS} templates={templates} completions={completions || []}

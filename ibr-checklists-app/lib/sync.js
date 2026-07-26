@@ -299,7 +299,11 @@ async function pushCompletion(record) {
     completed_at: record.completedAt,
     operator_name: record.operatorName,
     operator_user_id: record.operatorUserId || null,
-    items: record.items,
+    // `review` é anexado aos itens em memória a partir de `task_reviews`, só
+    // para a UI. Reenviá-lo gravaria uma cópia do veredito dentro do JSONB —
+    // cópia que envelhece na primeira reconferência e passa a contradizer a
+    // tabela. A fonte é a tabela; aqui vai só o que a execução produziu.
+    items: (record.items || []).map(({ review: _review, ...i }) => i),
   };
   const { error } = await db().from('completions').upsert(row, { onConflict: 'id' });
   if (error) throw error;
@@ -315,9 +319,13 @@ async function pushCompletion(record) {
 // Sem fila offline, ao contrário da execução: conferir é um ato de revisão, não
 // de operação — quem confere está sentado com o relatório aberto, e uma fila
 // silenciosa faria a liderança achar que conferiu algo que nunca chegou.
-export async function reviewCompletion(completionId, { note = null, reviewed = true } = {}) {
-  const { error } = await db().rpc('review_completion', {
+export async function reviewCompletion(completionId, { items = [], note = null, reviewed = true } = {}) {
+  // `review_tasks` grava o veredito por tarefa E a marca no checklist inteiro,
+  // numa transação só. Uma conferência gravada pela metade contaria como
+  // conferida no índice da liderança sem ter o detalhe que o briefing usa.
+  const { error } = await db().rpc('review_tasks', {
     p_completion_id: completionId,
+    p_items: items,
     p_note: note,
     p_reviewed: reviewed,
   });
@@ -331,6 +339,41 @@ export async function reviewCompletion(completionId, { note = null, reviewed = t
       await cache.set('ibr_completions', cached.map(c => (c.id === completionId ? { ...c, reviewedAt: reviewed ? new Date().toISOString() : null } : c)));
     }
   } catch (_) {}
+}
+
+/**
+ * Vereditos por tarefa dos últimos 90 dias — a mesma janela de
+ * `fetchCompletions`, porque é a ela que eles se juntam.
+ *
+ * Falha em silêncio devolvendo o cache: sem os vereditos o app continua
+ * inteiro (as tarefas voltam a valer como marcadas e o briefing não aparece),
+ * e derrubar a carga inicial por causa disso seria pior que a degradação.
+ */
+export async function fetchTaskReviews() {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+    const { data, error } = await db()
+      .from('task_reviews')
+      .select('completion_id, item_id, verdict, note, reviewed_by_name, reviewed_at, operator_user_id, date')
+      .gte('date', since.toISOString().slice(0, 10));
+    if (error) throw error;
+    const mapped = (data || []).map(r => ({
+      completionId: r.completion_id,
+      itemId: r.item_id,
+      verdict: r.verdict,
+      note: r.note ?? null,
+      reviewedByName: r.reviewed_by_name ?? null,
+      reviewedAt: r.reviewed_at,
+      operatorUserId: r.operator_user_id ?? null,
+      date: r.date,
+    }));
+    await cache.set('ibr_task_reviews', mapped);
+    return mapped;
+  } catch (e) {
+    console.warn('[Supabase] fetchTaskReviews falhou, usando cache:', e.message);
+    return (await cache.get('ibr_task_reviews')) || [];
+  }
 }
 
 // ── Photos ────────────────────────────────────────────────────────────────────
