@@ -130,11 +130,18 @@ const ROLE_COLORS = {
 };
 
 // Which bottom-nav tabs each role can see, in order.
+//
+// 'id' (Meu ID) vale para TODO papel: o perfil é de quem está logado, não um
+// privilégio de cargo — e era por não ter esta aba que gerência e diretoria não
+// tinham onde ver o próprio ID nem trocar a foto sem passar pelo cabeçalho.
+// Custo assumido: no celular a barra inferior da diretoria vai a 7 ícones
+// (~56px de alvo em 390px, ainda acima dos 44px do WCAG), contra os 6 para os
+// quais os rótulos `short` foram medidos — ver BOTTOM_NAV_ORDER em SideNav.js.
 const ROLE_TABS = {
   colaborador: ['executar', 'painel', 'id'],
   lideranca: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'id', 'equipe'],
-  gerencia: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'equipe'],
-  gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'equipe'],
+  gerencia: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'id', 'equipe'],
+  gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'id', 'equipe'],
 };
 
 // Papéis de gestão que recebem o J.I.T. (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
@@ -8917,6 +8924,14 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
 
 export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize, onChangePhoto }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
+  // A tela é o perfil da pessoa, mas mostrava só nome e papel. Sem a loja, quem
+  // abre o ID de um colaborador em empresa com várias unidades não sabe de onde
+  // ele é — e gerência/diretoria, que agora também têm a aba, não têm unidade
+  // fixa: para elas o escopo REAL é a empresa inteira, e é isso que se diz.
+  const idUnits = useUnits();
+  const scopeLabel = targetUser.unitId
+    ? ((idUnits || []).find(u => u.id === targetUser.unitId)?.name || null)
+    : (MANAGER_ROLES.includes(targetUser.role) ? 'Todas as lojas' : null);
   const p = useMemo(
     () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
     [completions, targetUser.id, targetUser.name],
@@ -9023,6 +9038,9 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
           <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
             {isSelf ? 'Seu ID Operacional começa aqui' : `${firstName} ainda não tem histórico`}
           </p>
+          <p style={{ fontSize: 12, color: C.muted, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: W.semibold }}>
+            {targetUser.name} · {ROLE_LABELS[targetUser.role] || targetUser.role}{scopeLabel ? ` · ${scopeLabel}` : ''}
+          </p>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 8, lineHeight: 1.5, maxWidth: 300, marginInline: 'auto' }}>
             {isSelf
               ? 'Conclua seu primeiro checklist e comece a construir seu histórico, sua sequência e suas conquistas.'
@@ -9041,7 +9059,9 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
           <IdAvatar size={52} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold }}>{targetUser.name}</p>
-            <p style={{ fontSize: 12, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ROLE_LABELS[targetUser.role] || targetUser.role}</p>
+            <p style={{ fontSize: 12, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {ROLE_LABELS[targetUser.role] || targetUser.role}{scopeLabel ? ` · ${scopeLabel}` : ''}
+            </p>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
             <p style={{ fontSize: 10, opacity: 0.8, fontWeight: W.semibold }}>NÍVEL</p>
