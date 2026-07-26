@@ -136,19 +136,31 @@ export async function saveTemplates(templates, changedIds = null) {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
+const USERS_COLS = 'id, name, role, unit_id, sector_id, suspended';
+
 export async function fetchUsers(seedUsers) {
   // Always try Supabase first — returns users WITHOUT pin (security)
   try {
-    const { data, error } = await db()
+    // `avatar_url` nasceu em 20260726_user_avatars.sql. Se o cliente subir
+    // ANTES da migration, o select inteiro devolve 42703 e a lista de usuários
+    // cai no cache — num aparelho novo, cai em nada. Então: tenta com a coluna,
+    // e se ela não existir refaz sem. Dá para remover esta segunda tentativa
+    // quando a migration estiver aplicada em todos os projetos.
+    let { data, error } = await db()
       .from('users')
-      .select('id, name, role, unit_id, sector_id, suspended')
+      .select(`${USERS_COLS}, avatar_url`)
       .order('name');
+    if (error && (error.code === '42703' || /avatar_url/.test(error.message || ''))) {
+      console.warn('[Supabase] users.avatar_url ausente — rode 20260726_user_avatars.sql');
+      ({ data, error } = await db().from('users').select(USERS_COLS).order('name'));
+    }
     if (error) throw error;
     if (data && data.length > 0) {
       const mapped = data.map(row => ({
         id: row.id, name: row.name, role: row.role,
         unitId: row.unit_id, sectorId: row.sector_id ?? null,
         suspended: row.suspended ?? false,
+        avatarUrl: row.avatar_url ?? null,
       }));
       await cache.set('ibr_users', mapped);
       return mapped;
@@ -988,4 +1000,43 @@ export async function uploadCompanyLogo(companyId, file) {
   if (error) throw error;
   const { data } = db().storage.from('company-logos').getPublicUrl(path);
   return data.publicUrl;
+}
+
+// ── Foto de perfil ───────────────────────────────────────────────────────────
+// Sobe a foto para o bucket público `user-avatars` sob
+// `{companyId}/{userId}/{ts}.jpg` — a policy confere a 1ª pasta contra o
+// company_id do token e a 2ª contra o user_id, para ninguém trocar a foto de um
+// colega (ver 20260726_user_avatars.sql).
+//
+// Nome novo a cada troca (ts), de propósito: o bucket é público e serve pela
+// CDN, então sobrescrever o mesmo path deixaria a foto antiga em cache por
+// tempo indeterminado — a pessoa trocaria a foto e continuaria vendo a velha.
+export async function uploadUserAvatar(companyId, userId, blob) {
+  if (!companyId || !userId) throw new Error('empresa ou usuário ausente');
+  const path = `${companyId}/${userId}/${Date.now()}.jpg`;
+  const { error } = await db().storage
+    .from('user-avatars')
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw error;
+  const { data } = db().storage.from('user-avatars').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Grava SÓ a coluna da foto. Não usa saveUsers de propósito: aquela função faz
+// diff da lista inteira e APAGA quem não estiver nela — nada que uma troca de
+// foto deva poder fazer. `null` remove a foto e volta para a inicial do nome.
+export async function saveUserAvatar(userId, avatarUrl) {
+  const { error } = await db().from('users')
+    .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw error;
+  // Mantém o cache offline coerente: sem isto a foto sumia ao reabrir o app sem
+  // rede, porque o cache ainda tinha a versão anterior da lista.
+  try {
+    const cached = await cache.get('ibr_users');
+    if (Array.isArray(cached)) {
+      await cache.set('ibr_users', cached.map(u => (u.id === userId ? { ...u, avatarUrl } : u)));
+    }
+  } catch (_) {}
+  return avatarUrl;
 }

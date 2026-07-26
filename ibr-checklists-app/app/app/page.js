@@ -24,6 +24,7 @@ import {
   fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
   uploadRefDoc, getRefDocUrl,
+  uploadUserAvatar, saveUserAvatar,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission,
@@ -1110,6 +1111,35 @@ function StarRating({ stars, size = 12, color = C.warning, emptyColor = C.mutedL
       ))}
     </span>
   );
+}
+
+/**
+ * Ícone de perfil. Mostra a foto que a pessoa enviou; sem foto (ou se a URL
+ * quebrar) volta para a inicial do nome, que era o comportamento antigo em
+ * todas as telas.
+ *
+ * O fallback por `onError` não é zelo excessivo: a URL vive em `users`, que o
+ * app serve do cache offline — um arquivo removido no bucket deixaria um ícone
+ * quebrado em toda lista até a próxima sincronização.
+ */
+function Avatar({ user, size = 36, bg, fg, style }) {
+  const [broken, setBroken] = useState(false);
+  const src = user?.avatarUrl;
+  const initial = (user?.name || '?').trim().charAt(0).toUpperCase() || '?';
+  const base = {
+    width: size, height: size, borderRadius: R.pill, flexShrink: 0,
+    display: 'grid', placeItems: 'center', overflow: 'hidden',
+    background: bg || `${C.muted}1A`, color: fg || C.ink,
+    fontSize: Math.max(11, Math.round(size * 0.42)), fontWeight: W.semibold,
+    ...style,
+  };
+  if (src && !broken) {
+    return (
+      <img src={src} alt="" aria-hidden="true" onError={() => setBroken(true)}
+        style={{ ...base, objectFit: 'cover' }} />
+    );
+  }
+  return <div aria-hidden="true" style={base}>{initial}</div>;
 }
 
 /**
@@ -2547,6 +2577,10 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
                           <RankBadge pos={idx + 1} size={22} />
+                          {/* Só quem tem foto ganha o círculo: preencher a lista
+                              inteira de iniciais ao lado da medalha vira ruído
+                              num ranking que já tem posição, nome e barra. */}
+                          {userObj?.avatarUrl && <Avatar user={userObj} size={24} />}
                           <div style={{ minWidth: 0 }}>
                             <p style={{ fontSize: 13, fontWeight: isMe ? 800 : 700, color: isMe ? unit.color : C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {collab.name}{isMe ? ' · você' : ''}
@@ -6467,6 +6501,106 @@ function PushPermissionModal({ onAllow, onDismiss }) {
   );
 }
 
+/**
+ * Troca da foto de perfil. Uma folha só, com prévia antes de salvar — sem
+ * prévia a pessoa só descobre que a foto ficou torta depois de ela já estar
+ * em todas as telas.
+ *
+ * `capture` NÃO é usado no input: no celular ele força a câmera e tira do
+ * usuário a opção de escolher uma foto que já existe na galeria. (Na foto de
+ * evidência de checklist é o contrário — lá a câmera é o ponto.)
+ */
+function AvatarPickerModal({ user, accent, onClose, onSave }) {
+  const [preview, setPreview] = useState(null);   // dataURL novo, ainda não salvo
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const fileRef = useRef(null);
+  const hasPhoto = !!user?.avatarUrl;
+
+  const onPick = async e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';               // permite reescolher o MESMO arquivo
+    if (!file) return;
+    setErro('');
+    if (!file.type?.startsWith('image/')) { setErro('Escolha um arquivo de imagem.'); return; }
+    try {
+      // 320px e qualidade 0.8: o maior uso é um círculo de 52px (o ID
+      // operacional), então 320 cobre telas retina com folga e o arquivo cai
+      // para dezenas de KB — importante porque muita loja sobe pelo 4G.
+      setPreview(await compressImage(file, 320, 0.8));
+    } catch (_) {
+      setErro('Não foi possível ler essa imagem. Tente outra.');
+    }
+  };
+
+  const commit = async value => {
+    setBusy(true); setErro('');
+    const ok = await onSave(value);
+    setBusy(false);
+    if (ok) onClose();
+    else setErro('Não foi possível salvar agora. Verifique a conexão e tente de novo.');
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50"
+      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
+      <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
+        role="dialog" aria-modal="true" aria-label="Foto de perfil"
+        style={{
+          maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0',
+          padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))',
+        }}>
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>Foto de perfil</p>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+          Aparece no cabeçalho, no seu ID e no ranking da equipe.
+        </p>
+
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0' }}>
+          <Avatar user={preview ? { name: user?.name, avatarUrl: preview } : user}
+            size={104} bg={`${accent}18`} fg={accent}
+            style={{ border: `3px solid ${accent}33` }} />
+        </div>
+
+        {erro && (
+          <p role="alert" style={{ fontSize: 13, color: C.critical, textAlign: 'center', marginBottom: 12 }}>{erro}</p>
+        )}
+
+        <input ref={fileRef} type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
+
+        {preview ? (
+          <>
+            <button onClick={() => commit(preview)} disabled={busy} className="w-full py-3 mb-3"
+              style={{ borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+              {busy ? 'Salvando…' : 'Salvar foto'}
+            </button>
+            <button onClick={() => setPreview(null)} disabled={busy} className="w-full py-2"
+              style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+              Escolher outra
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="w-full py-3 mb-3"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: 'pointer' }}>
+              <Camera size={17} aria-hidden /> {hasPhoto ? 'Trocar foto' : 'Escolher foto'}
+            </button>
+            {hasPhoto && (
+              <button onClick={() => commit(null)} disabled={busy} className="w-full py-2 mb-1"
+                style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
+                {busy ? 'Removendo…' : 'Remover foto'}
+              </button>
+            )}
+            <button onClick={onClose} disabled={busy} className="w-full py-2"
+              style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+              Fechar
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ----------------------------- folgas view -------------------------------- */
 
 function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
@@ -6767,7 +6901,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans }) {
+export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans, onOpenAvatar }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -6829,15 +6963,34 @@ export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitch
           )}
           <p style={{ fontSize: 11, letterSpacing: '0.08em', color: C.muted, fontWeight: W.semibold }}>{dateLabel}</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 999, background: `${roleColor}1A`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <User size={13} color={roleColor} />
-          </div>
-          <div>
+        {/* Este é o ÚNICO ponto de troca de foto visível em todas as telas e
+            para todos os papéis — gerência e diretoria não têm a aba "Meu ID"
+            (ver ROLE_TABS), então prendê-la só ao ID deixaria os dois de fora. */}
+        <button onClick={onOpenAvatar} disabled={!onOpenAvatar}
+          title="Foto de perfil" aria-label={`Foto de perfil de ${currentUser.name}`}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: onOpenAvatar ? 'pointer' : 'default', font: 'inherit' }}>
+          <span style={{ position: 'relative', display: 'block', flexShrink: 0 }}>
+            {currentUser.avatarUrl
+              ? <Avatar user={currentUser} size={26} bg={`${roleColor}1A`} fg={roleColor} />
+              : (
+                <span style={{ width: 26, height: 26, borderRadius: 999, background: `${roleColor}1A`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <User size={13} color={roleColor} />
+                </span>
+              )}
+            {onOpenAvatar && (
+              <span aria-hidden="true" style={{
+                position: 'absolute', right: -3, bottom: -3, width: 13, height: 13, borderRadius: 999,
+                background: 'white', border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center',
+              }}>
+                <Camera size={8} color={C.muted} />
+              </span>
+            )}
+          </span>
+          <span>
             <p style={{ fontSize: 12, fontWeight: W.semibold, color: C.ink }}>{truncName(currentUser.name, 16)}</p>
             <p style={{ fontSize: 9, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: roleColor }}>{ROLE_LABELS[currentUser.role]}</p>
-          </div>
-        </div>
+          </span>
+        </button>
       </div>
 
       <div className="zc-hdr-actions flex items-center justify-between gap-2 mb-3">
@@ -8762,7 +8915,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   };
 }
 
-export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize }) {
+export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize, onChangePhoto }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
   const p = useMemo(
     () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
@@ -8824,10 +8977,29 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
     track('survey_answered', { source: 'id', metadata: { question: 'operational_id_motivates', answer: ans } });
   };
 
-  const initial = (targetUser.name || '?').trim().charAt(0).toUpperCase();
   const firstName = (targetUser.name || '').split(' ')[0];
   const earnedCount = p.achievements.filter(a => a.earned).length;
   const maxWeekRate = Math.max(1, ...p.weekly.map(w => w.rate));
+
+  // Foto + botão de troca. `onChangePhoto` só chega na visão do próprio dono —
+  // o líder que abre o ID de um colaborador vê a foto, não o botão.
+  const IdAvatar = ({ size, onDark = true }) => (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <Avatar user={targetUser} size={size}
+        bg={onDark ? 'rgba(255,255,255,0.2)' : `${accent}18`} fg={onDark ? 'white' : accent}
+        style={{ fontWeight: W.bold }} />
+      {onChangePhoto && (
+        <button onClick={onChangePhoto} title="Trocar foto de perfil" aria-label="Trocar foto de perfil"
+          style={{
+            position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 999,
+            background: 'white', border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center',
+            cursor: 'pointer', padding: 0,
+          }}>
+          <Camera size={13} color={accent} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
 
   const Metric = ({ value, label, color }) => (
     <div style={{ flex: 1, textAlign: 'center', padding: '10px 4px' }}>
@@ -8840,7 +9012,14 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
     return (
       <div style={{ padding: 20 }}>
         <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, padding: '28px 20px', textAlign: 'center' }}>
-          <Sprout size={40} color={C.mutedLight} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 12px' }} />
+          {/* Quem ainda não executou nada TAMBÉM precisa poder pôr foto — este
+              é justamente o estado do 1º acesso, e a tela cai aqui antes do
+              cabeçalho normal. */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            {targetUser.avatarUrl || onChangePhoto
+              ? <IdAvatar size={64} onDark={false} />
+              : <Sprout size={40} color={C.mutedLight} strokeWidth={1.5} aria-hidden />}
+          </div>
           <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
             {isSelf ? 'Seu ID Operacional começa aqui' : `${firstName} ainda não tem histórico`}
           </p>
@@ -8859,7 +9038,7 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
       {/* Cabeçalho — identidade + nível */}
       <div style={{ background: accent, color: 'white', borderRadius: 16, padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 999, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: W.bold, flexShrink: 0 }}>{initial}</div>
+          <IdAvatar size={52} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold }}>{targetUser.name}</p>
             <p style={{ fontSize: 12, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ROLE_LABELS[targetUser.role] || targetUser.role}</p>
@@ -9551,10 +9730,7 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
               }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <RankBadge pos={i + 1} />
-                <div style={{
-                  width: 36, height: 36, borderRadius: R.pill, background: `${accent}18`, color: accent,
-                  display: 'grid', placeItems: 'center', fontSize: T.bodyLg, fontWeight: W.semibold, flexShrink: 0,
-                }}>{(user.name || '?').trim().charAt(0).toUpperCase()}</div>
+                <Avatar user={user} size={36} bg={`${accent}18`} fg={accent} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
@@ -10258,6 +10434,53 @@ function AppInner() {
     try { await dbSaveClosures(next); } catch (e) { console.error('saveClosures', e); }
   };
 
+  // ── Foto de perfil ─────────────────────────────────────────────────────────
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+
+  /**
+   * `currentUser` vem do validate_pin, que não devolve a foto — sem isto, quem
+   * enviou a foto num aparelho continuaria sem ela em qualquer outro, porque o
+   * cabeçalho e o Meu ID leem da sessão, não da lista.
+   */
+  useEffect(() => {
+    if (!currentUser || !users?.length) return;
+    const row = users.find(u => u.id === currentUser.id);
+    if (!row) return;
+    const url = row.avatarUrl ?? null;
+    if ((currentUser.avatarUrl ?? null) === url) return;
+    setCurrentUser(prev => (prev ? { ...prev, avatarUrl: url } : prev));
+  }, [users, currentUser]);
+
+  /**
+   * Recebe o dataURL já comprimido pelo modal (ou null, para remover) e devolve
+   * true/false — é o modal que mostra o erro, porque é lá que a pessoa está
+   * olhando. Sem rede, FALHA e diz: ao contrário de um checklist, a foto não
+   * tem fila offline, e fingir que salvou seria mentir para o usuário.
+   */
+  const saveAvatar = async dataUrl => {
+    const companyId = currentUser?.companyId || currentUser?.company_id;
+    try {
+      let url = null;
+      if (dataUrl) {
+        const blob = await (await fetch(dataUrl)).blob();
+        url = await uploadUserAvatar(companyId, currentUser.id, blob);
+      }
+      await saveUserAvatar(currentUser.id, url);
+      // Os três lugares que guardam a pessoa: a sessão (cabeçalho e Meu ID), a
+      // lista de usuários (rankings) e o localStorage (para o próximo reload
+      // não voltar com a foto antiga).
+      const nextUser = { ...currentUser, avatarUrl: url };
+      setCurrentUser(nextUser);
+      setUsers(prev => (prev || []).map(u => (u.id === currentUser.id ? { ...u, avatarUrl: url } : u)));
+      try { persistSession(getSessionToken(), nextUser); } catch (_) {}
+      track('avatar_updated', { source: 'perfil', metadata: { removed: !url } });
+      return true;
+    } catch (e) {
+      console.error('saveAvatar', e);
+      return false;
+    }
+  };
+
   const [testDataResult, setTestDataResult] = useState(null); // { ok: boolean, message: string } | null
 
   const generateTestData = async (days = 7) => {
@@ -10424,7 +10647,16 @@ function AppInner() {
         onOpenPlans={() => setShowPlans(true)}
         company={company}
         onStartTour={() => { setShowJit(false); setShowTour(true); }}
+        onOpenAvatar={() => setShowAvatarPicker(true)}
       />
+
+      {showAvatarPicker && (
+        <AvatarPickerModal
+          user={currentUser} accent={unit.color}
+          onClose={() => setShowAvatarPicker(false)}
+          onSave={saveAvatar}
+        />
+      )}
 
       {/* Onboarding guiado — primeiro acesso da gestão de empresa nova */}
       {showCompanyOnboarding && (
@@ -10616,7 +10848,7 @@ function AppInner() {
             </div>
           )
         )}
-        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} />}
+        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} />}
         {activeTab === 'unidades' && (
           <UnidadesView
             units={ACTIVE_UNITS} templates={templates} completions={completions || []}
