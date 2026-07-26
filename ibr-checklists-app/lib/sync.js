@@ -89,6 +89,12 @@ export async function saveTemplates(templates, changedIds = null) {
     const toSave = changedIds
       ? templates.filter(t => changedIds.includes(t.id))
       : templates;
+    // changedIds apontando para id que não está na lista = a edição se perdeu
+    // antes de chegar aqui. Sair calado fazia a tela dizer "salvo com sucesso"
+    // sem nada ter sido gravado — era indistinguível de um save real.
+    if (changedIds?.length && toSave.length === 0) {
+      throw new Error('o checklist editado não está mais na lista carregada — recarregue a página e tente de novo');
+    }
     if (toSave.length === 0) return;
 
     // Upsert one by one to guarantee postgres_changes fires for each row
@@ -105,6 +111,23 @@ export async function saveTemplates(templates, changedIds = null) {
     // Antes o erro do banco morria num console.error e a tela dizia "Checklist
     // criado!" do mesmo jeito. Quem salva precisa poder contar a verdade.
     if (falhas.length) throw new Error(falhas.join(' | '));
+
+    // Confere no banco o que acabou de ser gravado. Um upsert pode responder
+    // "ok" e a linha não refletir o esperado (RLS que filtra o retorno, id que
+    // não bate, escrita concorrente). Sem esta leitura, a tela dava "salvo" e o
+    // item sumia no próximo carregamento, sem nenhum sinal.
+    if (changedIds?.length) {
+      const { data: gravados } = await db().from('templates')
+        .select('id, items').in('id', toSave.map(t => t.id));
+      const porId = new Map((gravados || []).map(r => [r.id, r]));
+      const divergentes = toSave.filter(t => {
+        const row = porId.get(t.id);
+        return !row || (row.items || []).length !== (t.items || []).length;
+      });
+      if (divergentes.length) {
+        throw new Error(`o servidor não confirmou a gravação de ${divergentes.map(t => `"${t.name}"`).join(', ')} — recarregue e tente de novo`);
+      }
+    }
   } catch (e) {
     console.warn('saveTemplates: Supabase error', e);
     throw e;

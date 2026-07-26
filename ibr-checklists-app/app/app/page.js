@@ -4389,7 +4389,12 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
         // If appearsIn only has current type, it's just "here" — keep it to signal intent
         return item;
       });
-      next = templates.map(t => t.id === tplData.id ? { ...t, ...tplData } : t);
+      // Se o checklist editado não está na lista local (refetch trocou a lista,
+      // troca de loja, id divergente), o map() devolveria tudo intacto e a
+      // edição sumiria em silêncio. Reinserir preserva o trabalho.
+      next = templates.some(t => t.id === tplData.id)
+        ? templates.map(t => t.id === tplData.id ? { ...t, ...tplData } : t)
+        : [...templates, { ...tplData, unitId: tplData.unitId ?? unit.id, sector: tplData.sector ?? activeSector }];
     } else {
       next = [...templates, { ...tplData, id: uid(), unitId: unit.id, sector: activeSector, shift: tplData.shift }];
     }
