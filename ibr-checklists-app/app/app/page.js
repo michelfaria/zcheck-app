@@ -25,6 +25,7 @@ import {
   uploadPhoto, getPhotoUrl,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
+  reviewCompletion,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission,
@@ -896,6 +897,53 @@ function groupStats(filtered, groupBy, units = UNITS, types = CHECKLIST_TYPE_ORD
   return [...map.values()]
     .map(s => ({ ...s, rate: s.totalItems ? (s.doneItems / s.totalItems) * 100 : 0 }))
     .sort((a, b) => b.checklists - a.checklists);
+}
+
+/**
+ * Pontualidade — quantos checklists foram entregues DENTRO do prazo do próprio
+ * checklist e quantos passaram do horário, com o mesmo recorte por loja e por
+ * setor que o resto do J.I.T.
+ *
+ * A regra de "no prazo" é uma só em todo o app: `completionOnTime`. Ela devolve
+ * `null` para checklist SEM prazo (o "Intermediário", por exemplo) — sem
+ * horário a cumprir, ele não pode ser nem pontual nem atrasado. Esses ficam
+ * fora do numerador E do denominador, e voltam separados em `noDeadline`: o
+ * gestor precisa saber que a conta não cobre a operação inteira, senão lê "15
+ * checklists" onde rodaram 40.
+ *
+ * A ordenação é do PIOR para o melhor (menor % no prazo primeiro). O J.I.T. é
+ * uma tela de decisão: o que precisa de atenção vem antes do que já vai bem.
+ */
+const PUNCTUALITY_PERIODS = [{ id: 'today', label: 'Hoje' }, { id: 'last7', label: '7 dias' }];
+const PUNCTUALITY_GROUPS = [{ id: 'loja', label: 'Loja' }, { id: 'setor', label: 'Setor' }];
+
+function punctualityStats(filtered, templates, units) {
+  let onTime = 0, late = 0, noDeadline = 0;
+  const deadlines = deadlineIndex(templates);
+  const byUnit = new Map(), bySector = new Map();
+  const bump = (map, key, name, ok) => {
+    if (!map.has(key)) map.set(key, { key, name, onTime: 0, late: 0 });
+    const g = map.get(key);
+    if (ok) g.onTime += 1; else g.late += 1;
+  };
+  (filtered || []).forEach(c => {
+    const ok = completionOnTime(c, templates, deadlines);
+    if (ok === null) { noDeadline += 1; return; }
+    if (ok) onTime += 1; else late += 1;
+    const uName = (units || []).find(u => u.id === c.unitId)?.name || c.unitId || 'Sem loja';
+    bump(byUnit, c.unitId || '—', uName, ok);
+    bump(bySector, c.sector || '—', c.sector || 'Sem setor', ok);
+  });
+  const finish = map => [...map.values()]
+    .map(g => ({ ...g, total: g.onTime + g.late, rate: Math.round((g.onTime / (g.onTime + g.late)) * 100) }))
+    .sort((a, b) => a.rate - b.rate || b.total - a.total);
+  const total = onTime + late;
+  return {
+    onTime, late, total, noDeadline,
+    rate: total ? Math.round((onTime / total) * 100) : null,
+    byUnit: finish(byUnit),
+    bySector: finish(bySector),
+  };
 }
 
 /* ------------------------------ produtividade ------------------------------ */
@@ -2789,9 +2837,15 @@ const execPagerBtn = {
   display: 'grid', placeItems: 'center', fontFamily: 'inherit',
 };
 
-export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
+  const [reviewing, setReviewing] = useState(null);       // execução aberta para conferência
+  const [soPendentes, setSoPendentes] = useState(false);
+  // Conferir é ato de liderança — o colaborador nem vê o botão. O portão de
+  // verdade está na RPC `review_completion`, que confere o papel pelo token;
+  // isto aqui só evita oferecer o que seria recusado.
+  const canReview = !!onReview && MANAGER_ROLES.includes(currentUser?.role);
   const [execPage, setExecPage] = useState(1);
   const [period, setPeriod] = useState('7d');
   // Trocar de filtro estando na página 7 mostraria "nenhuma execução" num
@@ -3336,9 +3390,20 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
           precisa ser visível também no Relatórios, não só no Painel do dia). */}
       <Eyebrow>Execuções do período</Eyebrow>
+      {canReview && (
+        <div className="flex gap-2" style={{ margin: '4px 0 8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <PillButton active={soPendentes} accent={unit.color} onClick={() => { setSoPendentes(v => !v); setExecPage(1); }}>
+            Só pendentes de conferência
+          </PillButton>
+          <span style={{ fontSize: T.label, color: C.mutedLight }}>
+            {filtered.filter(c => !c.reviewedAt).length} sem conferir no período
+          </span>
+        </div>
+      )}
       <div className="space-y-1.5" style={{ marginBottom: 16 }}>
         {(() => {
-          const ordenadas = [...filtered]
+          const base = soPendentes ? filtered.filter(c => !c.reviewedAt) : filtered;
+          const ordenadas = [...base]
             .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
           const totalPag = Math.max(1, Math.ceil(ordenadas.length / EXEC_PAGE_SIZE));
           const pagAtual = Math.min(execPage, totalPag);
@@ -3361,18 +3426,38 @@ export function ReportsView({ unit, templates, completions, closures, users, can
                         {new Date(c.completedAt).toLocaleDateString('pt-BR')} {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.operatorName}</p>
-                    {fotos.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {fotos.map(i => (
-                          <button key={i.id} onClick={() => setViewingPhoto({ recordId: c.id, item: i })}
-                            className="flex items-center gap-1"
-                            style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
-                            <Camera size={11} /> Foto
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      {c.operatorName}
+                      {/* O atraso é dado de gestão, não decoração: é o que
+                          alimenta os 40% do índice da liderança, então precisa
+                          estar visível na mesma linha em que se confere. */}
+                      {completionOnTime(c, templates) === false && (
+                        <span style={{ color: C.critical, fontWeight: W.semibold }}> · fora do prazo</span>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-1" style={{ alignItems: 'center' }}>
+                      {fotos.map(i => (
+                        <button key={i.id} onClick={() => setViewingPhoto({ recordId: c.id, item: i })}
+                          className="flex items-center gap-1"
+                          style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
+                          <Camera size={11} /> Foto
+                        </button>
+                      ))}
+                      {c.reviewedAt ? (
+                        <button onClick={canReview ? () => setReviewing(c) : undefined}
+                          disabled={!canReview}
+                          className="flex items-center gap-1"
+                          style={{ fontSize: T.label, fontWeight: W.semibold, color: C.success, background: `${C.success}12`, border: `1px solid ${C.success}55`, borderRadius: R.sm, padding: '3px 8px', cursor: canReview ? 'pointer' : 'default' }}>
+                          <CheckCheck size={11} /> Conferido por {c.reviewedByName || '—'}
+                        </button>
+                      ) : canReview && (
+                        <button onClick={() => setReviewing(c)}
+                          className="flex items-center gap-1"
+                          style={{ fontSize: T.label, fontWeight: W.semibold, color: unit.color, background: 'none', border: `1px dashed ${unit.color}88`, borderRadius: R.sm, padding: '3px 8px', cursor: 'pointer' }}>
+                          <ClipboardCheck size={11} /> Conferir
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -3421,6 +3506,103 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       {viewingPhoto && (
         <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
       )}
+      {reviewing && (
+        <ReviewModal
+          completion={reviewing} templates={templates} accent={unit.color}
+          onClose={() => setReviewing(null)} onReview={onReview}
+        />
+      )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Conferência de uma execução pela liderança.
+ *
+ * O que ela mostra antes de pedir o clique: quanto foi concluído, quantos
+ * críticos ficaram pendentes e se veio no prazo. Conferir sem esses três
+ * números seria carimbo, não revisão — e a nota da liderança (30% do índice)
+ * ficaria valendo pelo clique, não pela leitura.
+ */
+function ReviewModal({ completion: c, templates, accent, onClose, onReview }) {
+  const [note, setNote] = useState(c.reviewNote || '');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const itens = c.items || [];
+  const feitos = itens.filter(i => i.done).length;
+  const criticosPendentes = itens.filter(i => i.critical && !i.done).length;
+  const noPrazo = completionOnTime(c, templates);
+  const jaConferido = !!c.reviewedAt;
+
+  const commit = async reviewed => {
+    setBusy(true); setErro('');
+    const ok = await onReview(c.id, { note: reviewed ? note : null, reviewed });
+    setBusy(false);
+    if (ok) onClose();
+    else setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.');
+  };
+
+  const Linha = ({ label, valor, cor }) => (
+    <div style={{ flex: 1, minWidth: 96 }}>
+      <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
+      <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: cor || C.ink, marginTop: 2 }}>{valor}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50"
+      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
+      <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
+        role="dialog" aria-modal="true" aria-label="Conferir execução"
+        style={{
+          maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0',
+          padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))',
+        }}>
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
+          {jaConferido ? 'Execução conferida' : 'Conferir execução'}
+        </p>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+          {c.sector} · {c.templateName} · {c.operatorName}
+        </p>
+
+        <div style={{ display: 'flex', gap: 14, margin: '16px 0', flexWrap: 'wrap' }}>
+          <Linha label="Tarefas" valor={`${feitos}/${itens.length}`} />
+          <Linha label="Críticos pendentes" valor={criticosPendentes || '0'} cor={criticosPendentes ? C.critical : C.success} />
+          <Linha label="Prazo"
+            valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
+            cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
+        </div>
+
+        {jaConferido && (
+          <p style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+            Conferido por {c.reviewedByName || '—'} em {new Date(c.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(c.reviewedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+          </p>
+        )}
+
+        <label style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
+          Observação (opcional)
+        </label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} disabled={busy}
+          placeholder="O que precisa melhorar na próxima?"
+          style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, marginBottom: 16, resize: 'vertical' }} />
+
+        {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 12 }}>{erro}</p>}
+
+        <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-3"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+          <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
+        </button>
+        {jaConferido && (
+          <button onClick={() => commit(false)} disabled={busy} className="w-full py-2 mb-1"
+            style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
+            Desfazer conferência
+          </button>
+        )}
+        <button onClick={onClose} disabled={busy} className="w-full py-2"
+          style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+          Cancelar
+        </button>
       </div>
     </div>
   );
@@ -8094,6 +8276,20 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   // (d) Quem executou hoje.
   const peopleToday = collaboratorStats(tFiltered).slice(0, 5);
 
+  // (e) Pontualidade — no prazo × fora do prazo, por loja e por setor.
+  //
+  // Dois recortes de tempo porque um só mente: "hoje" às 9h ainda não tem os
+  // fechamentos da noite e faria a operação parecer pontual todo dia de manhã;
+  // "7 dias" é o hábito, mas esconde o que quebrou nesta manhã. O gestor
+  // alterna entre os dois na tela — o cálculo dos dois é barato e já está tudo
+  // em memória.
+  const dates7 = [];
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); dates7.push(d.toISOString().slice(0, 10)); }
+  const punctuality = {
+    today: punctualityStats(tFiltered, templates, units),
+    last7: punctualityStats(filterCompletions(completions, scopeFilter(dates7)), templates, units),
+  };
+
   /**
    * Status da BASE da empresa, agora. O J.I.T. deixou de ser "o resumo de hoje"
    * e passou a ser "o estado da operação neste momento" — e estado inclui a
@@ -8128,6 +8324,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
     trend7,
     criticalTop,
     peopleToday,
+    punctuality,
   };
 }
 
@@ -8247,6 +8444,12 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
   const [insightFeedback, setInsightFeedback] = useState(null);
   const [insightActioned, setInsightActioned] = useState(false);
   const insight = jit.insight;
+
+  // Pontualidade: recorte de tempo e de agrupamento. Padrão "7 dias" porque
+  // "hoje" às 9h ainda não tem os fechamentos da noite — abrir no recorte que
+  // parece ótimo toda manhã seria enganar o gestor logo na primeira leitura.
+  const [punPeriod, setPunPeriod] = useState('last7');
+  const [punGroup, setPunGroup] = useState('loja');
 
   const planAgeDays = p => Math.max(1, Math.round((new Date(`${jit.date}T00:00:00`) - new Date(`${p.jitDate}T00:00:00`)) / 86400000));
 
@@ -8373,6 +8576,33 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
 
   const trend = jit.trend7 || [];
   const maxTrend = Math.max(100, ...trend.map(d => d.rate));
+
+  // ── Pontualidade: derivados ──────────────────────────────────────────────
+  const pun = jit.punctuality?.[punPeriod] || null;
+  const punPeriodLabel = punPeriod === 'today' ? 'hoje' : 'nos últimos 7 dias';
+  // Numa loja só, "por loja" é uma lista de um item — o recorte que importa
+  // ali é o setor, e o seletor com uma opção viável seria ruído.
+  const punCanGroupByUnit = !jit.scopeUnitId && (pun?.byUnit || []).length > 1;
+  const punGroupEff = punCanGroupByUnit ? punGroup : 'setor';
+  const punGroups = (punGroupEff === 'loja' ? pun?.byUnit : pun?.bySector) || [];
+  // 90/70: o corte é mais duro que o da aderência (80/50) de propósito —
+  // "quase sempre no horário" não é o mesmo padrão que "quase tudo feito".
+  const punTone = r => (r >= 90 ? C.success : r >= 70 ? C.warning : C.critical);
+  const punBar = r => (r >= 90 ? successBright : r >= 70 ? C.warning : C.critical);
+  const segStyle = active => ({
+    padding: '4px 10px', borderRadius: R.pill, cursor: 'pointer',
+    border: `1px solid ${active ? C.ink : C.border}`,
+    background: active ? C.ink : 'white',
+    color: active ? 'white' : C.muted,
+    fontSize: T.label, fontWeight: W.semibold, whiteSpace: 'nowrap',
+  });
+  const changePun = (kind, value) => {
+    if (kind === 'period') setPunPeriod(value); else setPunGroup(value);
+    track('jit_punctuality_filtered', {
+      source: openSource,
+      metadata: { period: kind === 'period' ? value : punPeriod, group_by: kind === 'group' ? value : punGroupEff },
+    });
+  };
 
   const b = jit.base;
   const BaseCell = ({ label, value, tone }) => (
@@ -8591,6 +8821,104 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
               <Stat label="Atrasados" value={t.overdue} color={t.overdue > 0 ? C.critical : C.ink} />
             </div>
           </div>
+
+          {/* Entrega no prazo — quantos checklists fecharam dentro do horário e
+              quantos passaram dele, com recorte por loja e por setor.
+              "Atrasados" acima conta o que AINDA não foi feito e já venceu;
+              aqui conta o que FOI feito e a que horas. São perguntas
+              diferentes e por isso não podem morar no mesmo bloco. */}
+          {pun && (
+            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Entrega no prazo
+                </p>
+                <div role="group" aria-label="Período" style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  {PUNCTUALITY_PERIODS.map(p => (
+                    <button key={p.id} type="button" aria-pressed={punPeriod === p.id}
+                      onClick={() => changePun('period', p.id)} style={segStyle(punPeriod === p.id)}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {pun.total === 0 ? (
+                <p style={{ fontSize: T.bodySm, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+                  {pun.noDeadline > 0
+                    ? `Nenhum checklist COM prazo foi concluído ${punPeriodLabel}. Os ${pun.noDeadline} concluídos não têm horário definido — dê um prazo ao checklist em Gerenciar para acompanhar pontualidade.`
+                    : `Nenhum checklist concluído ${punPeriodLabel}.`}
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 12 }}>
+                    <div>
+                      <p className="font-display" style={{ fontSize: 26, fontWeight: W.bold, color: C.success, lineHeight: 1 }}>{pun.onTime}</p>
+                      <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold, marginTop: 4 }}>no prazo</p>
+                    </div>
+                    <div>
+                      <p className="font-display" style={{ fontSize: 26, fontWeight: W.bold, color: pun.late > 0 ? C.critical : C.mutedLight, lineHeight: 1 }}>{pun.late}</p>
+                      <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold, marginTop: 4 }}>fora do prazo</p>
+                    </div>
+                    <p className="font-display" style={{ marginLeft: 'auto', fontSize: 20, fontWeight: W.bold, color: punTone(pun.rate) }}>
+                      {pun.rate}%
+                    </p>
+                  </div>
+                  <div role="img" aria-label={`${pun.onTime} de ${pun.total} checklists concluídos no prazo (${pun.rate}%)`}
+                    style={{ display: 'flex', height: 8, borderRadius: R.pill, overflow: 'hidden', background: C.bg, marginTop: 10 }}>
+                    <div style={{ width: `${pun.rate}%`, background: successBright }} />
+                    <div style={{ flex: 1, background: C.critical }} />
+                  </div>
+
+                  {punGroups.length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+                        <p style={{ fontSize: T.label, color: C.mutedLight, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          Por {punGroupEff}
+                        </p>
+                        {punCanGroupByUnit && (
+                          <div role="group" aria-label="Agrupar por" style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                            {PUNCTUALITY_GROUPS.map(g => (
+                              <button key={g.id} type="button" aria-pressed={punGroupEff === g.id}
+                                onClick={() => changePun('group', g.id)} style={segStyle(punGroupEff === g.id)}>
+                                {g.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        {punGroups.slice(0, 6).map(g => (
+                          <div key={g.key} style={{ padding: '8px 0', borderTop: `1px solid ${C.border}` }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: T.bodySm, fontWeight: W.medium, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {g.name}
+                              </span>
+                              <span className="font-display" style={{ flexShrink: 0, fontSize: T.bodySm, fontWeight: W.semibold, color: punTone(g.rate) }}>
+                                {g.rate}%
+                              </span>
+                            </div>
+                            <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                              {g.onTime} no prazo · {g.late} fora do prazo
+                            </p>
+                            <div style={{ height: 5, borderRadius: R.pill, background: C.bg, marginTop: 5, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${Math.max(2, g.rate)}%`, background: punBar(g.rate), borderRadius: R.pill }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {pun.noDeadline > 0 && (
+                    <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 10, lineHeight: 1.45 }}>
+                      + {pun.noDeadline} checklist{pun.noDeadline > 1 ? 's' : ''} sem horário definido — fora desta conta, porque não há prazo a cumprir.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Recomendações */}
           <div>
@@ -8919,6 +9247,147 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
     weekly, daily, achievements,
     recent: mine.slice(-8).reverse(),
     windowDays: days,
+  };
+}
+
+/**
+ * Uma execução chegou no prazo?
+ *
+ * `true` / `false` / `null` — e o `null` importa: checklist cujo tipo não tem
+ * `deadline` (o "Intermediário", por exemplo) não tem prazo para cumprir, e
+ * contá-lo como atrasado puniria a liderança por uma regra que não existe. Fora
+ * do numerador E do denominador.
+ *
+ * A comparação é em hora LOCAL de propósito: `completedAt` é ISO em UTC, mas
+ * "fechamento até as 18:00" é o relógio da loja. `new Date('2026-07-26T18:00')`
+ * sem sufixo Z é interpretado como local, que é exatamente o que se quer.
+ */
+function completionOnTime(c, templates, index) {
+  const deadline = index
+    ? index.get(c.templateId)
+    : (templates || []).find(t => t.id === c.templateId)?.deadline;
+  if (!deadline || !c.date || !c.completedAt) return null;
+  return new Date(c.completedAt) <= new Date(`${c.date}T${deadline}:00`);
+}
+
+/**
+ * Índice templateId → prazo, para quem classifica MUITAS execuções de uma vez.
+ * Sem ele, `completionOnTime` faz um `find` linear por execução, e o J.I.T.
+ * refaz a conta a cada evento de realtime: numa rede com 50 lojas isso vira
+ * milhões de comparações por checklist salvo por qualquer pessoa.
+ */
+function deadlineIndex(templates) {
+  return new Map((templates || []).map(t => [t.id, t.deadline]));
+}
+
+/**
+ * ID Operacional da LIDERANÇA — a terceira régua, ao lado da pessoa
+ * (`computeOperationalProfile`) e da loja (`computeUnitProfile`).
+ *
+ * A diferença de conceito: as outras duas medem quem EXECUTA. Esta mede quem
+ * RESPONDE pela execução dos outros. Por isso nenhum componente olha o que o
+ * líder fez com as próprias mãos — os três olham o resultado da equipe dele:
+ *
+ *   No prazo (40%)   — dos checklists com prazo, quantos a equipe entregou
+ *                      dentro dele. É o coração do pedido: cobrar horário é
+ *                      trabalho de liderança, e o número mostra se funcionou.
+ *   Aderência (30%)  — fez-se o que estava previsto, descontadas as folgas.
+ *                      Mesma métrica-mãe da loja: entregar no prazo só metade
+ *                      do previsto não pode dar nota alta.
+ *   Conferidos (30%) — das execuções da equipe, quantas ELE revisou. É a única
+ *                      parte que mede um ato do próprio líder, e existe porque
+ *                      sem ela "no prazo" e "aderência" premiariam quem tem uma
+ *                      equipe boa sem nunca ter olhado um checklist.
+ *
+ * Escopo: quem tem loja (liderança) responde pela loja dela; quem não tem
+ * (gerência, diretoria) responde pela empresa inteira.
+ *
+ * Duas decisões que mudam o número e por isso ficam explícitas:
+ *
+ * 1. Conferir a PRÓPRIA execução não conta — nem no numerador nem no
+ *    denominador. Autoconferência não é revisão, e sem esta regra o caminho
+ *    mais curto para 100% seria executar tudo sozinho e assinar embaixo.
+ * 2. O dia de HOJE fica fora do denominador de conferidos. Um checklist
+ *    fechado há dez minutos ainda não teve tempo de ser revisado; incluí-lo
+ *    faria a nota de todo líder cair toda manhã e subir toda noite, medindo o
+ *    relógio em vez do trabalho.
+ *
+ * Consequência assumida: se duas lideranças dividem a mesma loja, as
+ * conferências se dividem entre elas — quem revisou leva. É o comportamento
+ * correto para medir esforço individual, mas significa que as duas não podem
+ * chegar a 100% ao mesmo tempo.
+ */
+function computeLeadershipProfile({ completions, templates, closures, units, leader, days = 30, today }) {
+  // `isUnitClosed` e `countApplicableTemplatesOnDate` assumem array; este cálculo
+  // roda num useMemo que dispara antes de templates/closures terminarem de
+  // carregar, e um `undefined.some` derrubaria a aba inteira.
+  const tpl = templates || [];
+  const clo = closures || [];
+  const scopeUnits = leader.unitId
+    ? (units || []).filter(u => u.id === leader.unitId)
+    : (units || []);
+  const scopeIds = new Set(scopeUnits.map(u => u.id));
+
+  const dates = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  const dateSet = new Set(dates);
+
+  const team = (completions || []).filter(c => scopeIds.has(c.unitId) && dateSet.has(c.date));
+
+  // ── No prazo ──
+  let onTimeTotal = 0, onTimeDone = 0;
+  team.forEach(c => {
+    const ok = completionOnTime(c, tpl);
+    if (ok === null) return;
+    onTimeTotal++;
+    if (ok) onTimeDone++;
+  });
+  const onTimeRate = onTimeTotal ? Math.round((onTimeDone / onTimeTotal) * 100) : null;
+
+  // ── Aderência da equipe ──
+  // Contagem por (loja, dia) num Map: o caminho ingênuo é um filter dentro de
+  // dois loops, que em 3 lojas × 30 dias × 1000 execuções vira 90 mil varreduras
+  // a cada render do ranking.
+  const doneByUnitDate = new Map();
+  team.forEach(c => {
+    const k = `${c.unitId}|${c.date}`;
+    doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);
+  });
+  let expected = 0, doneChecklists = 0;
+  scopeUnits.forEach(u => dates.forEach(ds => {
+    if (isUnitClosed(clo, u.id, ds)) return;
+    expected += countApplicableTemplatesOnDate(tpl, { unitId: u.id }, ds);
+    doneChecklists += doneByUnitDate.get(`${u.id}|${ds}`) || 0;
+  }));
+  // Teto em 100: reexecução no mesmo dia faz `done > expected`, e sem o teto um
+  // componente de 130% puxaria o índice inteiro para cima sem significar nada.
+  const adherence = expected ? Math.min(100, Math.round((doneChecklists / expected) * 100)) : null;
+
+  // ── Conferidos ──
+  const reviewable = team.filter(c => c.date < today && c.operatorUserId !== leader.id);
+  const reviewedByMe = reviewable.filter(c => c.reviewedBy === leader.id).length;
+  const reviewRate = reviewable.length ? Math.round((reviewedByMe / reviewable.length) * 100) : null;
+  const pending = reviewable.filter(c => !c.reviewedAt).length;
+
+  const parts = [
+    { key: 'prazo',      label: 'No prazo',   weight: 0.4, value: onTimeRate },
+    { key: 'aderencia',  label: 'Aderência',  weight: 0.3, value: adherence },
+    { key: 'conferidos', label: 'Conferidos', weight: 0.3, value: reviewRate },
+  ];
+  const usable = parts.filter(x => x.value != null);
+  const wsum = usable.reduce((a, x) => a + x.weight, 0);
+  const index = usable.length ? Math.round(usable.reduce((a, x) => a + x.value * x.weight, 0) / wsum) : null;
+
+  return {
+    index, parts,
+    onTimeRate, onTimeDone, onTimeTotal,
+    adherence, expected, doneChecklists,
+    reviewRate, reviewedByMe, reviewable: reviewable.length, pending,
+    teamChecklists: team.length,
+    scopeUnits, windowDays: days,
   };
 }
 
@@ -9632,13 +10101,13 @@ export function UnidadesView({ units, templates, completions, closures, currentU
   );
 }
 
-export function EquipeView({ currentUser, users, completions, accent, canSeeAllUnits }) {
+export function EquipeView({ currentUser, users, completions, templates, closures, accent, canSeeAllUnits }) {
   const [selected, setSelected] = useState(null);
   const [recognizeFor, setRecognizeFor] = useState(null);
   const [toast, setToast] = useState('');
 
   const units = useUnits();
-  const [groupBy, setGroupBy] = useState('unidade'); // 'unidade' | 'setor'
+  const [groupBy, setGroupBy] = useState('unidade'); // 'unidade' | 'setor' | 'lideranca'
 
   /**
    * Liderança entra no ranking junto com o colaborador: quem lidera a loja
@@ -9675,6 +10144,7 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   const groups = useMemo(() => {
     const unitsInScope = canSeeAllUnits ? units : units.filter(u => u.id === currentUser?.unitId);
     const out = [];
+    if (groupBy === 'lideranca') return out;   // outro ranking, montado abaixo
     unitsInScope.forEach(u => {
       const ofUnit = (completions || []).filter(c => c.unitId === u.id);
       if (groupBy === 'unidade') {
@@ -9692,6 +10162,38 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
     });
     return out;
   }, [units, people, completions, groupBy, canSeeAllUnits, currentUser]);
+
+  /**
+   * Ranking da LIDERANÇA — régua diferente da do colaborador, porque o trabalho
+   * é outro: não é o que a pessoa executou, é o que a equipe dela entregou.
+   * Ver `computeLeadershipProfile` para os pesos e as duas regras que impedem
+   * autoconferência inflar a nota.
+   *
+   * Quem entra: liderança, gerência e diretoria. Diferente do ranking de
+   * pessoas, gerência e diretoria cabem aqui — elas respondem pela empresa
+   * inteira, e "empresa inteira" é um escopo bem definido, não uma linha
+   * repetida em toda loja.
+   */
+  const leaders = useMemo(() => {
+    if (groupBy !== 'lideranca') return [];
+    const today = todayStr();
+    const unitsInScope = canSeeAllUnits ? units : units.filter(u => u.id === currentUser?.unitId);
+    const scopeIds = new Set(unitsInScope.map(u => u.id));
+    return (users || [])
+      .filter(u => MANAGER_ROLES.includes(u.role) && !u.suspended)
+      // Um líder de outra loja não interessa a quem só enxerga a própria; já
+      // gerência/diretoria (sem unitId) respondem por todas, então aparecem
+      // sempre que quem olha enxerga a empresa toda.
+      .filter(u => (u.unitId ? scopeIds.has(u.unitId) : canSeeAllUnits))
+      .map(u => ({
+        user: u,
+        profile: computeLeadershipProfile({
+          completions, templates, closures, units: unitsInScope, leader: u, today,
+        }),
+      }))
+      .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
+        || b.profile.teamChecklists - a.profile.teamChecklists);
+  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser]);
 
   // Perfil do colaborador selecionado (visão do líder)
   if (selected) {
@@ -9720,17 +10222,85 @@ export function EquipeView({ currentUser, users, completions, accent, canSeeAllU
   // Lista da equipe
   return (
     <div style={{ padding: '14px 14px 28px' }}>
-      <Eyebrow>Ranking da equipe · reconheça pelo desempenho</Eyebrow>
+      <Eyebrow>
+        {groupBy === 'lideranca' ? 'Ranking da liderança · medido pela equipe' : 'Ranking da equipe · reconheça pelo desempenho'}
+      </Eyebrow>
       <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
-        Ordenado pelo índice operacional: conclusão de tarefas (50%), críticos em dia (30%) e constância (20%).
+        {groupBy === 'lideranca'
+          ? 'Índice de liderança: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%). Últimos 30 dias.'
+          : 'Ordenado pelo índice operacional: conclusão de tarefas (50%), críticos em dia (30%) e constância (20%).'}
       </p>
 
-      <div className="flex gap-2" style={{ marginBottom: 12 }}>
+      <div className="flex gap-2" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
         <PillButton active={groupBy === 'unidade'} accent={accent} onClick={() => setGroupBy('unidade')}>Por unidade</PillButton>
         <PillButton active={groupBy === 'setor'} accent={accent} onClick={() => setGroupBy('setor')}>Por setor</PillButton>
+        <PillButton active={groupBy === 'lideranca'} accent={accent} onClick={() => setGroupBy('lideranca')}>Liderança</PillButton>
       </div>
 
-      {groups.length === 0 ? (
+      {groupBy === 'lideranca' && (
+        leaders.length === 0 ? (
+          <EmptyState title="Nenhuma liderança no seu escopo"
+            desc="O ranking mede liderança, gerência e diretoria pelo resultado da equipe. Cadastre alguém nesses papéis para ele aparecer aqui." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {leaders.map(({ user, profile }, i) => {
+              const escopo = user.unitId
+                ? (units.find(u => u.id === user.unitId)?.name || 'loja')
+                : 'todas as lojas';
+              return (
+                <div key={user.id} style={{
+                  background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`,
+                  borderLeft: `4px solid ${accent}`, padding: '14px 16px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <RankBadge pos={i + 1} />
+                    <Avatar user={user} size={36} bg={`${accent}18`} fg={accent} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                      <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                        {ROLE_LABELS[user.role] || user.role} · {escopo} · {profile.teamChecklists} checklists da equipe
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink }}>
+                        {profile.index == null ? '—' : profile.index}
+                      </p>
+                      <p style={{ fontSize: T.label, color: C.mutedLight }}>índice</p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+                    {profile.parts.map(part => (
+                      <div key={part.key} style={{ flex: 1, minWidth: 88 }}>
+                        <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{part.label}</p>
+                        <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>
+                          {part.value == null ? '—' : `${part.value}%`}
+                        </p>
+                        {/* O número bruto embaixo do percentual: "80%" sozinho
+                            não diz se são 4 de 5 ou 400 de 500, e a diferença
+                            muda o que a gestão faz com a informação. */}
+                        <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 1 }}>
+                          {part.key === 'prazo' && (profile.onTimeTotal ? `${profile.onTimeDone}/${profile.onTimeTotal}` : 'sem prazo definido')}
+                          {part.key === 'aderencia' && (profile.expected ? `${profile.doneChecklists}/${profile.expected}` : 'nada previsto')}
+                          {part.key === 'conferidos' && (profile.reviewable ? `${profile.reviewedByMe}/${profile.reviewable}` : 'nada a conferir')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {profile.pending > 0 && (
+                    <p style={{ fontSize: T.label, color: C.warning, fontWeight: W.semibold, marginTop: 8 }}>
+                      {profile.pending} execuç{profile.pending === 1 ? 'ão' : 'ões'} aguardando conferência · Relatórios → Execuções do período
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {groupBy === 'lideranca' ? null : groups.length === 0 ? (
         <EmptyState title="Ninguém na equipe" desc="Não há colaboradores nem liderança ativos com execuções no seu escopo." />
       ) : groups.map(g => (
         <div key={g.key} style={{ marginBottom: 18 }}>
@@ -10454,6 +11024,32 @@ function AppInner() {
     try { await dbSaveClosures(next); } catch (e) { console.error('saveClosures', e); }
   };
 
+  /**
+   * Conferência de uma execução pela liderança. Devolve true/false — a UI que
+   * mostra o erro é o modal, que é onde a pessoa está olhando.
+   *
+   * O estado local é atualizado com o resultado ANTES de qualquer refetch:
+   * a conferência muda o índice da liderança na hora, e esperar o próximo
+   * carregamento faria o número parecer travado.
+   */
+  const reviewCompletionAndSync = async (completionId, { note = null, reviewed = true } = {}) => {
+    try {
+      await reviewCompletion(completionId, { note, reviewed });
+      setCompletions(prev => (prev || []).map(c => (c.id === completionId ? {
+        ...c,
+        reviewedBy: reviewed ? currentUser.id : null,
+        reviewedByName: reviewed ? currentUser.name : null,
+        reviewedAt: reviewed ? new Date().toISOString() : null,
+        reviewNote: reviewed ? (note || null) : null,
+      } : c)));
+      track('completion_reviewed', { source: 'relatorios', metadata: { completion_id: completionId, undone: !reviewed, has_note: !!note } });
+      return true;
+    } catch (e) {
+      console.error('reviewCompletion', e);
+      return false;
+    }
+  };
+
   // ── Foto de perfil ─────────────────────────────────────────────────────────
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
@@ -10876,9 +11472,9 @@ function AppInner() {
             accent={unit.color}
           />
         )}
-        {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
+        {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} activeTypes={ACTIVE_TYPES} />
+          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}

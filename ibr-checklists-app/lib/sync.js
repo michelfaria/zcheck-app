@@ -245,6 +245,13 @@ export async function fetchCompletions() {
         operatorName: row.operator_name,
         operatorUserId: row.operator_user_id,
         items: row.items,
+        // Conferência pela liderança (20260726_conferencia_lideranca.sql). O
+        // select é `*`, então antes da migration estes campos chegam undefined
+        // e viram null aqui — nenhum caminho novo precisa de fallback.
+        reviewedBy: row.reviewed_by ?? null,
+        reviewedByName: row.reviewed_by_name ?? null,
+        reviewedAt: row.reviewed_at ?? null,
+        reviewNote: row.review_note ?? null,
       }));
       await cache.set('ibr_completions', mapped);
       console.log('[Supabase] Loaded', mapped.length, 'completions');
@@ -296,6 +303,34 @@ async function pushCompletion(record) {
   };
   const { error } = await db().from('completions').upsert(row, { onConflict: 'id' });
   if (error) throw error;
+}
+
+// ── Conferência da liderança ─────────────────────────────────────────────────
+//
+// Sempre pela RPC: ela lê o revisor do TOKEN, então ninguém assina conferência
+// com o nome de outro, e recusa quem não for liderança/gerência/diretoria. Um
+// update direto na tabela seria aceito pelo RLS (que escopa por empresa, não
+// por papel) e a nota da liderança viraria autodeclaração.
+//
+// Sem fila offline, ao contrário da execução: conferir é um ato de revisão, não
+// de operação — quem confere está sentado com o relatório aberto, e uma fila
+// silenciosa faria a liderança achar que conferiu algo que nunca chegou.
+export async function reviewCompletion(completionId, { note = null, reviewed = true } = {}) {
+  const { error } = await db().rpc('review_completion', {
+    p_completion_id: completionId,
+    p_note: note,
+    p_reviewed: reviewed,
+  });
+  if (error) throw error;
+
+  // Espelha no cache para a lista não voltar ao estado antigo num reload
+  // offline — o mesmo cuidado que saveUserAvatar já toma.
+  try {
+    const cached = await cache.get('ibr_completions');
+    if (Array.isArray(cached)) {
+      await cache.set('ibr_completions', cached.map(c => (c.id === completionId ? { ...c, reviewedAt: reviewed ? new Date().toISOString() : null } : c)));
+    }
+  } catch (_) {}
 }
 
 // ── Photos ────────────────────────────────────────────────────────────────────
