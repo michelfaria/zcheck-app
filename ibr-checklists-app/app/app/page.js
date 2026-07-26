@@ -3606,7 +3606,20 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 
   const save = () => {
     const cleanItems = items.filter(i => i.text.trim());
-    if (!name.trim() || cleanItems.length === 0) return;
+    const vazios = items.length - cleanItems.length;
+    // As duas saídas silenciosas daqui explicavam "adicionei um item e não
+    // salvou": item sem texto era descartado sem avisar, e com o nome vazio (ou
+    // nenhum item preenchido) o botão simplesmente não reagia.
+    if (!name.trim()) { showToast('Dê um nome ao checklist antes de salvar.'); return; }
+    if (cleanItems.length === 0) {
+      showToast(vazios > 0
+        ? 'Escreva o texto das tarefas — nenhuma tem descrição ainda.'
+        : 'Adicione pelo menos uma tarefa.');
+      return;
+    }
+    if (vazios > 0) {
+      showToast(`${vazios} tarefa${vazios > 1 ? 's' : ''} sem texto não ${vazios > 1 ? 'foram salvas' : 'foi salva'}.`);
+    }
     onSave({
       id: template?.id, name: name.trim(), deadline: deadline || null,
       shift,
