@@ -3529,19 +3529,30 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
     const getY = ev => type === 'touch' ? ev.touches[0].clientY : ev.clientY;
     const startY = getY(e);
 
-    // Snapshot card height once at start
-    const container = document.getElementById('item-list-container');
-    const firstCard = container?.children[0];
-    const cardH = firstCard ? firstCard.getBoundingClientRect().height + 8 : 80; // 8 = gap
+    // Nada de altura fixa: o alvo sai da posição REAL dos cards. A conta antiga
+    // fotografava a altura do primeiro card e dividia o deslocamento por ela —
+    // com o card de item medindo ~563px (ele carrega o editor de orientação),
+    // era preciso arrastar mais de meia tela para andar UMA posição, e o gesto
+    // normal devolvia shift 0: o item voltava para o lugar e o arraste parecia
+    // não funcionar.
 
     dragRef.current = { id, startIndex: index, overIndex: index };
     setDragState({ id, startIndex: index, overIndex: index });
 
     const onMove = ev => {
       if (type === 'touch') ev.preventDefault();
-      const dy = getY(ev) - startY;
-      const shift = Math.round(dy / cardH);
-      const newOver = Math.max(0, Math.min(items.length - 1, index + shift));
+      const y = getY(ev);
+      const kids = [...(document.getElementById('item-list-container')?.children || [])];
+      let newOver = dragRef.current?.overIndex ?? index;
+      for (let i = 0; i < kids.length; i++) {
+        const r = kids[i].getBoundingClientRect();
+        if (y >= r.top && y <= r.bottom) { newOver = i; break; }
+      }
+      const primeiro = kids[0]?.getBoundingClientRect();
+      const ultimo = kids[kids.length - 1]?.getBoundingClientRect();
+      if (primeiro && y < primeiro.top) newOver = 0;
+      if (ultimo && y > ultimo.bottom) newOver = kids.length - 1;
+      newOver = Math.max(0, Math.min(items.length - 1, newOver));
       if (newOver !== dragRef.current.overIndex) {
         dragRef.current.overIndex = newOver;
         setDragState(prev => prev ? { ...prev, overIndex: newOver } : null);
@@ -3685,6 +3696,13 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                 >
                   <span style={{ fontSize: 14, color: C.muted, lineHeight: 1 }}>≡</span>
                 </div>
+                {/* Setas: reordenar sem arrastar. Com card de ~563px, arrastar é
+                    inviável no celular — e `moveItem` existia sem nenhum botão. */}
+                <button onClick={() => moveItem(index, -1)} disabled={index === 0}
+                  title="Mover para cima" aria-label="Mover para cima"
+                  style={{ background: 'none', border: 'none', padding: '0 4px', lineHeight: 1,
+                    fontSize: 11, color: index === 0 ? C.mutedLight : C.muted,
+                    cursor: index === 0 ? 'default' : 'pointer' }}>▲</button>
                 {/* Tappable position number */}
                 <button
                   onClick={() => {
@@ -3702,6 +3720,11 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                 >
                   <span className="font-mono-ibr" style={{ fontSize: 10, color: unit.color, fontWeight: W.semibold, lineHeight: 1, textDecoration: 'underline dotted' }}>{index + 1}</span>
                 </button>
+                <button onClick={() => moveItem(index, 1)} disabled={index === items.length - 1}
+                  title="Mover para baixo" aria-label="Mover para baixo"
+                  style={{ background: 'none', border: 'none', padding: '0 4px', lineHeight: 1,
+                    fontSize: 11, color: index === items.length - 1 ? C.mutedLight : C.muted,
+                    cursor: index === items.length - 1 ? 'default' : 'pointer' }}>▼</button>
               </div>
               <textarea
                 value={item.text}
