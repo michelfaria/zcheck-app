@@ -3606,6 +3606,9 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 
   const updateItem = (id, patch) => setItems(items.map(i => i.id === id ? { ...i, ...patch } : i));
   const addItem = () => setItems([...items, { id: uid(), text: '', critical: false, required: false, photoRequired: false }]);
+  // Botão gêmeo no topo: com card de item alto, chegar ao botão do fim exige
+  // rolar o checklist inteiro. Insere na posição 1 — é onde o campo aparece.
+  const addItemTop = () => setItems([{ id: uid(), text: '', critical: false, required: false, photoRequired: false }, ...items]);
   const removeItem = id => setItems(items.filter(i => i.id !== id));
   const moveItem = (index, direction) => {
     const target = index + direction;
@@ -3660,7 +3663,14 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
       </div>
 
       <Eyebrow>Itens do checklist</Eyebrow>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Segure e arraste o <span style={{ fontWeight: W.semibold }}>≡</span> para reordenar. Toque no número para mover para uma posição específica.</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Use <span style={{ fontWeight: W.semibold }}>▲▼</span> ou arraste o <span style={{ fontWeight: W.semibold }}>≡</span> para reordenar. Toque no número para mover para uma posição específica.</p>
+      <button
+        onClick={addItemTop}
+        className="flex items-center justify-center gap-2 w-full py-2.5 mt-2"
+        style={{ borderRadius: 6, border: `1px dashed ${C.border}`, fontWeight: W.semibold, color: C.muted, background: 'none' }}
+      >
+        <Plus size={16} /> Adicionar item no topo
+      </button>
       <div className="space-y-2 mt-2" id="item-list-container">
         {dragState && (
           <div style={{
