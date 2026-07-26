@@ -92,16 +92,23 @@ export async function saveTemplates(templates, changedIds = null) {
     if (toSave.length === 0) return;
 
     // Upsert one by one to guarantee postgres_changes fires for each row
+    const falhas = [];
     for (const t of toSave) {
       const { error } = await db().from('templates').upsert({
         id: t.id, unit_id: t.unitId, sector: t.sector,
         shift: t.shift, name: t.name, deadline: t.deadline, items: t.items,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
-      if (error) console.error('saveTemplates: upsert error', error);
+      if (error) { console.error('saveTemplates: upsert error', t.name, error); falhas.push(`${t.name}: ${error.message}`); }
     }
-    console.log(`[Sync] Saved ${toSave.length} template(s) to Supabase`);
-  } catch (e) { console.warn('saveTemplates: Supabase error', e); }
+    console.log(`[Sync] Saved ${toSave.length - falhas.length}/${toSave.length} template(s) to Supabase`);
+    // Antes o erro do banco morria num console.error e a tela dizia "Checklist
+    // criado!" do mesmo jeito. Quem salva precisa poder contar a verdade.
+    if (falhas.length) throw new Error(falhas.join(' | '));
+  } catch (e) {
+    console.warn('saveTemplates: Supabase error', e);
+    throw e;
+  }
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────

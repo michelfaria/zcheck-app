@@ -4271,7 +4271,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
         ...(i.photoRequired ? { photoRequired: true } : {}),
       })),
     };
-    onSaveTemplates([...templates, newTpl]);
+    Promise.resolve(onSaveTemplates([...templates, newTpl])).catch(() => {});
     // Mede quais verticais adotam — é o dado que orienta a próxima curadoria.
     track('template_adopted', { source: 'library', unitId: libUnit,
       metadata: { library_id: libPreview.id, vertical: libPreview.vertical, momento: m } });
@@ -4288,7 +4288,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       name: `${dupSource.name} (cópia)`,
       items: (dupSource.items || []).map(i => ({ ...i, id: uid() })),
     };
-    onSaveTemplates([...templates, newTpl]);
+    Promise.resolve(onSaveTemplates([...templates, newTpl])).catch(() => {});
     setDupSource(null); setDupSector('');
     setNovoMode(null);
     flashSuccess();
@@ -4317,7 +4317,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
   if (!novoSector) novoMissing.push('escolher o setor');
   if (novoItems.filter(i => i.text.trim()).length === 0) novoMissing.push('descrever pelo menos uma tarefa');
 
-  const handleSaveNovo = () => {
+  const handleSaveNovo = async () => {
     if (novoMissing.length) return;
     const typeName = novoType === '__custom__' ? novoCustomType.trim() : (availableTypes.find(t => t.id === novoType)?.name || novoType);
     if (!typeName || !novoSector || novoItems.filter(i => i.text.trim()).length === 0) return;
@@ -4341,7 +4341,15 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
         : ['Manhã', 'Tarde'],
       items: cleanItems,
     };
-    onSaveTemplates([...templates, newTpl]);
+    // Espera a gravação: o toast de sucesso saía antes de saber se o banco
+    // tinha aceitado, e o formulário era limpo de qualquer jeito — quem perdia
+    // a gravação perdia junto o que tinha digitado.
+    try {
+      await onSaveTemplates([...templates, newTpl]);
+    } catch (_) {
+      setNovoSaving(false);   // saveTemplates já avisou o motivo no toast
+      return;                 // mantém o formulário preenchido para tentar de novo
+    }
     setNovoSuccess(true);
     showToast('Checklist criado! Ajuste em "Checklists".');
     setNovoName(''); setNovoType(''); setNovoCustomType('');
@@ -4351,7 +4359,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
     setTimeout(() => setNovoSuccess(false), 3000);
   };
 
-  const handleSave = tpl => {
+  const handleSave = async tpl => {
     const { copies, ...tplData } = tpl;
     let next;
     if (tplData.id) {
@@ -4437,7 +4445,13 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       });
     }
 
-    onSaveTemplates(next, changedIds.length ? changedIds : null);
+    // Aguarda de verdade: fechar o editor e piscar "salvo" antes da resposta do
+    // banco fazia uma tarefa recusada sumir da tela como se tivesse gravado.
+    try {
+      await onSaveTemplates(next, changedIds.length ? changedIds : null);
+    } catch (_) {
+      return;   // saveTemplates já mostrou o motivo; o editor fica aberto
+    }
     setEditing(null);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -4448,7 +4462,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
       const supabase = (await import('../../lib/supabase')).authedSupabase();
       await supabase.from('templates').delete().eq('id', id);
     } catch(e) {}
-    onSaveTemplates(templates.filter(t => t.id !== id));
+    Promise.resolve(onSaveTemplates(templates.filter(t => t.id !== id))).catch(() => {});
   };
 
   if (editing) {
@@ -10104,7 +10118,13 @@ function AppInner() {
     setTemplates([...next]);
     try {
       await dbSaveTemplates(next, changedIds);
-    } catch (e) { console.error('saveTemplates', e); }
+    } catch (e) {
+      console.error('saveTemplates', e);
+      // O estado local já mostra o checklist; se o banco recusou, dizer isso é
+      // o mínimo — senão o gestor só descobre quando some no próximo reload.
+      showToast(`Não foi possível salvar no servidor: ${e?.message || 'tente de novo.'}`);
+      throw e;
+    }
   };
 
   const saveCompletion = async record => {
