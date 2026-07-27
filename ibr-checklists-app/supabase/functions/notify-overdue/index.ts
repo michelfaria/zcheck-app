@@ -1,8 +1,20 @@
-// IBR Checklists — notify-overdue v7
+// IBR Checklists — notify-overdue v8
 //
-// v7 muda três coisas, e as três vieram de um mesmo achado: a função lia o
-// banco com a ANON KEY.
+// ── v8, 27/07/2026: a entrega do push nunca tinha sido verificada ──────────
+// A v7 ressuscitou a função, e a primeira execução viva expôs três defeitos na
+// etapa de envio, todos antigos:
+//   1. o item era marcado como "avisado" INCONDICIONALMENTE, mesmo com zero
+//      alvo ou zero envio bem-sucedido — um dia de falha total ficava marcado e
+//      os alertas se perdiam em silêncio (foi o que aconteceu em 27/07). Agora
+//      só marca o que de fato saiu (`entregues > 0`), e a chave `notified_` só
+//      é gravada se houve algo a marcar.
+//   2. o papel `lideranca` (posterior a esta função) não estava entre os que
+//      recebem o aviso de uma loja — numa loja sem inscrição própria, ninguém.
+//   3. inscrição expirada (404/410) só era logada, nunca removida — a função
+//      falharia nela todos os dias. Agora é podada.
+// O retorno agora detalha sent/avisados/semAlvo/falhas/inscricoesRemovidas.
 //
+// ── v7: a função lia o banco com a ANON KEY ────────────────────────────────
 // 1. SERVICE_ROLE em vez de anon. A anon key é a chave pública que vai no
 //    bundle; usá-la do lado do servidor obrigava o banco a manter aberto para
 //    QUALQUER pessoa tudo o que esta função precisava ler e escrever. Era isso
@@ -58,7 +70,7 @@ const falha = (etapa: string, e: any) => {
 };
 
 Deno.serve(async () => {
-  console.log('notify-overdue v7 started');
+  console.log('notify-overdue v8 started');
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -119,8 +131,16 @@ Deno.serve(async () => {
       { headers: { 'Content-Type': 'application/json' } });
   }
 
+  // Papéis que recebem o aviso de uma loja além de quem está lotado nela.
+  // `lideranca` entrou depois que esta função foi escrita e ficou de fora até
+  // 27/07/2026 — numa loja sem inscrição própria, ninguém era alvo.
+  const PAPEIS_AMPLOS = ['gestao', 'gerencia', 'lideranca'];
+
   let sent = 0;
+  let semAlvo = 0;
   const avisadosAgora: string[] = [];
+  const falhas: Record<string, number> = {};
+  const mortas = new Set<string>();
 
   for (const t of atrasados) {
     const empresa = t.company_id ?? empresaDaLoja.get(t.unit_id) ?? null;
@@ -129,31 +149,62 @@ Deno.serve(async () => {
       // Empresa é barreira, não preferência: sem isso o service_role manda o
       // atraso de um cliente para a diretoria de outro.
       if (empresa == null || empresaDoSub !== empresa) return false;
-      return s.unit_id === t.unit_id || s.role === 'gestao' || s.role === 'gerencia';
+      return s.unit_id === t.unit_id || PAPEIS_AMPLOS.includes(s.role);
     });
+
+    if (alvos.length === 0) {
+      // NÃO marca como avisado: sem ninguém para avisar, o aviso não aconteceu.
+      // Assim que alguém da loja ativar a notificação, a próxima execução pega.
+      semAlvo++;
+      continue;
+    }
+
     const payload = JSON.stringify({
       title: `⚠ Checklist atrasado — ${String(t.unit_id ?? '').toUpperCase()}`,
       body: `${t.name} (${t.sector}) — prazo: ${t.deadline}`,
     });
+
+    let entregues = 0;
     for (const s of alvos) {
       try {
         const sub = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
         const r = await webpush.sendNotification(sub, payload, { TTL: 86400 });
-        if (r.statusCode >= 200 && r.statusCode < 300) sent++;
+        if (r.statusCode >= 200 && r.statusCode < 300) { sent++; entregues++; }
       } catch (e: any) {
-        console.error(`Push error: ${e.statusCode} ${e.body}`);
+        const code = String(e?.statusCode ?? 'erro');
+        falhas[code] = (falhas[code] || 0) + 1;
+        console.error(`Push error: ${code} ${e?.body ?? ''}`);
+        // 404/410 = o serviço de push diz que esta inscrição não existe mais.
+        // Sem podar, a função falha nela todo dia, para sempre.
+        if (e?.statusCode === 404 || e?.statusCode === 410) mortas.add(s.endpoint);
       }
     }
-    avisadosAgora.push(t.id);
+
+    // Só marca como avisado o que REALMENTE saiu. Até 27/07/2026 esta linha
+    // rodava incondicionalmente: um dia em que todos os envios falhavam ficava
+    // marcado como avisado e os alertas daquele dia se perdiam em silêncio.
+    if (entregues > 0) avisadosAgora.push(t.id);
   }
 
-  const { error: eUp } = await supabase.from('config').upsert(
-    { key: notifKey, value: JSON.stringify([...jaAvisados, ...avisadosAgora]), updated_at: new Date().toISOString() },
-    { onConflict: 'key' },
-  );
-  if (eUp) return falha('config upsert', eUp);
+  if (mortas.size > 0) {
+    const { error: eDel } = await supabase
+      .from('push_subscriptions').delete().in('endpoint', [...mortas]);
+    if (eDel) console.error('falha ao podar inscrições mortas:', eDel.message);
+    else console.log(`Inscrições mortas removidas: ${mortas.size}`);
+  }
 
-  console.log(`Done. Sent: ${sent}`);
-  return new Response(JSON.stringify({ ok: true, sent, atrasados: atrasados.length }),
-    { headers: { 'Content-Type': 'application/json' } });
+  if (avisadosAgora.length > 0) {
+    const { error: eUp } = await supabase.from('config').upsert(
+      { key: notifKey, value: JSON.stringify([...jaAvisados, ...avisadosAgora]), updated_at: new Date().toISOString() },
+      { onConflict: 'key' },
+    );
+    if (eUp) return falha('config upsert', eUp);
+  }
+
+  console.log(`Done. Sent: ${sent}, avisados: ${avisadosAgora.length}, semAlvo: ${semAlvo}, falhas: ${JSON.stringify(falhas)}`);
+  return new Response(JSON.stringify({
+    ok: true, sent, atrasados: atrasados.length,
+    avisados: avisadosAgora.length, semAlvo,
+    falhas, inscricoesRemovidas: mortas.size,
+  }), { headers: { 'Content-Type': 'application/json' } });
 });

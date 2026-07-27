@@ -89,6 +89,42 @@
 -- a verificação, no mesmo resultado. Os `raise warning` continuam nos blocos de
 -- exceção, para quem rodar por psql, mas nunca são a única via.
 --
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║ RESULTADO REAL EM PRODUÇÃO — rodada em 26/07/2026. Leia antes de          ║
+-- ║ acreditar no diagnóstico acima: as duas hipóteses dele foram REFUTADAS.   ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+--
+--   · `public.users` NÃO tinha grant nenhum para o anon quando esta migration
+--     rodou. O bloco de diagnóstico (que lê `pg_class.relacl`) não devolveu uma
+--     linha sequer para ela, e a verificação 1 deu zero por caminho
+--     independente — `has_table_privilege`, que também pegaria herança de
+--     PUBLIC. Ou os grants saíram entre o diagnóstico e a execução, ou a
+--     leitura original vinha de fonte que reportava outra coisa.
+--
+--   · As quatro `*_anon_legacy` NÃO existiam — todas voltaram como `ok`. O
+--     segundo bloco da tenant_03 VALEU, e a "consequência de escopo" alertada
+--     acima não se concretizou: não havia escrita anônima aberta em
+--     `companies`.
+--
+--   · O único "antes" foi `SELECT para anon` nos quatro metadados, que já era
+--     o estado desejado. Nas 12 tabelas da lista fixa, esta migration foi
+--     no-op.
+--
+-- O valor dela veio da VERIFICAÇÃO, não do revoke — dois achados que nenhuma
+-- varredura anterior pegava:
+--
+--   1. a verificação 11 devolveu 1: o anon tinha ALL em `public.events`,
+--      incluindo SELECT, DELETE e TRUNCATE. Fechado pela tenant_03d.
+--
+--   2. a verificação 7 devolveu 4: FALSO POSITIVO desta verificação, que conta
+--      qualquer policy de SELECT não chamada `*_anon_read`. São as
+--      `*_public_read` — todas SELECT, nenhuma é escrita anônima. Elas têm um
+--      problema próprio, de vazamento entre tenants, registrado na 03d.
+--
+-- Lição que vale para a próxima varredura: partir de lista fixa foi o erro
+-- estrutural. Foi a auditoria ABERTA do rodapé — a que varre o schema inteiro
+-- em vez de nomes conhecidos — que achou as oito tabelas da 03d.
+--
 -- ── O diálogo que o SQL Editor vai abrir, e qual botão apertar ──────────────
 -- Ao rodar, o Supabase interrompe com "Potential issues detected", listando:
 --   1. "This query includes destructive operations" — é verdade e é o objetivo:

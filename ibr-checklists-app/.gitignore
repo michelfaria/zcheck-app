@@ -13,3 +13,6 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+
+# Supabase CLI — cache local do deploy de edge functions
+supabase/.temp/
