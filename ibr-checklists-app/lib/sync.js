@@ -11,6 +11,7 @@
 
 import { supabase, authedSupabase, getSessionToken } from './supabase';
 import { storageGet, storageSet, getSyncQueue, clearSyncQueue } from './storage';
+import { daysAgoStr } from './dates';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,12 +224,10 @@ export async function saveUsers(users) {
 export async function fetchCompletions() {
   // Always try Supabase first — isOnline() is unreliable at mount time
   try {
-    const since = new Date();
-    since.setDate(since.getDate() - 90);
     const { data, error } = await db()
       .from('completions')
       .select('*')
-      .gte('date', since.toISOString().slice(0, 10))
+      .gte('date', daysAgoStr(90))
       .order('completed_at', { ascending: false })
       .limit(1000);
     if (error) throw error;
@@ -351,12 +350,10 @@ export async function reviewCompletion(completionId, { items = [], note = null, 
  */
 export async function fetchTaskReviews() {
   try {
-    const since = new Date();
-    since.setDate(since.getDate() - 90);
     const { data, error } = await db()
       .from('task_reviews')
       .select('completion_id, item_id, verdict, note, reviewed_by_name, reviewed_at, operator_user_id, date')
-      .gte('date', since.toISOString().slice(0, 10));
+      .gte('date', daysAgoStr(90));
     if (error) throw error;
     const mapped = (data || []).map(r => ({
       completionId: r.completion_id,

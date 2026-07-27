@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL } from './supabase';
 import { adminFromRequest } from './adminAuth';
+import { daysAgoStr } from './dates';
 
 // Guard + cliente de dados das rotas /api/admin/* do ZCheck Core.
 // O middleware já barra sem cookie válido; a re-verificação aqui é defesa em
@@ -28,8 +29,9 @@ export const jsonNoStore = (body, status = 200) =>
 
 // Data local (America/Sao_Paulo) N dias atrás, como 'YYYY-MM-DD' — para filtrar
 // as views por `day` sem depender do fuso do servidor.
-export function spDaysAgo(n) {
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  now.setDate(now.getDate() - n);
-  return now.toISOString().slice(0, 10);
-}
+//
+// A versão anterior fazia `new Date(new Date().toLocaleString('en-US', {timeZone}))`
+// e só acertava porque a Vercel roda em UTC; em `npm run dev` numa máquina em
+// Brasília ela voltava a somar 3h e virava o dia depois das 21h. `daysAgoStr`
+// não depende do fuso do processo.
+export const spDaysAgo = n => daysAgoStr(n);

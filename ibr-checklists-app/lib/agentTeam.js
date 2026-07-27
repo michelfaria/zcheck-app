@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { spDaysAgo } from './adminApi';
+import { todayStr, weekdayOf } from './dates';
 import { monthlyValueFor, billingState } from './plans';
 import { sendPlainEmail } from './email';
 
@@ -526,7 +527,7 @@ evitaria o erro ou repetiria o acerto — não proponha refino genérico)
 
 // ── Ciclo diário completo (cron 7h ou botão) ────────────────────────────────
 export async function runDailyCycle(db, { forceWeekly = false } = {}) {
-  const isMondaySP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay() === 1;
+  const isMondaySP = weekdayOf(todayStr()) === 1;
   const weekly = forceWeekly || isMondaySP;
   await assertBudget(db, DIRECTORS.length + 2 + (weekly ? 2 : 0));
   const client = claude();

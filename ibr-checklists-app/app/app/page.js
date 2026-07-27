@@ -33,6 +33,8 @@ import {
 } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
+// O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
+import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr } from '../../lib/dates';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -713,8 +715,6 @@ export function generateSeedTemplates() {
 
 const SEED_TEMPLATES = generateSeedTemplates();
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const yesterdayStr = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); };
 const truncName = (name, max = 22) => name && name.length > max ? name.slice(0, max).trim() + '…' : name;
 
 // A template's shift can be a single shift or an array (e.g. Intermediário runs in both).
@@ -734,8 +734,7 @@ const isItemApplicable = (item, dateStr, templateType) => {
   }
   // Check recurrence
   if (!item.recurrence || item.recurrence.length === 0) return true;
-  const weekday = new Date(`${dateStr}T00:00:00`).getDay();
-  return item.recurrence.includes(weekday);
+  return item.recurrence.includes(weekdayOf(dateStr));
 };
 const applicableItems = (template, dateStr) => {
   // Detect template type from name
@@ -760,12 +759,7 @@ function periodDates(periodId, from, to, selectedMonth) {
   if (periodId === 'custom') {
     if (!from || !to || from > to) return null;
     const out = [];
-    let d = new Date(`${from}T00:00:00`);
-    const end = new Date(`${to}T00:00:00`);
-    while (d <= end) {
-      out.push(d.toISOString().slice(0, 10));
-      d.setDate(d.getDate() + 1);
-    }
+    for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
     return out;
   }
   if (periodId === 'month') {
@@ -781,14 +775,7 @@ function periodDates(periodId, from, to, selectedMonth) {
   }
   const period = PERIODS.find(p => p.id === periodId);
   if (!period || period.days == null) return null;
-  const out = [];
-  const now = new Date();
-  for (let i = 0; i < period.days; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    out.push(d.toISOString().slice(0, 10));
-  }
-  return out;
+  return lastDays(period.days);
 }
 
 function filterCompletions(completions, f) {
@@ -1014,10 +1001,8 @@ function computeProductivity(completions) {
 export function generateSimulatedCompletions(templates, users, days = 7) {
   const completions = [];
   for (let offset = days - 1; offset >= 0; offset--) {
-    const d = new Date();
-    d.setDate(d.getDate() - offset);
-    const dateStr = d.toISOString().slice(0, 10);
-    const weekday = d.getDay();
+    const dateStr = daysAgoStr(offset);
+    const weekday = weekdayOf(dateStr);
 
     templates.forEach(t => {
       const items = t.items.filter(i => isItemApplicable(i, dateStr));
@@ -2183,9 +2168,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
   const sectors = currentUser?.sectorId ? visibleSectors(unit, currentUser.sectorId, sectorRows) : getSectorList(activeSectorGroup);
 
   const shiftDate = (delta) => {
-    const d = new Date(`${viewDate}T00:00:00`);
-    d.setDate(d.getDate() + delta);
-    const next = d.toISOString().slice(0, 10);
+    const next = addDays(viewDate, delta);
     if (next <= today) setSelectedDate(next);
   };
 
@@ -2232,9 +2215,9 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
       .sort((a, b) => b.rate - a.rate || b.checklists - a.checklists);
   };
 
-  const yesterday = (() => { const d = new Date(`${today}T00:00:00`); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
+  const yesterday = addDays(today, -1);
   // last7 includes today + 6 previous days
-  const last7 = Array.from({length:7},(_,i)=>{ const d=new Date(`${today}T00:00:00`); d.setDate(d.getDate()-i); return d.toISOString().slice(0,10); });
+  const last7 = lastDays(7, today);
 
   const rateToday = calcRate(viewDate, unit.id, sectors);
   const rateYesterday = viewDate === today ? calcRate(yesterday, unit.id, sectors) : null;
@@ -8412,8 +8395,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   const recs = [];
 
   // 1. Itens críticos que ficaram pendentes ≥2× nos últimos 7 dias.
-  const last7 = [];
-  for (let i = 1; i <= 7; i++) { const d = new Date(); d.setDate(d.getDate() - i); last7.push(d.toISOString().slice(0, 10)); }
+  const last7 = lastDays(7, addDays(today, -1));
   const f7 = filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 });
   const hotspot = new Map();
   f7.forEach(c => (c.items || []).forEach(i => {
@@ -8513,14 +8495,12 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   // (b) Tendência de 7 dias (item-level), do mais antigo ao mais recente — é a
   // ordem de leitura de um gráfico de barras.
   const trend7 = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+  for (const ds of lastDays(7, today)) {
     const f = filterCompletions(completions, scopeUnitId ? { dates: [ds], unitId: scopeUnitId } : { dates: [ds] });
     const sm = summarizeCompletions(f);
     trend7.push({
       date: ds,
-      weekday: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').slice(0, 3),
+      weekday: new Date(`${ds}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '').slice(0, 3),
       rate: f.length ? Math.round(sm.rate) : 0,
       checklists: f.length,
       isToday: ds === today,
@@ -8548,8 +8528,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   // "7 dias" é o hábito, mas esconde o que quebrou nesta manhã. O gestor
   // alterna entre os dois na tela — o cálculo dos dois é barato e já está tudo
   // em memória.
-  const dates7 = [];
-  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); dates7.push(d.toISOString().slice(0, 10)); }
+  const dates7 = lastDays(7, today);
   const punctuality = {
     today: punctualityStats(tFiltered, templates, units),
     last7: punctualityStats(filterCompletions(completions, scopeFilter(dates7)), templates, units),
@@ -8598,12 +8577,10 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
 function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence }) {
   const today = todayStr();
   const wkThis = weekStartStr(today);
-  const dPrev = new Date(); dPrev.setDate(dPrev.getDate() - 7);
-  const wkPrev = weekStartStr(dPrev.toISOString().slice(0, 10));
+  const wkPrev = weekStartStr(addDays(today, -7));
 
   // Últimos 14 dias no escopo, agrupados por unidade × semana (item-level).
-  const dates14 = [];
-  for (let i = 0; i < 14; i++) { const d = new Date(); d.setDate(d.getDate() - i); dates14.push(d.toISOString().slice(0, 10)); }
+  const dates14 = lastDays(14, today);
   const f14 = filterCompletions(completions, scopeUnitId ? { dates: dates14, unitId: scopeUnitId } : { dates: dates14 });
   const perUnitWk = {};
   f14.forEach(c => {
@@ -9276,22 +9253,12 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
 /* ------------------------------ ID Operacional (H2) ------------------------------ */
 // Identidade operacional do colaborador, derivada das completions.
 // Foco em EVOLUÇÃO e qualidade/consistência (não quantidade pura — princípio de gamificação).
-const weekStartStr = dateStr => {
-  const d = new Date(`${dateStr}T00:00:00`);
-  const dow = (d.getDay() + 6) % 7; // 0 = segunda
-  d.setDate(d.getDate() - dow);
-  return d.toISOString().slice(0, 10);
-};
-
 function currentStreak(daySet) {
   if (daySet.size === 0) return 0;
   let streak = 0;
-  const d = new Date();
-  if (!daySet.has(todayStr())) d.setDate(d.getDate() - 1); // permite começar de ontem
-  for (;;) {
-    const s = d.toISOString().slice(0, 10);
-    if (daySet.has(s)) { streak++; d.setDate(d.getDate() - 1); } else break;
-  }
+  const today = todayStr();
+  let s = daySet.has(today) ? today : addDays(today, -1); // permite começar de ontem
+  while (daySet.has(s)) { streak++; s = addDays(s, -1); }
   return streak;
 }
 
@@ -9423,11 +9390,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
   // Janela de datas, do mais antigo ao mais recente.
-  const dates = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
-  }
+  const dates = lastDays(days);
 
   // Aderência: concluídos ÷ previstos, dia a dia, ignorando dias de folga.
   let expected = 0, doneChecklists = 0;
@@ -9595,11 +9558,7 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
     : (units || []);
   const scopeIds = new Set(scopeUnits.map(u => u.id));
 
-  const dates = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
-  }
+  const dates = lastDays(days);
   const dateSet = new Set(dates);
 
   const team = (completions || []).filter(c => scopeIds.has(c.unitId) && dateSet.has(c.date));
@@ -9789,11 +9748,9 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
   // liderança conferiu. Não varre o ano inteiro: se ninguém conferiu na última
   // semana, o assunto esfriou e um briefing de dez dias atrás é ruído.
   const JANELA = 7;
+  // Do mais recente ao mais antigo: o loop abaixo para no primeiro dia com dados.
   const dias = [];
-  for (let i = 1; i <= JANELA; i++) {
-    const d = new Date(`${today}T00:00:00`); d.setDate(d.getDate() - i);
-    dias.push(d.toISOString().slice(0, 10));
-  }
+  for (let i = 1; i <= JANELA; i++) dias.push(addDays(today, -i));
 
   for (const dia of dias) {
     const doDia = (completions || []).filter(c =>

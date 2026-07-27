@@ -19,6 +19,10 @@ Deno.serve(async () => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+  // -3h fixo = America/Sao_Paulo. O Brasil não tem horário de verão desde 2019,
+  // então isto casa com o `todayStr` do app (lib/dates.js). Se o DST voltar,
+  // trocar por Intl com timeZone — aqui não dá para importar lib/, a função é
+  // deployada isolada.
   const brNow = new Date(Date.now() - 3*60*60*1000);
   const todayStr = brNow.toISOString().slice(0,10);
   const timeNow = brNow.getHours()*60 + brNow.getMinutes();
