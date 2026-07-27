@@ -34,7 +34,7 @@ import {
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
-import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr } from '../../lib/dates';
+import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -755,7 +755,7 @@ const PERIODS = [
 ];
 
 // Returns the list of YYYY-MM-DD strings covered by a period (null for "all" / incomplete "custom").
-function periodDates(periodId, from, to, selectedMonth) {
+function periodDates(periodId, from, to, selectedMonth, tz) {
   if (periodId === 'custom') {
     if (!from || !to || from > to) return null;
     const out = [];
@@ -763,9 +763,9 @@ function periodDates(periodId, from, to, selectedMonth) {
     return out;
   }
   if (periodId === 'month') {
-    const [y, m] = (selectedMonth || todayStr().slice(0, 7)).split('-').map(Number);
+    const today = todayStr(tz);
+    const [y, m] = (selectedMonth || today.slice(0, 7)).split('-').map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
-    const today = todayStr();
     const out = [];
     for (let i = 1; i <= daysInMonth; i++) {
       const d = `${y}-${String(m).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
@@ -775,7 +775,7 @@ function periodDates(periodId, from, to, selectedMonth) {
   }
   const period = PERIODS.find(p => p.id === periodId);
   if (!period || period.days == null) return null;
-  return lastDays(period.days);
+  return lastDays(period.days, null, tz);
 }
 
 function filterCompletions(completions, f) {
@@ -914,7 +914,7 @@ function punctualityStats(filtered, templates, units) {
     if (ok) g.onTime += 1; else g.late += 1;
   };
   (filtered || []).forEach(c => {
-    const ok = completionOnTime(c, templates, deadlines);
+    const ok = completionOnTime(c, templates, deadlines, units);
     if (ok === null) { noDeadline += 1; return; }
     if (ok) onTime += 1; else late += 1;
     const uName = (units || []).find(u => u.id === c.unitId)?.name || c.unitId || 'Sem loja';
@@ -1622,7 +1622,9 @@ function ConfirmModal({ items, onCancel, onConfirm }) {
 
 function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) {
   const [completionRecord, setCompletionRecord] = useState(null); // shows celebration when set
-  const today = todayStr();
+  // O dia gravado na execução é o da LOJA que a executou — é ele que o prazo,
+  // o relatório e a aderência usam depois.
+  const today = todayStr(tzOf(unit));
   const items = applicableItems(template, today);
 
   const [itemStates, setItemStates] = useState(() =>
@@ -1977,7 +1979,7 @@ export const CHECKLIST_TYPE_ORDER = [
 export function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
-  const today = todayStr();
+  const today = todayStr(tzOf(unit));
   const sectorRows = useSectors();
   const sectors = visibleSectors(unit, currentUser?.sectorId, sectorRows);
 
@@ -2145,7 +2147,10 @@ function PhotoModal({ recordId, item, onClose }) {
 export function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const sectorRows = useSectors(); // linhas de sectors da empresa logada
-  const today = todayStr();
+  // "Hoje" do painel é o da loja em foco. Com o escopo na rede inteira não
+  // existe um dia único — usa-se o da loja base de quem está olhando, que é o
+  // mesmo critério do J.I.T.
+  const today = todayStr(tzOf(unit));
   const [selectedDate, setSelectedDate] = useState(today);
   const [viewingPhoto, setViewingPhoto] = useState(null);
   const viewDate = selectedDate;
@@ -2862,9 +2867,12 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   // Trocar de filtro estando na página 7 mostraria "nenhuma execução" num
   // recorte que tem dados — a página precisa voltar ao início.
   useEffect(() => { setExecPage(1); }, [period, unit?.id]);
-  const [customFrom, setCustomFrom] = useState(todayStr());
-  const [customTo, setCustomTo] = useState(todayStr());
-  const [selectedMonth, setSelectedMonth] = useState(todayStr().slice(0, 7));
+  // Datas do relatório na régua da loja em foco — "hoje" no seletor tem que ser
+  // o mesmo "hoje" das execuções que ele filtra.
+  const reportTz = tzOf(unit);
+  const [customFrom, setCustomFrom] = useState(() => todayStr(reportTz));
+  const [customTo, setCustomTo] = useState(() => todayStr(reportTz));
+  const [selectedMonth, setSelectedMonth] = useState(() => todayStr(reportTz).slice(0, 7));
   const [filterUnitId, setFilterUnitId] = useState(unit.id);
 
   // Keep filterUnitId in sync when the user switches loja in the header
@@ -2878,7 +2886,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   const [filterUserId, setFilterUserId] = useState('');
   const [groupBy, setGroupBy] = useState('tipo');
 
-  const dates = periodDates(period, customFrom, customTo, selectedMonth);
+  const dates = periodDates(period, customFrom, customTo, selectedMonth, reportTz);
   // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors
   const sectorGroupToSectors = (groupId, unitId) => {
     if (unitId !== 'ibr1' || !groupId) return null;
@@ -3174,7 +3182,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           <input
             type="month"
             value={selectedMonth}
-            max={todayStr().slice(0, 7)}
+            max={todayStr(reportTz).slice(0, 7)}
             onChange={e => setSelectedMonth(e.target.value)}
             style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${unit.color}`, borderRadius: 8, outline: 'none' }}
           />
@@ -3194,7 +3202,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           />
           <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>até</span>
           <input
-            type="date" value={customTo} min={customFrom} max={todayStr()} onChange={e => setCustomTo(e.target.value)}
+            type="date" value={customTo} min={customFrom} max={todayStr(reportTz)} onChange={e => setCustomTo(e.target.value)}
             style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
           />
         </div>
@@ -3442,7 +3450,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
                       {/* O atraso é dado de gestão, não decoração: é o que
                           alimenta os 40% do índice da liderança, então precisa
                           estar visível na mesma linha em que se confere. */}
-                      {completionOnTime(c, templates) === false && (
+                      {completionOnTime(c, templates, null, units) === false && (
                         <span style={{ color: C.critical, fontWeight: W.semibold }}> · fora do prazo</span>
                       )}
                     </p>
@@ -3547,12 +3555,13 @@ const VERDICTS = [
 ];
 
 function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOpenPhoto }) {
+  const units = useUnits(); // o prazo é o do relógio da loja que executou
   const [note, setNote] = useState(c.reviewNote || '');
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
   const [soPendencias, setSoPendencias] = useState(false);
   const jaConferido = !!c.reviewedAt;
-  const noPrazo = completionOnTime(c, templates);
+  const noPrazo = completionOnTime(c, templates, null, units);
 
   /**
    * Veredito por tarefa: { [itemId]: { verdict, note } }.
@@ -5749,7 +5758,13 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
   const saveEditUnit = async () => {
     if (!editUnit?.name.trim()) return;
     setSaving(true);
-    try { await onSaveUnit?.({ id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(), color: editUnit.color }); flash('Loja atualizada!'); setEditUnit(null); }
+    try {
+      await onSaveUnit?.({
+        id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(),
+        color: editUnit.color, timezone: editUnit.timezone || APP_TZ,
+      });
+      flash('Loja atualizada!'); setEditUnit(null);
+    }
     catch (e) { console.error(e); } finally { setSaving(false); }
   };
   /** Quantos checklists usam este tipo/setor — o número entra no aviso, para a
@@ -5940,19 +5955,59 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
           {(allUnits || UNITS).map(u => (
             <Ticket key={u.id} accent={u.color}>
               {editUnit?.id === u.id ? (
-                <div className="flex items-center gap-2">
-                  <input type="color" value={editUnit.color} onChange={e => setEditUnit(p => ({ ...p, color: e.target.value }))}
-                    style={{ width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
-                  <input value={editUnit.name} onChange={e => setEditUnit(p => ({ ...p, name: e.target.value }))}
-                    className="flex-1 px-2 py-2" style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', minWidth: 0 }} />
-                  <button onClick={saveEditUnit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: W.semibold, fontSize: 13, flexShrink: 0 }}>Salvar</button>
-                  <button onClick={() => setEditUnit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={editUnit.color} onChange={e => setEditUnit(p => ({ ...p, color: e.target.value }))}
+                      style={{ width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                    <input value={editUnit.name} onChange={e => setEditUnit(p => ({ ...p, name: e.target.value }))}
+                      className="flex-1 px-2 py-2" style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', minWidth: 0 }} />
+                    <button onClick={saveEditUnit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.success, fontWeight: W.semibold, fontSize: 13, flexShrink: 0 }}>Salvar</button>
+                    <button onClick={() => setEditUnit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><X size={16} /></button>
+                  </div>
+                  {/* Fuso em linha própria: no celular ele não cabe ao lado do
+                      nome, e é a configuração que mais precisa ser lida com
+                      calma — trocar errado desloca o dia da loja inteira. */}
+                  <label className="block">
+                    <span style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      Fuso horário
+                    </span>
+                    <select
+                      value={editUnit.timezone || APP_TZ}
+                      onChange={e => setEditUnit(p => ({ ...p, timezone: e.target.value }))}
+                      className="w-full px-2 py-2 mt-1"
+                      style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none' }}
+                    >
+                      {/* Fuso gravado fora da lista (importação, ajuste direto no
+                          banco) continua selecionável em vez de virar campo em
+                          branco que se perde no primeiro "Salvar". */}
+                      {!TIMEZONES.some(t => t.id === (editUnit.timezone || APP_TZ)) && (
+                        <option value={editUnit.timezone}>{editUnit.timezone}</option>
+                      )}
+                      {TIMEZONES.map(t => (
+                        <option key={t.id} value={t.id}>{t.label} — {t.hint}</option>
+                      ))}
+                    </select>
+                    <span style={{ fontSize: 11, color: C.muted, display: 'block', marginTop: 4 }}>
+                      Define o dia de operação e a hora dos prazos desta loja.
+                      Agora são {new Date().toLocaleTimeString('pt-BR', { timeZone: editUnit.timezone || APP_TZ, hour: '2-digit', minute: '2-digit' })} lá.
+                    </span>
+                  </label>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: u.color, flexShrink: 0 }} />
-                  <p style={{ fontWeight: W.semibold, color: C.ink, flex: 1, minWidth: 0 }}>{u.name}</p>
-                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color })} title="Editar"
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: W.semibold, color: C.ink }}>{u.name}</p>
+                    {/* Só aparece quando a loja NÃO está em Brasília: para o
+                        parque inteiro isto seria uma linha repetida sem
+                        informação, e o que importa é destacar a exceção. */}
+                    {tzOf(u) !== APP_TZ && (
+                      <p style={{ fontSize: 11, color: C.muted }}>
+                        {TIMEZONES.find(t => t.id === tzOf(u))?.label || tzOf(u)}
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color, timezone: tzOf(u) })} title="Editar"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><Settings2 size={16} /></button>
                   {(allUnits || UNITS).length > 1 && (
                     <button onClick={() => removeUnit(u)} title="Remover"
@@ -7042,8 +7097,10 @@ function AvatarPickerModal({ user, accent, onClose, onSave }) {
 
 function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
-  const today = todayStr();
   const [selectedUnitId, setSelectedUnitId] = useState(canSeeAllUnits ? unit.id : unit.id);
+  // O calendário de folgas é da loja SELECIONADA, não da loja base: marcar
+  // "hoje" numa loja em Manaus tem que casar com o dia lá.
+  const today = todayStr(tzOfUnit(units, selectedUnitId));
   const [month, setMonth] = useState(() => today.slice(0, 7)); // YYYY-MM
 
   const [year, mon] = month.split('-').map(Number);
@@ -8362,9 +8419,14 @@ const RECOMMENDATION_ICON = {
 
 // Deriva o J.I.T. 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
-export function buildJit(completions, templates, closures, units, scopeUnitId) {
-  const today = todayStr();
-  const yStr = yesterdayStr();
+//
+// `baseUnitId` só existe por causa do fuso: com o escopo na rede inteira não há
+// um "hoje" único (as lojas podem estar em fusos diferentes), então o dia é o
+// da loja base de quem está olhando. Com escopo de uma loja só, é o dela.
+export function buildJit(completions, templates, closures, units, scopeUnitId, baseUnitId = null) {
+  const tz = tzOfUnit(units, scopeUnitId || baseUnitId);
+  const today = todayStr(tz);
+  const yStr = addDays(today, -1);
   const unitIds = scopeUnitId ? [scopeUnitId] : units.map(u => u.id);
   const unitName = id => units.find(u => u.id === id)?.name || id;
 
@@ -8479,7 +8541,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
   // Análise automática que conecta pontos que um humano teria que garimpar:
   // tendência, falha crítica recorrente ou loja destoante. Hoje é rule-based;
   // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
-  const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence });
+  const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence, today });
 
   // ── Blocos extras, para a versão PÁGINA do J.I.T. (coluna lateral) ──────
   // Não entram no pop-up: ali a tela é estreita e o J.I.T. precisa ser curto.
@@ -8574,8 +8636,9 @@ export function buildJit(completions, templates, closures, units, scopeUnitId) {
 
 // Motor de insight (H4) — escolhe o padrão MAIS relevante dos dados recentes.
 // Prioridade: queda de tendência > falha crítica recorrente > loja destoante > estável.
-function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence }) {
-  const today = todayStr();
+// `today` vem de quem chama (buildJit), já resolvido no fuso da loja em escopo
+// — recalcular aqui daria um dia diferente para uma loja fora de Brasília.
+function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence, today }) {
   const wkThis = weekStartStr(today);
   const wkPrev = weekStartStr(addDays(today, -7));
 
@@ -9253,10 +9316,10 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
 /* ------------------------------ ID Operacional (H2) ------------------------------ */
 // Identidade operacional do colaborador, derivada das completions.
 // Foco em EVOLUÇÃO e qualidade/consistência (não quantidade pura — princípio de gamificação).
-function currentStreak(daySet) {
+function currentStreak(daySet, tz) {
   if (daySet.size === 0) return 0;
   let streak = 0;
-  const today = todayStr();
+  const today = todayStr(tz);
   let s = daySet.has(today) ? today : addDays(today, -1); // permite começar de ontem
   while (daySet.has(s)) { streak++; s = addDays(s, -1); }
   return streak;
@@ -9273,7 +9336,9 @@ function longestStreak(days) {
   return best;
 }
 
-function computeOperationalProfile(completions, userId, userName) {
+// `tz` é o da loja da pessoa: a sequência de dias seguidos tem que virar à
+// meia-noite dela, senão quem trabalha à noite em Manaus perde ou ganha um dia.
+function computeOperationalProfile(completions, userId, userName, tz) {
   const mine = (completions || [])
     .filter(c => c.operatorUserId === userId || c.operatorName === userName)
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
@@ -9309,7 +9374,7 @@ function computeOperationalProfile(completions, userId, userName) {
   });
 
   const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
-  const streak = currentStreak(new Set(days));
+  const streak = currentStreak(new Set(days), tz);
   const bestStreak = longestStreak(days);
 
   // Evolução: taxa de conclusão por semana (últimas 6 semanas com atividade).
@@ -9385,12 +9450,13 @@ function computeOperationalProfile(completions, userId, userName) {
  */
 function computeUnitProfile(completions, templates, closures, unit, days = 30, sector = null) {
   const uid = unit.id;
+  const tz = tzOf(unit); // a janela é a dos últimos N dias DELA
   const mine = (completions || [])
     .filter(c => c.unitId === uid && (!sector || c.sector === sector))
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
   // Janela de datas, do mais antigo ao mais recente.
-  const dates = lastDays(days);
+  const dates = lastDays(days, null, tz);
 
   // Aderência: concluídos ÷ previstos, dia a dia, ignorando dias de folga.
   let expected = 0, doneChecklists = 0;
@@ -9419,7 +9485,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   const criticalPending = critTotal - critDone;
 
   const activeDays = [...new Set(mine.map(c => c.date).filter(Boolean))];
-  const streak = currentStreak(new Set(activeDays));
+  const streak = currentStreak(new Set(activeDays), tz);
   const bestStreak = longestStreak(activeDays);
 
   // Evolução por semana (últimas 6 com atividade).
@@ -9488,16 +9554,22 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
  * contá-lo como atrasado puniria a liderança por uma regra que não existe. Fora
  * do numerador E do denominador.
  *
- * A comparação é em hora LOCAL de propósito: `completedAt` é ISO em UTC, mas
- * "fechamento até as 18:00" é o relógio da loja. `new Date('2026-07-26T18:00')`
- * sem sufixo Z é interpretado como local, que é exatamente o que se quer.
+ * "Fechamento até as 18:00" são 18:00 NO RELÓGIO DA LOJA — por isso o prazo é
+ * resolvido com o fuso dela, e não com o de quem abriu o painel. Sem `units`
+ * (chamadas antigas) cai no default de lib/dates.js, que é o que o parque
+ * inteiro usava antes de existir fuso por loja.
+ *
+ * Antes daqui usar `instantAt`, a comparação era `new Date('...T18:00')`, hora
+ * local do navegador: um fechamento pontual em Manaus aparecia atrasado para o
+ * gestor em São Paulo, e a diferença crescia com o tamanho da rede.
  */
-function completionOnTime(c, templates, index) {
+function completionOnTime(c, templates, index, units) {
   const deadline = index
     ? index.get(c.templateId)
     : (templates || []).find(t => t.id === c.templateId)?.deadline;
   if (!deadline || !c.date || !c.completedAt) return null;
-  return new Date(c.completedAt) <= new Date(`${c.date}T${deadline}:00`);
+  const limite = instantAt(c.date, deadline, tzOfUnit(units, c.unitId));
+  return limite ? new Date(c.completedAt) <= limite : null;
 }
 
 /**
@@ -9558,7 +9630,10 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
     : (units || []);
   const scopeIds = new Set(scopeUnits.map(u => u.id));
 
-  const dates = lastDays(days);
+  // Líder preso a uma loja mede pelo relógio dela; quem responde pela empresa
+  // toda mede pela primeira do escopo — não existe um dia único para a rede.
+  const tz = tzOf(scopeUnits[0]);
+  const dates = lastDays(days, null, tz);
   const dateSet = new Set(dates);
 
   const team = (completions || []).filter(c => scopeIds.has(c.unitId) && dateSet.has(c.date));
@@ -9566,7 +9641,7 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // ── No prazo ──
   let onTimeTotal = 0, onTimeDone = 0;
   team.forEach(c => {
-    const ok = completionOnTime(c, tpl);
+    const ok = completionOnTime(c, tpl, null, units);
     if (ok === null) return;
     onTimeTotal++;
     if (ok) onTimeDone++;
@@ -9870,8 +9945,8 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
     ? ((idUnits || []).find(u => u.id === targetUser.unitId)?.name || null)
     : (MANAGER_ROLES.includes(targetUser.role) ? 'Todas as lojas' : null);
   const p = useMemo(
-    () => computeOperationalProfile(completions, targetUser.id, targetUser.name),
-    [completions, targetUser.id, targetUser.name],
+    () => computeOperationalProfile(completions, targetUser.id, targetUser.name, tzOfUnit(idUnits, targetUser.unitId)),
+    [completions, targetUser.id, targetUser.name, idUnits],
   );
   // Score de produtividade da pessoa vs média da empresa (mesma régua do Relatórios)
   const prodScore = useMemo(() => {
@@ -10617,7 +10692,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
    * quadro nenhum: listar ali quem nunca trabalhou naquele setor seria ruído.
    */
   const rank = (scopeCompletions, candidates, onlyActive) => candidates
-    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name) }))
+    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name, tzOfUnit(units, u.unitId)) }))
     .filter(x => !onlyActive || x.profile.checklists > 0 || x.profile.tasksDone > 0)
     .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
       || b.profile.tasksDone - a.profile.tasksDone
@@ -10664,8 +10739,10 @@ export function EquipeView({ currentUser, users, completions, templates, closure
    */
   const leaders = useMemo(() => {
     if (groupBy !== 'lideranca') return [];
-    const today = todayStr();
     const unitsInScope = canSeeAllUnits ? units : units.filter(u => u.id === currentUser?.unitId);
+    // Ranking de liderança lado a lado precisa de uma régua só, senão duas
+    // lojas em fusos diferentes competiriam em janelas deslocadas.
+    const today = todayStr(tzOfUnit(units, currentUser?.unitId));
     const scopeIds = new Set(unitsInScope.map(u => u.id));
     return (users || [])
       .filter(u => MANAGER_ROLES.includes(u.role) && !u.suspended)
@@ -10891,6 +10968,12 @@ function AppInner() {
   const [dynamicSectors, setDynamicSectors] = useState([]);
   const [dynamicTypes, setDynamicTypes] = useState([]);
 
+  // Fuso da loja em foco — o "hoje" de tudo que o app decide por dia (briefing
+  // já visto, chave de localStorage, data do plano de ação). Declarado aqui em
+  // cima porque esses usos vêm antes de `unit` ser resolvido, lá no render.
+  // Loja não escolhida ainda → a do cadastro do usuário → default de lib/dates.
+  const appTz = tzOfUnit(dynamicUnits, unitId ?? currentUser?.unitId);
+
   // ── Sessão ────────────────────────────────────────────────────────────────
   // Abre a sessão no app. Serve tanto ao login por PIN (LoginScreen) quanto à
   // restauração da sessão persistida no mount — o caminho que mantém o app
@@ -10920,7 +11003,7 @@ function AppInner() {
         if (co) setCompany(co);
         if (units.length) {
           setDynamicUnits(units.map(u => ({
-            id: u.id, name: u.name, color: u.color,
+            id: u.id, name: u.name, color: u.color, timezone: u.timezone,
             sectors: sectors.filter(s => s.unit_id === u.id).map(s => s.name),
           })));
         }
@@ -11087,7 +11170,10 @@ function AppInner() {
     // clicar numa loja não mudava nada: o J.I.T. seguia mostrando a empresa
     // toda. Quem é preso a uma unidade (liderança) continua preso a ela.
     const scope = currentUser?.unitId ?? unitId ?? null;
-    return buildJit(completions, templates, closures || [], activeUnits, scope);
+    // Escopo "rede inteira" não tem um dia único quando as lojas estão em fusos
+    // diferentes; a loja em foco (ou a primeira) define o "hoje" da tela.
+    const base = unitId ?? activeUnits[0]?.id ?? null;
+    return buildJit(completions, templates, closures || [], activeUnits, scope, base);
   }, [templates, completions, closures, dynamicUnits, currentUser?.unitId, unitId]);
 
   // ── Action plans (H1) — a memória do J.I.T. entre dias ──────────────────
@@ -11101,7 +11187,7 @@ function AppInner() {
 
   const handleCreatePlan = async rec => {
     const plan = await createActionPlan({
-      jitDate: todayStr(),
+      jitDate: todayStr(appTz),
       recId: rec.id, recType: rec.type, recText: rec.text,
       unitId: rec.unitId || null,
       createdBy: currentUser.id, createdByName: currentUser.name,
@@ -11130,9 +11216,11 @@ function AppInner() {
   const [jitSeenToday, setBriefingSeenToday] = useState(false);
   useEffect(() => {
     if (!currentUser) { setBriefingSeenToday(false); return; }
-    try { setBriefingSeenToday(!!localStorage.getItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`)); }
+    try { setBriefingSeenToday(!!localStorage.getItem(`zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`)); }
     catch (_) { setBriefingSeenToday(false); }
-  }, [currentUser?.id]);
+    // `appTz` entra nas deps porque as lojas chegam DEPOIS do primeiro render:
+    // sem ele a chave ficaria carimbada com o dia de Brasília para sempre.
+  }, [currentUser?.id, appTz]);
 
   // Popup de assinatura durante o teste: só gestão, TODA entrada no app
   // (pedido 18/07 — antes era 1×/dia), uma vez por login, com um pequeno
@@ -11161,7 +11249,7 @@ function AppInner() {
     // Marca como visto para o auto-open não disparar depois numa troca de aba.
     if (tab === 'jit') {
       autoOpenChecked.current = currentUser.id;
-      try { localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+      try { localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`, '1'); } catch (_) {}
       return;
     }
     // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
@@ -11169,7 +11257,7 @@ function AppInner() {
     if (autoOpenChecked.current === currentUser.id) return;
     autoOpenChecked.current = currentUser.id;
     try {
-      const key = `zc_jit_seen_${currentUser.id}_${todayStr()}`;
+      const key = `zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`;
       if (localStorage.getItem(key)) return;
       if (jitHasSignal) {
         setJitSource('auto');
@@ -11178,7 +11266,7 @@ function AppInner() {
         // Takeover evitado. Sem este evento, a análise do H1 não distingue
         // "dia quieto" de "gestor abandonou" — e não mede a taxa de takeover.
         // 1× por dia por gestor, com o mesmo padrão de marcador do "seen".
-        const skipKey = `zc_jit_skip_${currentUser.id}_${todayStr()}`;
+        const skipKey = `zc_jit_skip_${currentUser.id}_${todayStr(appTz)}`;
         if (!localStorage.getItem(skipKey)) {
           localStorage.setItem(skipKey, '1');
           track('jit_skipped', { source: 'auto', metadata: { reason: 'no_signal' } });
@@ -11188,7 +11276,7 @@ function AppInner() {
   }, [currentUser?.id, jit, plansLoaded, jitHasSignal, tab]);
 
   const closeJit = () => {
-    try { if (currentUser) localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr()}`, '1'); } catch (_) {}
+    try { if (currentUser) localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`, '1'); } catch (_) {}
     setBriefingSeenToday(true);
     setShowJit(false);
   };
@@ -11359,7 +11447,7 @@ function AppInner() {
         if (co) setCompany(co);
         if (units?.length) {
           setDynamicUnits(units.map(u => ({
-            id: u.id, name: u.name, color: u.color,
+            id: u.id, name: u.name, color: u.color, timezone: u.timezone,
             sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
           })));
         }
@@ -11562,9 +11650,9 @@ function AppInner() {
   const briefing = useMemo(() => {
     if (!currentUser || !completions?.length) return null;
     return buildDailyBriefing({
-      completions, userId: currentUser.id, userName: currentUser.name, today: todayStr(),
+      completions, userId: currentUser.id, userName: currentUser.name, today: todayStr(appTz),
     });
-  }, [completions, currentUser]);
+  }, [completions, currentUser, appTz]);
 
   /**
    * Abre sozinho UMA vez por briefing. A chave guarda o DIA do briefing, não a
@@ -11723,7 +11811,7 @@ function AppInner() {
         onDone={({ patch, units: us, sectors: ss, types: ts }) => {
           setCompany(c => ({ ...(c || {}), ...patch }));
           setDynamicUnits(us.map(u => ({
-            id: u.id, name: u.name, color: u.color,
+            id: u.id, name: u.name, color: u.color, timezone: u.timezone,
             sectors: ss.filter(s => s.unitId === u.id).map(s => s.name),
           })));
           setDynamicSectors(ss.map(s => ({ id: s.id, unit_id: s.unitId, name: s.name })));

@@ -68,28 +68,90 @@ test.describe('dia de operação', () => {
 });
 
 test.describe('prazo do Fechamento', () => {
-  // A regra de `completionOnTime` (app/app/page.js): a execução está no prazo
-  // se `completedAt` <= `${date}T${deadline}` em hora local. Com o dia UTC, o
-  // Fechamento das 21h recebia `date` de amanhã e era comparado contra o prazo
-  // de amanhã — ou seja, nunca atrasava.
-  const noPrazo = (date, completedAt, deadline) =>
-    new Date(completedAt) <= new Date(`${date}T${deadline}:00`);
+  // A regra de `completionOnTime` (app/app/page.js): no prazo se `completedAt`
+  // <= o instante em que o relógio DA LOJA marca o deadline naquele dia.
+  const noPrazo = (date, completedAt, deadline, tz) =>
+    new Date(completedAt) <= dates.instantAt(date, deadline, tz);
 
   test('Fechamento entregue depois do prazo conta como atrasado', () => {
     const entrega = '2026-07-27T00:16:00Z'; // 26/07 21:16 BRT
     const dia = dates.dateStrOf(new Date(entrega));
 
     expect(dia).toBe('2026-07-26');
-    expect(noPrazo(dia, entrega, '21:00')).toBe(false);
+    expect(noPrazo(dia, entrega, '21:00', 'America/Sao_Paulo')).toBe(false);
 
     // O que acontecia antes: dia = 27/07, prazo comparado = 27/07 21:00.
-    expect(noPrazo('2026-07-27', entrega, '21:00')).toBe(true);
+    expect(noPrazo('2026-07-27', entrega, '21:00', 'America/Sao_Paulo')).toBe(true);
   });
 
   test('Fechamento entregue dentro do prazo continua no prazo', () => {
     const entrega = '2026-07-26T23:30:00Z'; // 26/07 20:30 BRT
     const dia = dates.dateStrOf(new Date(entrega));
     expect(dia).toBe('2026-07-26');
-    expect(noPrazo(dia, entrega, '21:00')).toBe(true);
+    expect(noPrazo(dia, entrega, '21:00', 'America/Sao_Paulo')).toBe(true);
+  });
+});
+
+test.describe('fuso por loja', () => {
+  test('loja sem fuso configurado opera em Brasília', () => {
+    expect(dates.tzOf(undefined)).toBe('America/Sao_Paulo');
+    expect(dates.tzOf({ id: 'ibr1' })).toBe('America/Sao_Paulo');
+    expect(dates.tzOf({ id: 'ibr1', timezone: null })).toBe('America/Sao_Paulo');
+    expect(dates.tzOf({ id: 'ibr1', timezone: 'America/Manaus' })).toBe('America/Manaus');
+  });
+
+  test('tzOfUnit resolve pela lista, e loja desconhecida cai no default', () => {
+    const units = [
+      { id: 'sp', timezone: 'America/Sao_Paulo' },
+      { id: 'mao', timezone: 'America/Manaus' },
+    ];
+    expect(dates.tzOfUnit(units, 'mao')).toBe('America/Manaus');
+    expect(dates.tzOfUnit(units, 'nao-existe')).toBe('America/Sao_Paulo');
+    expect(dates.tzOfUnit(null, 'mao')).toBe('America/Sao_Paulo');
+  });
+
+  test('o mesmo instante pode ser dias diferentes em duas lojas', () => {
+    // 27/07 00:30 em Brasília ainda é 26/07 em Manaus (UTC−4) e no Acre (UTC−5).
+    const instante = new Date('2026-07-27T03:30:00Z');
+    expect(dates.dateStrOf(instante, 'America/Sao_Paulo')).toBe('2026-07-27');
+    expect(dates.dateStrOf(instante, 'America/Manaus')).toBe('2026-07-26');
+    expect(dates.dateStrOf(instante, 'America/Rio_Branco')).toBe('2026-07-26');
+    // E em Noronha (UTC−2) já passou da meia-noite antes de todo mundo.
+    expect(dates.dateStrOf(new Date('2026-07-27T02:30:00Z'), 'America/Noronha')).toBe('2026-07-27');
+  });
+
+  test('instantAt resolve o prazo no relógio da loja', () => {
+    // "até as 22:00" é um instante diferente em cada fuso.
+    expect(dates.instantAt('2026-07-26', '22:00', 'America/Sao_Paulo').toISOString())
+      .toBe('2026-07-27T01:00:00.000Z');
+    expect(dates.instantAt('2026-07-26', '22:00', 'America/Manaus').toISOString())
+      .toBe('2026-07-27T02:00:00.000Z');
+    expect(dates.instantAt('2026-07-26', '22:00', 'America/Rio_Branco').toISOString())
+      .toBe('2026-07-27T03:00:00.000Z');
+  });
+
+  test('o mesmo fechamento é pontual em Manaus e atrasado em São Paulo', () => {
+    // O caso que motivou o fuso por loja: entrega às 22:30 no relógio de Manaus,
+    // prazo 23:00. Comparar contra o relógio de quem abriu o painel (SP) diria
+    // que atrasou meia hora.
+    const entrega = '2026-07-27T02:30:00Z'; // 26/07 22:30 em Manaus, 23:30 em SP
+    const dia = dates.dateStrOf(new Date(entrega), 'America/Manaus');
+    expect(dia).toBe('2026-07-26');
+
+    const noPrazo = tz => new Date(entrega) <= dates.instantAt(dia, '23:00', tz);
+    expect(noPrazo('America/Manaus')).toBe(true);       // certo
+    expect(noPrazo('America/Sao_Paulo')).toBe(false);   // o erro que se evitou
+  });
+
+  test('a lista oferecida cobre o Brasil e não tem id repetido', () => {
+    const ids = dates.TIMEZONES.map(t => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain('America/Sao_Paulo');
+    // Toda zona da lista tem que ser válida para o Intl — uma string errada aqui
+    // só apareceria em produção, no dia em que alguém selecionasse a opção.
+    for (const t of dates.TIMEZONES) {
+      expect(() => new Date().toLocaleString('pt-BR', { timeZone: t.id })).not.toThrow();
+      expect(t.label).toBeTruthy();
+    }
   });
 });

@@ -1004,10 +1004,14 @@ export async function fetchChecklistTypes(companyId) {
 }
 
 export async function saveUnit(unit) {
-  const { error } = await db().from('units').upsert({
+  const row = {
     id: unit.id, company_id: unit.companyId, name: unit.name,
     color: unit.color, active: unit.active ?? true, sort_order: unit.sortOrder ?? 0,
-  }, { onConflict: 'id' });
+  };
+  // Só entra no upsert quando veio: um `undefined` viraria null e a coluna é
+  // NOT NULL. Quem edita só o nome da loja não pode zerar o fuso dela.
+  if (unit.timezone) row.timezone = unit.timezone;
+  const { error } = await db().from('units').upsert(row, { onConflict: 'id' });
   if (error) throw error;
 }
 

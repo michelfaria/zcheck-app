@@ -32,7 +32,7 @@ app/api/admin/provision/route.js → provisiona empresa (service_role, server-on
 app/layout.js                    → layout global
 app/globals.css                  → estilos globais (@tailwind + CSS vars dos tokens)
 lib/tokens.js                    → FONTE ÚNICA de cor/raio/peso/tamanho (C/R/W/T)
-lib/dates.js                     → FONTE ÚNICA do "dia de operação" (fuso America/Sao_Paulo)
+lib/dates.js                     → FONTE ÚNICA do "dia de operação" (fuso POR LOJA, units.timezone)
 lib/library.js                   → biblioteca de checklists prontos por setor
 lib/serverAuth.js                → assina o token de sessão (NUNCA importar no cliente)
 lib/tenant.js                    → detecção de tenant por hostname
@@ -72,6 +72,9 @@ const EMPRESAS = {
 - Sempre ler antes de editar — ver o trecho exato antes de fazer replace
 - Data: NUNCA `toISOString().slice(0,10)` para o dia de operação — devolve UTC e
   vira o dia seguinte depois das 21h em Brasília. Usar sempre `lib/dates.js`
+- O dia é o do RELÓGIO DA LOJA: `todayStr(tzOf(unit))`, nunca `todayStr()` solto.
+  Prazo de checklist é `instantAt(data, hora, tz)` — comparar com `new Date()`
+  usa o fuso de quem abriu o painel, não o da loja que executou
 - `globals.css` deve ter `@tailwind` — se quebrar, restaurar com `git show HEAD:ibr-checklists-app/app/globals.css`
 - git root está em `/Users/michelfaria/Documents/Site ZCheck` — não em `ibr-checklists-app/`
 - Não mexer em `borderRadius` globalmente — quebra o layout dos cards
