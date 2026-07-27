@@ -126,7 +126,17 @@ update public.task_reviews tr
 -- O SQL Editor do Supabase DESCARTA `raise notice` (só tem as abas Results e
 -- Chart), então o diagnóstico volta como linha. Confira estes números contra a
 -- query de contagem do topo antes de dar a migration por boa.
-select 'execucoes corrigidas'                    as item, count(*)::text as valor from public.fix_data_local_20260726
+--
+-- "nesta rodada" separado do total porque esta migration é feita para rodar
+-- MAIS DE UMA VEZ: enquanto o código novo não está em produção, execuções
+-- salvas entre 21h e 00h continuam nascendo com a data de amanhã, e rodar de
+-- novo depois do deploy é o que limpa esse intervalo. Sem a separação, o total
+-- acumulado esconde quantas apareceram desde a última vez.
+select 'execucoes corrigidas nesta rodada'       as item,
+       count(*) filter (where migrado_em = (select max(migrado_em) from public.fix_data_local_20260726))::text as valor
+  from public.fix_data_local_20260726
+union all
+select 'execucoes corrigidas (total)', count(*)::text from public.fix_data_local_20260726
 union all
 select 'lojas afetadas',    count(distinct c.unit_id)::text
   from public.fix_data_local_20260726 f join public.completions c on c.id::text = f.completion_id

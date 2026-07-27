@@ -88,6 +88,8 @@ for (const dateType of ['text', 'date']) {
   };
   let ok = true;
   if (restantes !== '0') { ok = false; console.log(`  ✗ sobraram divergências: ${restantes}`); }
+  const nesta = diag.find(r => r.item.includes('nesta rodada'))?.valor;
+  if (nesta !== '2') { ok = false; console.log(`  ✗ "nesta rodada" deveria ser 2, veio ${nesta}`); }
   for (const r of rows) {
     const bate = r.date === esperado[r.id];
     if (!bate) ok = false;
@@ -115,6 +117,23 @@ for (const dateType of ['text', 'date']) {
   const idempotente = depois.rows.every(r => r.date === esperado[r.id]) && audDepois.rows[0].n === 2;
   if (!idempotente) ok = false;
   console.log(`  ${idempotente ? '✓' : '✗'} idempotente (2ª execução não muda nada)`);
+
+  // O cenário real: a migration roda ANTES do deploy, o app continua gravando
+  // errado por algumas horas, e a migration roda de novo depois. A 2ª rodada
+  // tem que corrigir só o novo e dizer isso separado do acumulado.
+  await db.query(`
+    insert into public.completions (id, unit_id, template_id, date, completed_at)
+    values ('c-pos-migration', 'ibr1', 't-fech', '2026-07-28', '2026-07-28T01:00:00Z')
+  `); // 27/07 22:00 BRT, salvo pelo código velho → nasceu com o dia 28
+  const rodada2 = await db.exec(MIGRATION);
+  const d2 = rodada2.at(-1).rows;
+  const nesta2 = d2.find(r => r.item.includes('nesta rodada'))?.valor;
+  const total2 = d2.find(r => r.item.includes('total'))?.valor;
+  const corrigida = (await db.query(
+    `select date::text as date from public.completions where id = 'c-pos-migration'`)).rows[0].date;
+  const okRodada2 = nesta2 === '1' && total2 === '3' && corrigida === '2026-07-27';
+  if (!okRodada2) ok = false;
+  console.log(`  ${okRodada2 ? '✓' : '✗'} 2ª rodada pega só a execução nova (nesta rodada=${nesta2}, total=${total2}, date=${corrigida})`);
 
   // Rollback documentado no rodapé do arquivo.
   const setAntiga = dateType === 'text' ? 'f.date_antiga' : 'f.date_antiga::date';
