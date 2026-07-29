@@ -189,31 +189,29 @@ resultado — decida antes de escrever código.**
 
 ## 7. Estado atual do que a sessão anterior entregou (não refazer)
 
-Dois commits em `main`. **Atenção: só o primeiro está em produção.**
+Dois commits em `main`, **os dois em produção e no GitHub** (deploy
+`dpl_GGdkkWRKjsQjAV1TgarbJvU46LLr`, 29/07/2026):
 
 - **`0deb6c2`** — execução colaborativa: claim atômico no banco, evidência
   compartilhada (nota + foto na rodada), fila offline, purga de `live_tasks`,
   crédito por tarefa nos eventos, desduplicação de rodada em três métricas.
-  **EM PRODUÇÃO.**
 - **`77e0107`** — bloqueio por TAREFA, não por checklist. Sumiu o diálogo
   "executar de novo cria um segundo registro"; tarefa já registrada hoje está
   travada (com "Reabrir" + motivo como escape); tarefas pendentes de um checklist
   já submetido são executáveis.
-  **NÃO ESTÁ EM PRODUÇÃO NEM NO GITHUB** (verificado em 29/07/2026: `origin/main`
-  em `061cad0`, e o bundle de produção ainda tem a string "segundo registro", que
-  este commit removeu).
 
-Ou seja, **o banco está à frente do código**: a migration 20260730 já está
-aplicada, mas quem a usa (`77e0107`) não subiu. Isso é inofensivo neste sentido —
-a versão nova de `reopen_live_task` é um superconjunto da antiga, e o código no ar
-só a chama para item que já tem linha na rodada, onde as duas se comportam igual.
-O inverso (código novo sem migration) é que travaria reabertura.
+Conferido no domínio, não presumido pelo "READY" do deploy: o chunk servido em
+`ilhabelarepublic.zcheckapp.com/app` contém "foi feita hoje", "Registrada" e
+`reopenedCount`, e **não** contém mais "segundo registro" nem "Executar de novo".
 
-Antes de começar esta tarefa, resolva a pendência:
+Se precisar reconferir depois de um deploy:
 
 ```bash
-git push origin main && cd ibr-checklists-app && npx vercel --prod
+CHUNK=$(curl -s https://ilhabelarepublic.zcheckapp.com/app | grep -o '/_next/static/chunks/app/app/page-[a-z0-9]*\.js' | head -1); curl -s "https://ilhabelarepublic.zcheckapp.com$CHUNK" | grep -c "foi feita hoje"
 ```
+
+Lembre que o minificador escapa acento (`conclu\xeddo`), então busque por
+trechos sem acento — foi o que fez uma verificação anterior dar falso negativo.
 
 Migrations aplicadas no Supabase (`rjuulamozdhssgqrzfji`):
 
