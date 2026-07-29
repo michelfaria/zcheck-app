@@ -23,6 +23,7 @@ import {
   sendRecognition, fetchRecognitions,
   fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
+  uploadRoundPhoto, linkRoundPhoto,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
   reviewCompletion, fetchTaskReviews,
@@ -35,13 +36,18 @@ import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
+// Reexecução do mesmo checklist no mesmo dia conta UMA vez. Ver lib/rounds.js.
+import { latestPerRound } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
 // Event instrumentation (MVP Inteligência Operacional — ver docs/REVISAO_MVP_v1.3.md)
 import { track, setTrackSession, clearTrackSession } from '../../lib/track';
 // Execução colaborativa em tempo real (H6)
-import { fetchLiveTasks, setLiveTask, reopenLiveTask, subscribeLiveTasks } from '../../lib/collab';
+import {
+  fetchLiveTasks, claimLiveTask, releaseLiveTask, reopenLiveTask,
+  setLiveEvidence, subscribeLiveTasks,
+} from '../../lib/collab';
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
 import { C, R, W, T, successBright, greenOnDark } from '../../lib/tokens';
@@ -824,7 +830,8 @@ function summarizeCompletions(filtered) {
 // só por checklist submetido: quem divide um checklist com um colega recebe
 // crédito pelas tarefas que fez. Registros antigos (sem doneBy) creditam as
 // tarefas a quem submeteu o checklist.
-function collaboratorStats(filtered) {
+function collaboratorStats(entrada) {
+  const filtered = latestPerRound(entrada);
   const map = new Map();
   const ensure = (key, name, at) => {
     if (!map.has(key)) map.set(key, { key, name: name || 'Sem responsável', checklists: 0, totalItems: 0, doneItems: 0, tasksDone: 0, criticalDone: 0, criticalPending: 0, photos: 0, last: at });
@@ -952,7 +959,8 @@ function computeProductivity(completions) {
   const company = mkAgg('empresa', 'Empresa');
   const ensure = (map, key, name) => { if (!map.has(key)) map.set(key, mkAgg(key, name)); return map.get(key); };
 
-  (completions || []).forEach(c => {
+  // Uma rodada por checklist/dia/loja: reexecução não multiplica pontos.
+  latestPerRound(completions).forEach(c => {
     const items = c.items || [];
     const doneItems = items.filter(i => i.done);
     if (doneItems.length === 0) return;
@@ -1372,7 +1380,10 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
   const byOther = collabDone && liveInfo.operatorUserId && liveInfo.operatorUserId !== currentUserId;
   const effDone = state.done || collabDone;
   const lineColor = locked ? C.mutedLight : effDone ? C.success : item.critical ? C.critical : accent;
-  const needsPhoto = item.photoRequired && !state.photo;
+  // Foto que o colega já anexou nesta rodada — vale como a minha para liberar o
+  // item e o fechamento do checklist.
+  const fotoDaRodada = liveInfo?.photoPath || null;
+  const needsPhoto = item.photoRequired && !state.photo && !fotoDaRodada && !collabDone;
 
   return (
     <>
@@ -1529,6 +1540,19 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                     Trocar foto
                   </button>
                 </>
+              ) : fotoDaRodada ? (
+                // Já tem prova na rodada: anexar vira opcional, não pendência.
+                <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+                  <span className="flex items-center gap-1" style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>
+                    <Camera size={12} aria-hidden /> Foto anexada nesta rodada
+                  </span>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: R.pill, padding: '2px 10px', cursor: 'pointer' }}
+                  >
+                    Anexar outra
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -1634,11 +1658,25 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const [error, setError] = useState('');
 
   // ── Execução colaborativa (H6) ─────────────────────────────────────────────
-  const [liveByItem, setLiveByItem] = useState({});     // itemId → { done, operatorUserId, operatorName, completedAt }
+  // itemId → { done, operatorUserId, operatorName, completedAt, note, photoPath }
+  const [liveByItem, setLiveByItem] = useState({});
   const [collabNotice, setCollabNotice] = useState('');
   const [reopenTarget, setReopenTarget] = useState(null);
   const [reopenReason, setReopenReason] = useState('');
   const collabSessionTracked = useRef(false);
+  // Itens com marcação em voo: sem isto, dois toques rápidos disparam duas
+  // reivindicações e a segunda desfaz a primeira na volta.
+  const emVoo = useRef(new Set());
+  // Observações que ESTA pessoa editou. O que ela digitou não pode ser
+  // sobrescrito pela nota que chega do colega no realtime.
+  const notasTocadas = useRef(new Set());
+  const notaTimers = useRef({});
+  useEffect(() => () => Object.values(notaTimers.current).forEach(clearTimeout), []);
+
+  const avisar = (msg) => {
+    setCollabNotice(msg);
+    setTimeout(() => setCollabNotice(''), 2600);
+  };
 
   // Instrumentação do funil: início na montagem; abandono se desmontar sem
   // submit (voltar/cancelar). Fechar a aba não desmonta — esse abandono fica
@@ -1671,6 +1709,20 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   useEffect(() => {
     const applyLive = map => {
       setLiveByItem(map);
+      // Observação do colega desce para o campo de quem NÃO está editando aquele
+      // item. É o que faz o registro final sair com a evidência de todo mundo,
+      // em vez de só a de quem apertou "Concluir".
+      setItemStates(s => {
+        let mudou = false;
+        const next = { ...s };
+        Object.entries(map).forEach(([id, live]) => {
+          if (!next[id] || !live?.note || notasTocadas.current.has(id)) return;
+          if (next[id].note === live.note) return;
+          next[id] = { ...next[id], note: live.note };
+          mudou = true;
+        });
+        return mudou ? next : s;
+      });
       const ops = new Set(Object.values(map).filter(v => v?.done && v.operatorUserId).map(v => v.operatorUserId));
       if (ops.size >= 2 && !collabSessionTracked.current) {
         collabSessionTracked.current = true;
@@ -1696,52 +1748,106 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     return false;
   };
 
-  const toggle = (item, idx) => {
-    if (isLocked(idx)) return;
+  const toggle = async (item, idx) => {
+    if (isLocked(idx) || emVoo.current.has(item.id)) return;
     const live = liveByItem[item.id];
     // Já concluída por um colega → bloqueia nova execução (H6).
     if (live?.done && live.operatorUserId && live.operatorUserId !== currentUser.id) {
       track('duplicate_execution_blocked', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { by: live.operatorName || null } });
-      setCollabNotice(`"${truncName(item.text, 32)}" já foi concluída por ${live.operatorName || 'um colega'}.`);
-      setTimeout(() => setCollabNotice(''), 2600);
+      avisar(`"${truncName(item.text, 32)}" já foi concluída por ${live.operatorName || 'um colega'}.`);
       return;
     }
     // Já concluída por mim no estado compartilhado → reabrir exige motivo (auditoria).
-    if (live?.done && live.operatorUserId === currentUser.id) {
+    if (live?.done) {
       setReopenTarget(item);
       return;
     }
     const state = itemStates[item.id];
-    if (!state.done && item.photoRequired && !state.photo) return;
-    const nextDone = !state.done;
-    if (nextDone) {
-      track('task_checked', {
-        source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
-        metadata: { critical: !!item.critical, position: idx + 1, of: items.length },
-      });
+
+    // ── Desmarcar (só local: a rodada não tem esta tarefa como concluída) ──
+    if (state.done) {
+      setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
+      releaseLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, userId: currentUser.id });
+      return;
     }
-    setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: nextDone } }));
-    // Compartilha no estado ao vivo (fire-and-forget; degrada sem a tabela).
-    setLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, done: nextDone, operatorUserId: currentUser.id, operatorName: currentUser.name });
-    setLiveByItem(m => ({ ...m, [item.id]: nextDone
-      ? { done: true, operatorUserId: currentUser.id, operatorName: currentUser.name, completedAt: new Date().toISOString() }
-      : { ...m[item.id], done: false } }));
+
+    // ── Marcar ──
+    // A foto pode vir de mim OU já estar na rodada (o colega anexou).
+    if (item.photoRequired && !state.photo && !live?.photoPath) return;
+
+    // Otimista: o check aparece na hora. Se a reivindicação for perdida para um
+    // colega, volta atrás — é preferível ao checkbox travado esperando a rede.
+    emVoo.current.add(item.id);
+    setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: true } }));
+    setLiveByItem(m => ({ ...m, [item.id]: {
+      ...(m[item.id] || {}), done: true,
+      operatorUserId: currentUser.id, operatorName: currentUser.name,
+      completedAt: new Date().toISOString(),
+    } }));
+
+    const r = await claimLiveTask({
+      templateId: template.id, unitId: unit.id, date: today, itemId: item.id,
+      userId: currentUser.id, userName: currentUser.name,
+      note: (state.note || '').trim() || null,
+    });
+    emVoo.current.delete(item.id);
+
+    // Perdeu a corrida: o banco já tinha dono. Desfaz o otimismo e avisa — sem
+    // creditar a tarefa, que é o ponto do bloqueio de duplicidade.
+    const dono = r.task?.operatorUserId;
+    if (r.ok && !r.claimed && dono && dono !== currentUser.id) {
+      setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
+      setLiveByItem(m => ({ ...m, [item.id]: r.task }));
+      track('duplicate_execution_blocked', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { by: r.task.operatorName || null, race: true } });
+      avisar(`"${truncName(item.text, 32)}" acabou de ser concluída por ${r.task.operatorName || 'um colega'}.`);
+      return;
+    }
+    if (r.task) setLiveByItem(m => ({ ...m, [item.id]: r.task }));
+    track('task_checked', {
+      source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
+      metadata: { critical: !!item.critical, position: idx + 1, of: items.length, offline: !!r.offline },
+    });
   };
 
-  const confirmReopen = () => {
+  const confirmReopen = async () => {
     const item = reopenTarget;
     if (!item) return;
-    reopenLiveTask({ templateId: template.id, unitId: unit.id, date: today, itemId: item.id, operatorUserId: currentUser.id, operatorName: currentUser.name });
-    track('task_reopened', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { reason: reopenReason.trim() || null } });
+    const motivo = reopenReason.trim() || null;
+    setReopenTarget(null); setReopenReason('');
     setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
     setLiveByItem(m => ({ ...m, [item.id]: { ...m[item.id], done: false } }));
-    setReopenTarget(null); setReopenReason('');
+    // O contador de reabertura é incrementado no banco (era ler-somar-gravar no
+    // cliente, e duas reaberturas quase simultâneas contavam uma).
+    await reopenLiveTask({
+      templateId: template.id, unitId: unit.id, date: today, itemId: item.id,
+      userId: currentUser.id, userName: currentUser.name, reason: motivo,
+    });
+    track('task_reopened', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { reason: motivo } });
   };
-  const setNote = (id, note) => setItemStates(s => ({ ...s, [id]: { ...s[id], note } }));
+
+  // A observação entra na rodada com atraso: compartilhar é o objetivo, mas uma
+  // escrita por tecla digitada seria uma escrita por tecla digitada.
+  const setNote = (id, note) => {
+    notasTocadas.current.add(id);
+    setItemStates(s => ({ ...s, [id]: { ...s[id], note } }));
+    clearTimeout(notaTimers.current[id]);
+    notaTimers.current[id] = setTimeout(() => {
+      setLiveEvidence({ templateId: template.id, unitId: unit.id, date: today, itemId: id, note });
+      setLiveByItem(m => ({ ...m, [id]: { ...(m[id] || {}), note } }));
+    }, 900);
+  };
+
   const setPhoto = async (id, file) => {
     try {
       const dataUrl = await compressImage(file);
       setItemStates(s => ({ ...s, [id]: { ...s[id], photo: dataUrl, photoDataUrl: dataUrl } }));
+      // A foto sobe para a RODADA na hora em que é anexada. Antes ela só existia
+      // no aparelho de quem fotografou e subia no submit — se quem submetesse
+      // fosse o colega, a evidência não chegava a lugar nenhum.
+      const path = await uploadRoundPhoto({ templateId: template.id, unitId: unit.id, date: today, itemId: id, dataUrl });
+      if (!path) return;
+      await setLiveEvidence({ templateId: template.id, unitId: unit.id, date: today, itemId: id, photoPath: path });
+      setLiveByItem(m => ({ ...m, [id]: { ...(m[id] || {}), photoPath: path } }));
     } catch (e) { console.error(e); }
   };
 
@@ -1762,10 +1868,14 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       items: items.map(i => {
         const live = liveByItem[i.id];
         const done = itemStates[i.id].done || !!live?.done;
+        // Evidência da RODADA, não só a minha: a observação e a foto que o
+        // colega anexou entram no registro de quem submete. Sem isto, executar
+        // a quatro mãos produzia um registro com metade da prova.
+        const note = (itemStates[i.id].note || '').trim() || live?.note || '';
         return {
           id: i.id, text: i.text, critical: i.critical, required: !!i.required,
-          done, note: itemStates[i.id].note,
-          hasPhoto: !!itemStates[i.id].photo,
+          done, note,
+          hasPhoto: !!itemStates[i.id].photo || !!live?.photoPath,
           // Atribuição individual (execução colaborativa): quem de fato concluiu
           // cada tarefa e quando — base da contagem por tarefa e da produtividade.
           doneBy: done ? (live?.operatorUserId || currentUser.id) : null,
@@ -1786,6 +1896,11 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
             metadata: { required: !!i.photoRequired },
           });
         } catch (e) { console.error(e); }
+      } else if (liveByItem[i.id]?.photoPath) {
+        // Foto que o colega anexou nesta rodada: aponta o metadado para o
+        // arquivo que já está no storage. Sem copiar bytes — a tela de detalhe
+        // resolve por `photos.storage_path` como em qualquer outra foto.
+        await linkRoundPhoto(recordId, i.id, liveByItem[i.id].photoPath);
       }
     }
 
@@ -1793,7 +1908,12 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   };
 
   const finish = () => {
-    const missingPhoto = items.find(i => i.photoRequired && !itemStates[i.id].photo);
+    // A foto exigida pode estar em três lugares, e qualquer um serve: comigo, na
+    // rodada (colega anexou) ou implícita no item que o colega já concluiu.
+    // Olhar só a minha travava quem NÃO tirou a foto — a pessoa via o item
+    // concluído na tela e não conseguia fechar o checklist de jeito nenhum.
+    const missingPhoto = items.find(i =>
+      i.photoRequired && !itemStates[i.id].photo && !liveByItem[i.id]?.photoPath && !liveByItem[i.id]?.done);
     if (missingPhoto) { setError(`Anexe a foto exigida em "${missingPhoto.text}".`); return; }
     setError('');
     if (pendingCritical.length > 0) { setShowConfirm(true); return; }
@@ -2010,6 +2130,28 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   // Level 2: praças for the selected checklist type
   // Se o tipo sumiu de activeTypes (ex.: tipos dinâmicos chegaram do banco
   // depois da seleção), cai para o nível 1 em vez de quebrar.
+  // Abrir um checklist JÁ concluído hoje é reexecução: gera um segundo registro
+  // do mesmo dia. O app permite (às vezes é o certo — o turno refez o serviço),
+  // mas em silêncio a pessoa refazia sem saber que o colega tinha acabado de
+  // fechar, e as métricas contavam duas entregas.
+  const abrirTemplate = (t) => {
+    const feito = completions
+      .filter(c => c.templateId === t.id && c.date === today)
+      .sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''))[0];
+    if (feito) {
+      const hora = feito.completedAt
+        ? ` às ${new Date(feito.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        : '';
+      const quem = feito.operatorName || 'outra pessoa';
+      if (!confirm(`"${t.name}" já foi concluído hoje por ${quem}${hora}.\n\nExecutar de novo cria um segundo registro para o mesmo dia. Continuar?`)) return;
+      track('checklist_reexecucao', {
+        source: 'checklist', checklistId: t.id, unitId: unit.id,
+        metadata: { template_name: t.name, anterior_de: feito.operatorName || null },
+      });
+    }
+    setActiveTemplate(t);
+  };
+
   const typeConfig = checklistType ? activeTypes.find(c => c.key === checklistType) : null;
   if (typeConfig) {
     // Get all templates for this type in visible sectors
@@ -2042,7 +2184,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
                 // Extract praça name — format is "Praça — Tipo (detalhes)"
                 const displayName = t.name.includes(' — ') ? t.name.split(' — ')[0] : t.sector;
                 return (
-                  <button key={t.id} onClick={() => setActiveTemplate(t)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
+                  <button key={t.id} onClick={() => abrirTemplate(t)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                     <Ticket accent={STATUS_CFG[status].color}>
                       <div className="flex items-center justify-between gap-2">
                         <div style={{ minWidth: 0 }}>
@@ -9671,7 +9813,9 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // dois loops, que em 3 lojas × 30 dias × 1000 execuções vira 90 mil varreduras
   // a cada render do ranking.
   const doneByUnitDate = new Map();
-  team.forEach(c => {
+  // Uma rodada por checklist/dia: reexecução do mesmo checklist não conta como
+  // dois entregues. O teto de 100 abaixo vira defesa, não a correção principal.
+  latestPerRound(team).forEach(c => {
     const k = `${c.unitId}|${c.date}`;
     doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);
   });
@@ -11595,9 +11739,17 @@ function AppInner() {
           source: 'checklist',
           checklistId: record.templateId,
           taskId: it.id,
-          userId: record.operatorUserId,
+          // Quem EXECUTOU a tarefa, não quem apertou "Concluir". Numa execução
+          // colaborativa o submitter levava o crédito de tudo nos eventos — o
+          // JSONB da conclusão já guardava o doneBy certo, e as duas fontes
+          // discordavam. Registro antigo, sem doneBy, segue no submitter.
+          userId: it.doneBy || record.operatorUserId,
           unitId: record.unitId,
-          metadata: { critical: !!it.critical, has_photo: !!it.photo },
+          metadata: {
+            critical: !!it.critical,
+            has_photo: !!it.hasPhoto,
+            submitted_by: record.operatorUserId || null,
+          },
         });
       }
     } catch (e) { console.warn('[track] completion instrumentation failed (ignored)', e); }

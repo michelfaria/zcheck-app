@@ -428,6 +428,48 @@ async function pushPhoto(completionId, itemId, dataUrl) {
   return path;
 }
 
+// ── Foto da RODADA (execução colaborativa) ───────────────────────────────────
+//
+// A foto de prova sempre morou em `{completionId}/{itemId}.jpg` — caminho que só
+// existe depois que alguém submete. Numa execução a quatro mãos isso perdia
+// evidência: quem tirou a foto podia não ser quem submeteu, e a foto ficava no
+// aparelho dele até nunca.
+//
+// A foto da rodada sobe na hora em que é anexada, num caminho previsível
+// (checklist × loja × dia × item). No submit, quem fecha o checklist LIGA essa
+// foto à sua conclusão — sem copiar bytes, só apontando o metadado.
+export async function uploadRoundPhoto({ templateId, unitId, date, itemId, dataUrl }) {
+  if (!isOnline()) return null;
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const safe = s => String(s).replace(/[^\w.-]+/g, '_');
+    const path = `rodada/${safe(templateId)}/${safe(unitId)}/${safe(date)}/${safe(itemId)}.jpg`;
+    const { error } = await supabase.storage
+      .from('checklist-photos')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    return path;
+  } catch (e) {
+    // Sem drama: quem tem a foto localmente ainda a sobe no próprio submit.
+    console.warn('uploadRoundPhoto falhou (evidência segue local):', e.message);
+    return null;
+  }
+}
+
+// Liga uma foto já no storage (a da rodada) a esta conclusão. `ignoreDuplicates`
+// porque quem submete pode ter a própria foto do mesmo item — a dele vence, esta
+// só preenche o que faltava.
+export async function linkRoundPhoto(completionId, itemId, storagePath) {
+  try {
+    const { error } = await db().from('photos').upsert({
+      completion_id: completionId, item_id: itemId, storage_path: storagePath,
+    }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.warn('linkRoundPhoto falhou', e); return false; }
+}
+
 export async function getPhotoUrl(completionId, itemId) {
   // Try Supabase first
   if (isOnline()) {
@@ -562,6 +604,14 @@ export async function drainOfflineQueue() {
             await pushPhoto(entry.completionId, entry.itemId, r.value);
             drained++;
           }
+        } else if (entry.type === 'live_task') {
+          // Marcação de tarefa feita offline (execução colaborativa). Import
+          // dinâmico para a camada de sync não puxar a de colaboração em toda
+          // tela que só lê dados. Perder a disputa para um colega TAMBÉM sai da
+          // fila: não há o que reenviar, o banco já tem dono para a tarefa.
+          const { drainLiveTask } = await import('./collab');
+          if (await drainLiveTask(entry)) drained++;
+          else throw new Error('live_task não confirmada');
         }
       } catch {
         failed++;
