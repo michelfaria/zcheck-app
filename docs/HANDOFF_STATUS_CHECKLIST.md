@@ -1,7 +1,9 @@
 # HANDOFF — Status do checklist: "CONCLUÍDO" quando não está tudo feito
 
 > Documento autossuficiente para retomar a tarefa sem contexto prévio.
-> Criado em **29/07/2026**. Repo em `main`, HEAD **`77e0107`**.
+> Criado em **29/07/2026**. Repo em `main`; último commit de CÓDIGO: **`77e0107`**
+> (o que vem depois é só documentação). Referências de linha deste documento
+> valem para esse commit.
 > Escrito no fim da sessão que reformou a execução colaborativa — esta tarefa foi
 > deliberadamente deixada de fora dela porque mexe em métrica, não em UI.
 
@@ -93,12 +95,35 @@ Estes são independentes. Esquecer qualquer um deixa o app se contradizendo.
    e manda push para o que passou do prazo e não está no Set. Se "parcial" deixar
    de contar como feito, quem entregou 5 de 8 **passa a receber push de atraso**.
    Decisão de produto, não de código.
+
+   **Atenção ao deploy:** edge function NÃO sobe com `vercel --prod`. É outro
+   caminho, e esquecer isso deixa o app com uma regra e o push com outra:
+
+   ```bash
+   npx supabase functions deploy notify-overdue --project-ref rjuulamozdhssgqrzfji
+   ```
+
+   O projeto usa uma convenção para saber qual versão está no ar: o número no
+   comentário da linha 1 (`notify-overdue v9`) e o mesmo número num
+   `console.log('notify-overdue v9 started')`. Ao mexer, **incremente os dois** —
+   é assim que se confirma nos logs do Supabase que a versão nova está rodando, e
+   já houve caso de o deploy não pegar e a versão antiga seguir respondendo.
 2. **Aderência da liderança** — `computeLeadershipProfile`, em `page.js` (busque
    `doneByUnitDate`). Conta uma entrega por `(loja, dia)` usando
    `latestPerRound(team)`. É contagem por existência: parcial conta como entrega
    inteira hoje.
 3. **`buildJit`, linha ~8779** — `tDone = filterCompletions(...).length`, o
    numerador de aderência de hoje no painel. Mesma coisa.
+
+### 3.2.1 De onde sai o dado (não precisa de migration)
+
+A completude já está gravada: `completions.items` é JSONB e cada item tem
+`{ id, text, critical, required, done, note, hasPhoto, doneBy, doneByName, doneAt }`
+(ver o `record` montado em `submit()`, `page.js:1926`).
+**Esta tarefa é 100% de leitura** — nenhuma coluna nova, nenhuma migration,
+nenhum backfill. O histórico dos últimos 90 dias (janela de `fetchCompletions`)
+já responde "quantos itens foram feitos" para qualquer dia passado, então a
+mudança vale retroativamente sem trabalho extra.
 
 ### 3.3 Não confundir (não têm nada a ver com esta tarefa)
 
