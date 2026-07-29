@@ -189,36 +189,49 @@ resultado — decida antes de escrever código.**
 
 ## 7. Estado atual do que a sessão anterior entregou (não refazer)
 
-Dois commits em `main`, **ambos já em produção**:
+Dois commits em `main`. **Atenção: só o primeiro está em produção.**
 
 - **`0deb6c2`** — execução colaborativa: claim atômico no banco, evidência
   compartilhada (nota + foto na rodada), fila offline, purga de `live_tasks`,
   crédito por tarefa nos eventos, desduplicação de rodada em três métricas.
+  **EM PRODUÇÃO.**
 - **`77e0107`** — bloqueio por TAREFA, não por checklist. Sumiu o diálogo
   "executar de novo cria um segundo registro"; tarefa já registrada hoje está
   travada (com "Reabrir" + motivo como escape); tarefas pendentes de um checklist
   já submetido são executáveis.
+  **NÃO ESTÁ EM PRODUÇÃO NEM NO GITHUB** (verificado em 29/07/2026: `origin/main`
+  em `061cad0`, e o bundle de produção ainda tem a string "segundo registro", que
+  este commit removeu).
+
+Ou seja, **o banco está à frente do código**: a migration 20260730 já está
+aplicada, mas quem a usa (`77e0107`) não subiu. Isso é inofensivo neste sentido —
+a versão nova de `reopen_live_task` é um superconjunto da antiga, e o código no ar
+só a chama para item que já tem linha na rodada, onde as duas se comportam igual.
+O inverso (código novo sem migration) é que travaria reabertura.
+
+Antes de começar esta tarefa, resolva a pendência:
+
+```bash
+git push origin main && cd ibr-checklists-app && npx vercel --prod
+```
 
 Migrations aplicadas no Supabase (`rjuulamozdhssgqrzfji`):
 
 - `20260729_live_tasks_colaborativo.sql` — **aplicada e verificada** (RPCs
   respondem `42501` para anon, o que prova que existem e que o anon está barrado;
   cron `purge-live-tasks` agendado às `30 6 * * *`).
-- `20260730_reopen_sem_rodada.sql` — **estado desconhecido em 29/07/2026,
-  confirmar antes de começar.** Sem ela, tarefa registrada fora da rodada ao vivo
-  não pode ser reaberta (o `UPDATE` não acha linha e a tarefa fica travada).
+- `20260730_reopen_sem_rodada.sql` — **aplicada e confirmada em 29/07/2026**
+  (`tem_upsert = true`). É ela que permite reabrir tarefa registrada que não tem
+  linha na rodada ao vivo.
 
-  **Não dá para verificar pelo REST:** as duas migrations criam
+  Para reconferir no futuro, **não use o REST**: as duas migrations criam
   `reopen_live_task` com a MESMA assinatura, então um `curl` só diz que a função
-  existe — não qual versão. A diferença é o `insert ... on conflict` no corpo. No
-  SQL Editor:
+  existe, não qual versão. A diferença está no corpo. No SQL Editor:
 
 ```sql
 select prosrc like '%insert into public.live_tasks%' as tem_upsert
   from pg_proc where proname = 'reopen_live_task';
 ```
-
-  `true` = 20260730 aplicada · `false` = só a 20260729, **aplicar a 20260730**.
 
 ---
 
