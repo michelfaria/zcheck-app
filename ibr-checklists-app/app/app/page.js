@@ -5765,7 +5765,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
       });
       flash('Loja atualizada!'); setEditUnit(null);
     }
-    catch (e) { console.error(e); } finally { setSaving(false); }
+    catch (e) { flashErro('Não foi possível atualizar a loja', e); } finally { setSaving(false); }
   };
   /** Quantos checklists usam este tipo/setor — o número entra no aviso, para a
    *  confirmação dizer o tamanho do estrago em vez de um "tem certeza?" vazio. */
@@ -5777,7 +5777,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
     if (!nome) return;
     setSaving(true);
     try { await onSaveChecklistType?.({ id: editType.id, companyId: company?.id, name: nome, shift: editType.shift ?? null }); flash('Tipo atualizado!'); setEditType(null); }
-    catch (e) { console.error(e); } finally { setSaving(false); }
+    catch (e) { flashErro('Não foi possível atualizar o tipo', e); } finally { setSaving(false); }
   };
   const removeType = async (t) => {
     const uso = usoDoTipo(t);
@@ -5787,7 +5787,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
           : `${uso} checklists usam este tipo e deixarão de aparecer agrupados por ele.`}`
       : `Remover o tipo "${t.name}"?`;
     if (!confirm(aviso)) return;
-    try { await onDeleteChecklistType?.(t.id); flash('Tipo removido.'); } catch (e) { console.error(e); }
+    try { await onDeleteChecklistType?.(t.id); flash('Tipo removido.'); } catch (e) { flashErro('Não foi possível remover o tipo', e); }
   };
 
   const saveEditSector = async () => {
@@ -5795,7 +5795,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
     if (!nome) return;
     setSaving(true);
     try { await onSaveSector?.({ id: editSector.id, companyId: company?.id, unitId: editSector.unitId, name: nome }); flash('Setor atualizado!'); setEditSector(null); }
-    catch (e) { console.error(e); } finally { setSaving(false); }
+    catch (e) { flashErro('Não foi possível atualizar o setor', e); } finally { setSaving(false); }
   };
   const removeSector = async (sec) => {
     const uso = usoDoSetor(sec);
@@ -5807,12 +5807,12 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
           : `${uso} checklists estão nele e ficarão sem setor.`}`
       : `Remover o setor "${sec.name}"?`;
     if (!confirm(aviso)) return;
-    try { await onDeleteSector?.(sec); flash('Setor removido.'); } catch (e) { console.error(e); }
+    try { await onDeleteSector?.(sec); flash('Setor removido.'); } catch (e) { flashErro('Não foi possível remover o setor', e); }
   };
 
   const removeUnit = async (u) => {
     if (!confirm(`Remover a loja "${u.name}"? Os checklists dela deixam de aparecer.`)) return;
-    try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { console.error(e); }
+    try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { flashErro('Não foi possível remover a loja', e); }
   };
   const onPickCompanyLogo = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -5835,16 +5835,26 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
   const [newSectorUnit, setNewSectorUnit] = useState(unit.id);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
+  const [failure, setFailure] = useState('');
 
   // Além do bloco inline (que some do viewport quando a página está rolada),
   // dispara o toast fixo global — pedido do reteste de 18/07.
-  const flash = msg => { setSuccess(msg); setTimeout(() => setSuccess(''), 2500); showToast(msg); };
+  const flash = msg => { setFailure(''); setSuccess(msg); setTimeout(() => setSuccess(''), 2500); showToast(msg); };
+  // Falha aqui ia só para o console: a pessoa clicava "Criar", nada acontecia e
+  // ela seguia achando que a loja existia. Agora o erro fica na tela até o
+  // próximo sucesso, com o motivo que o banco devolveu.
+  const flashErro = (acao, e) => {
+    console.error(acao, e);
+    setSuccess('');
+    setFailure(`${acao}${e?.message ? `: ${e.message}` : '. Tente de novo.'}`);
+  };
 
   const addType = async () => {
     if (!newTypeName.trim()) return;
     setSaving(true);
     const t = { id: uid(), companyId: company?.id || 'ibr', name: newTypeName.trim(), sortOrder: (checklistTypes?.length || 0) + 1 };
-    try { await onSaveChecklistType?.(t); flash('Tipo criado!'); setNewTypeName(''); } catch(e) { console.error(e); }
+    try { await onSaveChecklistType?.(t); flash('Tipo criado!'); setNewTypeName(''); }
+    catch(e) { flashErro('Não foi possível criar o tipo', e); }
     setSaving(false);
   };
 
@@ -5852,7 +5862,8 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
     if (!newUnitName.trim()) return;
     setSaving(true);
     const u = { id: uid(), companyId: company?.id || 'ibr', name: newUnitName.trim(), color: newUnitColor, sortOrder: (allUnits?.length || 0) + 1 };
-    try { await onSaveUnit?.(u); flash('Loja criada!'); setNewUnitName(''); } catch(e) { console.error(e); }
+    try { await onSaveUnit?.(u); flash('Loja criada!'); setNewUnitName(''); }
+    catch(e) { flashErro('Não foi possível criar a loja', e); }
     setSaving(false);
   };
 
@@ -5860,7 +5871,8 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
     if (!newSectorName.trim()) return;
     setSaving(true);
     const s = { id: uid(), companyId: company?.id || 'ibr', unitId: newSectorUnit, name: newSectorName.trim() };
-    try { await onSaveSector?.(s); flash('Setor criado!'); setNewSectorName(''); } catch(e) { console.error(e); }
+    try { await onSaveSector?.(s); flash('Setor criado!'); setNewSectorName(''); }
+    catch(e) { flashErro('Não foi possível criar o setor', e); }
     setSaving(false);
   };
 
@@ -5870,6 +5882,12 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
         <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#E8F4F0', borderRadius: 8, border: `1px solid ${C.success}` }}>
           <CheckCircle2 size={16} color={C.success} />
           <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.success }}>{success}</p>
+        </div>
+      )}
+      {failure && (
+        <div className="flex items-start gap-2 px-3 py-2" role="alert" style={{ background: '#FDEDED', borderRadius: 8, border: `1px solid ${C.critical}` }}>
+          <AlertTriangle size={16} color={C.critical} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
+          <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical }}>{failure}</p>
         </div>
       )}
 
@@ -12371,21 +12389,54 @@ function Step({ n, label, active, done }) {
 // tipos de checklist), sobe o logo e escolhe a cor. Ao concluir, grava tudo e
 // marca companies.onboarded_at — a partir daí o app abre normalmente.
 function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
-  const [step, setStep] = useState(1);
+  // Rascunho em disco. O wizard vive num estado só de memória, e no celular o
+  // sistema descarta a aba do PWA a qualquer momento (é o mesmo motivo da sessão
+  // persistida em lib/supabase.js): quem tinha digitado três lojas voltava para
+  // o passo 1 com uma linha em branco e reconfigurava só o que ainda lembrava —
+  // as outras lojas nunca chegavam ao banco. Agora cada passo é gravado local e
+  // a volta cai onde parou. A chave é por empresa; some ao concluir.
+  const draftKey = `zc_onb_rascunho_${company?.id || 'sem-empresa'}`;
+  const draft = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(draftKey) || 'null') || null; }
+    catch (_) { return null; }
+  }, [draftKey]);
+
+  const [step, setStep] = useState(draft?.step || 1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [segment, setSegment] = useState('');
-  const [primaryColor, setPrimaryColor] = useState(company?.primary_color || '#063C5C');
-  const [units, setUnits] = useState([{ id: nid(), name: '', color: '#063C5C' }]);
-  const [sectors, setSectors] = useState([]);
-  const [types, setTypes] = useState([{ id: nid(), name: 'Abertura' }, { id: nid(), name: 'Fechamento' }]);
+  const [segment, setSegment] = useState(draft?.segment || '');
+  const [primaryColor, setPrimaryColor] = useState(draft?.primaryColor || company?.primary_color || '#063C5C');
+  const [units, setUnits] = useState(draft?.units?.length ? draft.units : [{ id: nid(), name: '', color: '#063C5C' }]);
+  const [sectors, setSectors] = useState(draft?.sectors || []);
+  const [types, setTypes] = useState(draft?.types?.length ? draft.types
+    : [{ id: nid(), name: 'Abertura' }, { id: nid(), name: 'Fechamento' }]);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [skipLogo, setSkipLogo] = useState(false);
 
+  // O logo fica de fora do rascunho de propósito: é um File, não serializa.
+  useEffect(() => {
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ step, segment, primaryColor, units, sectors, types }));
+    } catch (_) { /* cota cheia / modo privado: segue só em memória */ }
+  }, [draftKey, step, segment, primaryColor, units, sectors, types]);
+
+  // Voltar ao passo 1 e tocar num segmento REESCREVIA lojas, setores e tipos já
+  // preenchidos, sem avisar — quem voltasse só para conferir o segmento perdia o
+  // que tinha digitado nos passos seguintes. Só sobrescreve o que ainda está
+  // igual ao modelo (ou vazio); com trabalho por cima, pergunta antes.
   const applySegment = (seg) => {
+    const t = ONB_SEGMENTS[seg]; if (!t) { setSegment(seg); return; }
+    const modeloAtual = ONB_SEGMENTS[segment];
+    const nomes = (arr) => arr.filter(x => x.name.trim()).map(x => x.name.trim()).join('|');
+    const intacto = !segment
+      ? !nomes(units) && !nomes(sectors)
+      : nomes(units) === (modeloAtual?.units.length ? modeloAtual.units : ['Unidade 1']).join('|')
+        && nomes(sectors) === modeloAtual?.sectors.join('|')
+        && nomes(types) === (modeloAtual?.types.length ? modeloAtual.types : ['Abertura', 'Fechamento']).join('|');
+    if (!intacto && !confirm('Trocar o segmento substitui as lojas, setores e tipos que você já preencheu. Continuar?')) return;
+
     setSegment(seg);
-    const t = ONB_SEGMENTS[seg]; if (!t) return;
     const us = (t.units.length ? t.units : ['Unidade 1']).map(n => ({ id: nid(), name: n, color: primaryColor }));
     setUnits(us);
     setSectors(t.sectors.map(s => ({ id: nid(), name: s, unitId: us[0].id })));
@@ -12403,7 +12454,12 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
     setError('');
     if (step === 1 && !segment) { setError('Escolha um segmento para começar.'); return; }
     if (step === 2 && !units.some(u => u.name.trim())) { setError('Adicione ao menos uma loja.'); return; }
+    // Linha sem nome era descartada no fim, calada: o gestor via três lojas na
+    // tela e o app abria com uma. Ou nomeia, ou tira do caminho.
+    if (step === 2 && units.some(u => !u.name.trim())) { setError('Dê um nome a todas as lojas — ou remova as linhas em branco no ×.'); return; }
+    if (step === 3 && sectors.some(s => !s.name.trim())) { setError('Dê um nome a todos os setores — ou remova as linhas em branco no ×.'); return; }
     if (step === 4 && !types.some(t => t.name.trim())) { setError('Adicione ao menos um tipo de checklist.'); return; }
+    if (step === 4 && types.some(t => !t.name.trim())) { setError('Dê um nome a todos os tipos — ou remova as linhas em branco no ×.'); return; }
     if (step === 5) { finish(); return; }
     setStep(s => s + 1);
   };
@@ -12418,6 +12474,16 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
       const unitRows = units.filter(u => u.name.trim()).map((u, i) => ({ id: u.id, name: u.name.trim(), color: u.color, sortOrder: i }));
       for (const u of unitRows) await m.saveUnit({ id: u.id, companyId: cid, name: u.name, color: u.color, sortOrder: u.sortOrder });
 
+      // Confere no BANCO o que acabou de ser gravado, antes de marcar a empresa
+      // como configurada. As lojas são a espinha da operação: se alguma não
+      // chegou, o certo é o gestor continuar no wizard (com tudo preenchido) e
+      // tentar de novo — não abrir o app com metade da rede faltando.
+      const gravadas = await m.fetchUnitsStrict(cid);
+      const faltando = unitRows.filter(u => !gravadas.some(g => g.id === u.id));
+      if (faltando.length) {
+        throw new Error(`${faltando.map(u => u.name).join(', ')} não chegou ao servidor`);
+      }
+
       const sectorRows = sectors.filter(s => s.name.trim()).map((s, i) => ({ id: s.id, unitId: s.unitId || unitRows[0]?.id, name: s.name.trim(), sortOrder: i }));
       for (const s of sectorRows) await m.saveSector({ id: s.id, companyId: cid, unitId: s.unitId, name: s.name, sortOrder: s.sortOrder });
 
@@ -12431,9 +12497,15 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
       }
       await m.saveCompany({ id: cid, primaryColor, logoUrl, onboardedAt: now });
 
+      // Rascunho cumpriu o papel: a configuração está no banco.
+      try { localStorage.removeItem(draftKey); } catch (_) {}
+
       onDone({
         patch: { onboarded_at: now, primary_color: primaryColor, logo_url: logoUrl ?? company.logo_url ?? null },
-        units: unitRows, sectors: sectorRows, types: typeRows,
+        // As lojas saem da leitura do banco, não do que ficou na tela: é a
+        // versão que a equipe vai ver no próximo login (com fuso e ordem reais).
+        units: gravadas.map(g => ({ id: g.id, name: g.name, color: g.color, timezone: g.timezone })),
+        sectors: sectorRows, types: typeRows,
       });
     } catch (e) {
       console.error('onboarding finish falhou:', e);

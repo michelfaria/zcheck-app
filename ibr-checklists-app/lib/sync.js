@@ -971,6 +971,21 @@ export async function fetchUnits(companyId) {
   }
 }
 
+// Mesma leitura, SEM a rede de segurança do cache: o erro sobe. Quem precisa
+// saber se o servidor confirmou (o onboarding, ao conferir as lojas gravadas)
+// não pode receber o cache local como se fosse resposta do banco.
+export async function fetchUnitsStrict(companyId) {
+  const { data, error } = await db()
+    .from('units')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('active', true)
+    .order('sort_order');
+  if (error) throw error;
+  await cache.setRaw(`zc_units::${companyId}`, data || []);
+  return data || [];
+}
+
 export async function fetchSectors(companyId) {
   try {
     const { data, error } = await db()
@@ -1003,6 +1018,17 @@ export async function fetchChecklistTypes(companyId) {
   }
 }
 
+// Upsert que CONFERE o que gravou. Sem o `.select()`, o PostgREST responde 201
+// sem corpo e um upsert que não afetou linha nenhuma (RLS silenciosa, conflito
+// resolvido em outra linha) volta como sucesso — foi assim que loja configurada
+// no onboarding sumiu sem erro. Agora, escrita que não devolve linha é erro.
+async function upsertRow(table, row, label) {
+  const { data, error } = await db().from(table).upsert(row, { onConflict: 'id' }).select('id');
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error(`${label} não foi gravado(a) no banco`);
+  return data[0];
+}
+
 export async function saveUnit(unit) {
   const row = {
     id: unit.id, company_id: unit.companyId, name: unit.name,
@@ -1011,8 +1037,7 @@ export async function saveUnit(unit) {
   // Só entra no upsert quando veio: um `undefined` viraria null e a coluna é
   // NOT NULL. Quem edita só o nome da loja não pode zerar o fuso dela.
   if (unit.timezone) row.timezone = unit.timezone;
-  const { error } = await db().from('units').upsert(row, { onConflict: 'id' });
-  if (error) throw error;
+  await upsertRow('units', row, `a loja "${unit.name}"`);
 }
 
 export async function deleteUnit(id) {
@@ -1031,19 +1056,17 @@ export async function deleteSector(id) {
 }
 
 export async function saveSector(sector) {
-  const { error } = await db().from('sectors').upsert({
+  await upsertRow('sectors', {
     id: sector.id, company_id: sector.companyId, unit_id: sector.unitId,
     name: sector.name, sort_order: sector.sortOrder ?? 0,
-  }, { onConflict: 'id' });
-  if (error) throw error;
+  }, `o setor "${sector.name}"`);
 }
 
 export async function saveChecklistType(type) {
-  const { error } = await db().from('checklist_types').upsert({
+  await upsertRow('checklist_types', {
     id: type.id, company_id: type.companyId, name: type.name,
     shift: type.shift, sort_order: type.sortOrder ?? 0,
-  }, { onConflict: 'id' });
-  if (error) throw error;
+  }, `o tipo "${type.name}"`);
 }
 
 // Atualiza SÓ os campos enviados (patch), para o onboarding poder gravar cor e
