@@ -1,4 +1,15 @@
-// IBR Checklists — notify-overdue v8
+// IBR Checklists — notify-overdue v9
+//
+// ── v9, 29/07/2026: o aviso enviado passa a virar registro ─────────────────
+// A função só deixava rastro na chave `notified_<data>` de `config` — um array
+// de ids por dia, criado para DEDUPLICAR, não para contar história. O painel do
+// app lia dali e mostrava a hora do último upsert do dia para todos os avisos,
+// misturado com ids de outras empresas (a chave é global). Agora cada aviso
+// entregue vira uma linha em `notification_log`: empresa, loja, checklist,
+// alvos e entregues, com a hora do envio. `notified_` continua exatamente como
+// estava — é a deduplicação, e não muda de dono.
+// Escrever no log NÃO derruba a execução: o push já saiu, e perder o registro é
+// menos grave que repetir o aviso. A falha vai no retorno, em `logFalhou`.
 //
 // ── v8, 27/07/2026: a entrega do push nunca tinha sido verificada ──────────
 // A v7 ressuscitou a função, e a primeira execução viva expôs três defeitos na
@@ -70,7 +81,7 @@ const falha = (etapa: string, e: any) => {
 };
 
 Deno.serve(async () => {
-  console.log('notify-overdue v8 started');
+  console.log('notify-overdue v9 started');
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -139,6 +150,9 @@ Deno.serve(async () => {
   let sent = 0;
   let semAlvo = 0;
   const avisadosAgora: string[] = [];
+  // Uma linha por checklist avisado — o histórico que o painel lê. Só entra o
+  // que teve entrega confirmada, o mesmo critério de `avisadosAgora`.
+  const registros: any[] = [];
   const falhas: Record<string, number> = {};
   const mortas = new Set<string>();
 
@@ -159,10 +173,9 @@ Deno.serve(async () => {
       continue;
     }
 
-    const payload = JSON.stringify({
-      title: `⚠ Checklist atrasado — ${String(t.unit_id ?? '').toUpperCase()}`,
-      body: `${t.name} (${t.sector}) — prazo: ${t.deadline}`,
-    });
+    const titulo = `⚠ Checklist atrasado — ${String(t.unit_id ?? '').toUpperCase()}`;
+    const corpo = `${t.name} (${t.sector}) — prazo: ${t.deadline}`;
+    const payload = JSON.stringify({ title: titulo, body: corpo });
 
     let entregues = 0;
     for (const s of alvos) {
@@ -183,7 +196,15 @@ Deno.serve(async () => {
     // Só marca como avisado o que REALMENTE saiu. Até 27/07/2026 esta linha
     // rodava incondicionalmente: um dia em que todos os envios falhavam ficava
     // marcado como avisado e os alertas daquele dia se perdiam em silêncio.
-    if (entregues > 0) avisadosAgora.push(t.id);
+    if (entregues > 0) {
+      avisadosAgora.push(t.id);
+      registros.push({
+        company_id: empresa, unit_id: t.unit_id, kind: 'atraso',
+        title: titulo, body: corpo,
+        template_id: t.id, sector: t.sector, deadline: t.deadline,
+        targets: alvos.length, delivered: entregues,
+      });
+    }
   }
 
   if (mortas.size > 0) {
@@ -201,10 +222,24 @@ Deno.serve(async () => {
     if (eUp) return falha('config upsert', eUp);
   }
 
+  // O histórico é secundário ao aviso: se esta gravação falhar, o push já saiu e
+  // a deduplicação já está registrada. Não devolve 500 — mas também não some:
+  // vai no retorno, para não repetir a história do erro engolido da v6.
+  let logFalhou: string | null = null;
+  if (registros.length > 0) {
+    const { error: eLog } = await supabase.from('notification_log').insert(registros);
+    if (eLog) {
+      logFalhou = eLog.message;
+      console.error('[notify-overdue] notification_log:', eLog.message);
+    }
+  }
+
   console.log(`Done. Sent: ${sent}, avisados: ${avisadosAgora.length}, semAlvo: ${semAlvo}, falhas: ${JSON.stringify(falhas)}`);
   return new Response(JSON.stringify({
     ok: true, sent, atrasados: atrasados.length,
     avisados: avisadosAgora.length, semAlvo,
     falhas, inscricoesRemovidas: mortas.size,
+    registrados: logFalhou ? 0 : registros.length,
+    ...(logFalhou ? { logFalhou } : {}),
   }), { headers: { 'Content-Type': 'application/json' } });
 });
