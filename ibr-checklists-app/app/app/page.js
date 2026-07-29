@@ -36,8 +36,9 @@ import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
-// Reexecução do mesmo checklist no mesmo dia conta UMA vez. Ver lib/rounds.js.
-import { latestPerRound } from '../../lib/rounds';
+// Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
+// já registrada hoje não se refaz. Ver lib/rounds.js.
+import { latestPerRound, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -1388,7 +1389,9 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
   return (
     <>
       <Ticket accent={lineColor}>
-      <div className="flex items-start gap-3" style={{ opacity: locked ? 0.5 : byOther ? 0.6 : 1 }}>
+      {/* Esmaecido = não há o que fazer aqui: travado pelo item obrigatório
+          anterior, feito pelo colega na rodada, ou já registrado hoje. */}
+      <div className="flex items-start gap-3" style={{ opacity: locked ? 0.5 : (byOther || liveInfo?.submitted) ? 0.6 : 1 }}>
         <button
           onClick={onToggle}
           disabled={locked}
@@ -1506,7 +1509,10 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
           {collabDone && (
             <div className="flex items-center gap-2 mt-1" style={{ flexWrap: 'wrap' }}>
               <span className="flex items-center gap-1" style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>
-                <CheckCircle2 size={12} /> Concluída por {byOther ? (liveInfo.operatorName || 'colega') : 'você'}
+                <CheckCircle2 size={12} />
+                {/* "Registrada" = veio de um checklist já submetido hoje; a
+                    tarefa está fechada e só reabre pelo botão ao lado. */}
+                {liveInfo.submitted ? 'Registrada' : 'Concluída'} por {byOther ? (liveInfo.operatorName || 'colega') : 'você'}
                 {liveInfo.completedAt ? ` às ${new Date(liveInfo.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
               </span>
               {onReopen && (
@@ -1644,7 +1650,7 @@ function ConfirmModal({ items, onCancel, onConfirm }) {
 
 /* ---------------------------- execution screen ----------------------------- */
 
-function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) {
+function ExecutionScreen({ template, unit, currentUser, completions, onCancel, onComplete }) {
   const [completionRecord, setCompletionRecord] = useState(null); // shows celebration when set
   // O dia gravado na execução é o da LOJA que a executou — é ele que o prazo,
   // o relatório e a aderência usam depois.
@@ -1657,9 +1663,22 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
 
+  // Tarefas JÁ REGISTRADAS hoje neste checklist — não se executam de novo.
+  // A regra (e o porquê de ela não olhar só a rodada ao vivo) está em lib/rounds.js.
+  const submittedByItem = useMemo(
+    () => submittedTasksFrom(completions, { templateId: template.id, unitId: unit.id, date: today }),
+    [completions, template.id, unit.id, today],
+  );
+
   // ── Execução colaborativa (H6) ─────────────────────────────────────────────
-  // itemId → { done, operatorUserId, operatorName, completedAt, note, photoPath }
-  const [liveByItem, setLiveByItem] = useState({});
+  //
+  // `liveRaw` é a rodada como ela está no banco; `liveByItem` é a visão que a
+  // tela usa (rodada + tarefas já registradas). Derivar em vez de guardar o
+  // merge no estado importa: `completions` chega de forma assíncrona, e um merge
+  // congelado no estado ficaria preso ao valor que existia na montagem —
+  // tarefa registrada que carregou depois apareceria aberta e reexecutável.
+  const [liveRaw, setLiveRaw] = useState({});
+  const liveByItem = useMemo(() => mergeRoundState(liveRaw, submittedByItem), [liveRaw, submittedByItem]);
   const [collabNotice, setCollabNotice] = useState('');
   const [reopenTarget, setReopenTarget] = useState(null);
   const [reopenReason, setReopenReason] = useState('');
@@ -1707,33 +1726,40 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const effDone = id => itemStates[id]?.done || !!liveByItem[id]?.done;
 
   useEffect(() => {
-    const applyLive = map => {
-      setLiveByItem(map);
-      // Observação do colega desce para o campo de quem NÃO está editando aquele
-      // item. É o que faz o registro final sair com a evidência de todo mundo,
-      // em vez de só a de quem apertou "Concluir".
-      setItemStates(s => {
-        let mudou = false;
-        const next = { ...s };
-        Object.entries(map).forEach(([id, live]) => {
-          if (!next[id] || !live?.note || notasTocadas.current.has(id)) return;
-          if (next[id].note === live.note) return;
-          next[id] = { ...next[id], note: live.note };
-          mudou = true;
-        });
-        return mudou ? next : s;
-      });
-      const ops = new Set(Object.values(map).filter(v => v?.done && v.operatorUserId).map(v => v.operatorUserId));
-      if (ops.size >= 2 && !collabSessionTracked.current) {
-        collabSessionTracked.current = true;
-        track('collaborative_session', { source: 'checklist', checklistId: template.id, unitId: unit.id, metadata: { operators: ops.size } });
-      }
-    };
-    fetchLiveTasks(template.id, unit.id, today).then(applyLive);
-    const unsub = subscribeLiveTasks(template.id, unit.id, today, () => fetchLiveTasks(template.id, unit.id, today).then(applyLive));
+    const carregar = () => fetchLiveTasks(template.id, unit.id, today).then(setLiveRaw);
+    carregar();
+    const unsub = subscribeLiveTasks(template.id, unit.id, today, carregar);
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Observação alheia desce para o campo de quem NÃO está editando aquele item —
+  // do colega em tempo real ou da conclusão já registrada. É o que faz o registro
+  // final sair com a evidência de todo mundo, e não só a de quem apertou
+  // "Concluir".
+  useEffect(() => {
+    setItemStates(s => {
+      let mudou = false;
+      const next = { ...s };
+      Object.entries(liveByItem).forEach(([id, live]) => {
+        if (!next[id] || !live?.note || notasTocadas.current.has(id)) return;
+        if (next[id].note === live.note) return;
+        next[id] = { ...next[id], note: live.note };
+        mudou = true;
+      });
+      return mudou ? next : s;
+    });
+  }, [liveByItem]);
+
+  // Duas pessoas ou mais com tarefa concluída nesta rodada = sessão colaborativa.
+  useEffect(() => {
+    if (collabSessionTracked.current) return;
+    const ops = new Set(Object.values(liveByItem).filter(v => v?.done && v.operatorUserId).map(v => v.operatorUserId));
+    if (ops.size < 2) return;
+    collabSessionTracked.current = true;
+    track('collaborative_session', { source: 'checklist', checklistId: template.id, unitId: unit.id, metadata: { operators: ops.size } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveByItem]);
 
   const doneCount = items.filter(i => effDone(i.id)).length;
   const total = items.length;
@@ -1751,7 +1777,24 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
   const toggle = async (item, idx) => {
     if (isLocked(idx) || emVoo.current.has(item.id)) return;
     const live = liveByItem[item.id];
-    // Já concluída por um colega → bloqueia nova execução (H6).
+
+    // ── Tarefa JÁ REGISTRADA hoje: bloqueada, para qualquer um ──
+    // Inclusive para quem a fez. Refazer o que já está gravado é retrabalho, e
+    // retrabalho passa pelo "Reabrir" (com motivo), não por um toque distraído.
+    if (live?.submitted) {
+      const quem = live.operatorUserId === currentUser.id ? 'você' : (live.operatorName || 'um colega');
+      const hora = live.completedAt
+        ? ` às ${new Date(live.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        : '';
+      track('duplicate_execution_blocked', {
+        source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
+        metadata: { by: live.operatorName || null, submitted: true },
+      });
+      avisar(`"${truncName(item.text, 28)}" já foi feita hoje por ${quem}${hora}. Use "Reabrir" para refazer.`);
+      return;
+    }
+
+    // Já concluída por um colega na rodada (ainda não submetida) → bloqueia.
     if (live?.done && live.operatorUserId && live.operatorUserId !== currentUser.id) {
       track('duplicate_execution_blocked', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { by: live.operatorName || null } });
       avisar(`"${truncName(item.text, 32)}" já foi concluída por ${live.operatorName || 'um colega'}.`);
@@ -1779,7 +1822,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     // colega, volta atrás — é preferível ao checkbox travado esperando a rede.
     emVoo.current.add(item.id);
     setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: true } }));
-    setLiveByItem(m => ({ ...m, [item.id]: {
+    setLiveRaw(m => ({ ...m, [item.id]: {
       ...(m[item.id] || {}), done: true,
       operatorUserId: currentUser.id, operatorName: currentUser.name,
       completedAt: new Date().toISOString(),
@@ -1797,12 +1840,12 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     const dono = r.task?.operatorUserId;
     if (r.ok && !r.claimed && dono && dono !== currentUser.id) {
       setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
-      setLiveByItem(m => ({ ...m, [item.id]: r.task }));
+      setLiveRaw(m => ({ ...m, [item.id]: r.task }));
       track('duplicate_execution_blocked', { source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id, metadata: { by: r.task.operatorName || null, race: true } });
       avisar(`"${truncName(item.text, 32)}" acabou de ser concluída por ${r.task.operatorName || 'um colega'}.`);
       return;
     }
-    if (r.task) setLiveByItem(m => ({ ...m, [item.id]: r.task }));
+    if (r.task) setLiveRaw(m => ({ ...m, [item.id]: r.task }));
     track('task_checked', {
       source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
       metadata: { critical: !!item.critical, position: idx + 1, of: items.length, offline: !!r.offline },
@@ -1815,7 +1858,14 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     const motivo = reopenReason.trim() || null;
     setReopenTarget(null); setReopenReason('');
     setItemStates(s => ({ ...s, [item.id]: { ...s[item.id], done: false } }));
-    setLiveByItem(m => ({ ...m, [item.id]: { ...m[item.id], done: false } }));
+    // O contador adiantado é o que destrava a tarefa na hora: o merge trata
+    // `reopenedCount > 0` como reabertura deliberada e para de aplicar a
+    // conclusão já registrada. Sem ele, reabrir não teria efeito visível — a
+    // tarefa seguiria barrada pelo próprio registro que se quer refazer.
+    setLiveRaw(m => ({ ...m, [item.id]: {
+      ...m[item.id], done: false,
+      reopenedCount: (m[item.id]?.reopenedCount || 0) + 1,
+    } }));
     // O contador de reabertura é incrementado no banco (era ler-somar-gravar no
     // cliente, e duas reaberturas quase simultâneas contavam uma).
     await reopenLiveTask({
@@ -1833,7 +1883,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
     clearTimeout(notaTimers.current[id]);
     notaTimers.current[id] = setTimeout(() => {
       setLiveEvidence({ templateId: template.id, unitId: unit.id, date: today, itemId: id, note });
-      setLiveByItem(m => ({ ...m, [id]: { ...(m[id] || {}), note } }));
+      setLiveRaw(m => ({ ...m, [id]: { ...(m[id] || {}), note } }));
     }, 900);
   };
 
@@ -1847,7 +1897,7 @@ function ExecutionScreen({ template, unit, currentUser, onCancel, onComplete }) 
       const path = await uploadRoundPhoto({ templateId: template.id, unitId: unit.id, date: today, itemId: id, dataUrl });
       if (!path) return;
       await setLiveEvidence({ templateId: template.id, unitId: unit.id, date: today, itemId: id, photoPath: path });
-      setLiveByItem(m => ({ ...m, [id]: { ...(m[id] || {}), photoPath: path } }));
+      setLiveRaw(m => ({ ...m, [id]: { ...(m[id] || {}), photoPath: path } }));
     } catch (e) { console.error(e); }
   };
 
@@ -2107,6 +2157,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
     return (
       <ExecutionScreen
         template={activeTemplate} unit={unit} currentUser={currentUser}
+        completions={completions}
         onCancel={() => setActiveTemplate(null)}
         onComplete={record => { onSaveCompletion(record); setActiveTemplate(null); }}
       />
@@ -2130,23 +2181,19 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   // Level 2: praças for the selected checklist type
   // Se o tipo sumiu de activeTypes (ex.: tipos dinâmicos chegaram do banco
   // depois da seleção), cai para o nível 1 em vez de quebrar.
-  // Abrir um checklist JÁ concluído hoje é reexecução: gera um segundo registro
-  // do mesmo dia. O app permite (às vezes é o certo — o turno refez o serviço),
-  // mas em silêncio a pessoa refazia sem saber que o colega tinha acabado de
-  // fechar, e as métricas contavam duas entregas.
+  // Abrir um checklist já concluído hoje é LIVRE — e precisa ser: "concluído"
+  // aqui significa "submetido", não "tudo feito". Quem fechou com 5 de 8 itens
+  // deixou 3 pendentes, e alguém tem que poder entrar e fazer os 3.
+  //
+  // O que não pode é refazer TAREFA já executada. Esse bloqueio mora dentro da
+  // execução, item por item (ver `submittedByItem` em ExecutionScreen): barrar o
+  // checklist inteiro trancava junto o trabalho que ainda faltava.
   const abrirTemplate = (t) => {
-    const feito = completions
-      .filter(c => c.templateId === t.id && c.date === today)
-      .sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''))[0];
-    if (feito) {
-      const hora = feito.completedAt
-        ? ` às ${new Date(feito.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-        : '';
-      const quem = feito.operatorName || 'outra pessoa';
-      if (!confirm(`"${t.name}" já foi concluído hoje por ${quem}${hora}.\n\nExecutar de novo cria um segundo registro para o mesmo dia. Continuar?`)) return;
+    const jaFeito = completions.some(c => c.templateId === t.id && c.date === today);
+    if (jaFeito) {
       track('checklist_reexecucao', {
         source: 'checklist', checklistId: t.id, unitId: unit.id,
-        metadata: { template_name: t.name, anterior_de: feito.operatorName || null },
+        metadata: { template_name: t.name },
       });
     }
     setActiveTemplate(t);

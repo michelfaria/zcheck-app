@@ -90,3 +90,111 @@ test.describe('rodada de checklist', () => {
     expect(rounds.latestPerRound(lista)).toHaveLength(3);
   });
 });
+
+/**
+ * Bloqueio por TAREFA, não por checklist.
+ *
+ * O pedido era explícito: checklist já submetido hoje deve abrir (as tarefas que
+ * ficaram pendentes precisam ser executáveis), mas TAREFA já feita hoje não se
+ * refaz. Estes testes travam as duas metades — e a terceira, que é o escape:
+ * reabrir com motivo devolve a tarefa para a rodada.
+ */
+test.describe('tarefa já registrada hoje', () => {
+  const ctx = { templateId: 'abertura-salao', unitId: 'ibr1', date: '2026-07-29' };
+  const conclusao = (over = {}) => ({
+    id: 'compl-1', templateId: 'abertura-salao', unitId: 'ibr1', date: '2026-07-29',
+    completedAt: '2026-07-29T19:57:00Z', operatorName: 'Juliany', operatorUserId: 'ju',
+    items: [
+      { id: 'i1', done: true,  doneBy: 'ju',  doneByName: 'Juliany', doneAt: '2026-07-29T19:50:00Z', note: 'balcão ok', hasPhoto: true },
+      { id: 'i2', done: false, note: '' },
+    ],
+    ...over,
+  });
+
+  test('item concluído numa submissão de hoje vem travado; o pendente não', () => {
+    const sub = rounds.submittedTasksFrom([conclusao()], ctx);
+    expect(sub.i1.submitted).toBe(true);
+    expect(sub.i1.operatorName).toBe('Juliany');
+    expect(sub.i2).toBeUndefined(); // pendente segue executável
+  });
+
+  test('a evidência da submissão anterior é carregada, não perdida', () => {
+    const sub = rounds.submittedTasksFrom([conclusao()], ctx);
+    expect(sub.i1.note).toBe('balcão ok');
+    expect(sub.i1.photoPath).toBe('compl-1/i1.jpg'); // convenção de pushPhoto
+  });
+
+  test('crédito por tarefa: doneBy vence o operador do checklist', () => {
+    const sub = rounds.submittedTasksFrom([conclusao({
+      operatorUserId: 'ju', operatorName: 'Juliany',
+      items: [{ id: 'i1', done: true, doneBy: 'mi', doneByName: 'Michel' }],
+    })], ctx);
+    expect(sub.i1.operatorUserId).toBe('mi');
+    expect(sub.i1.operatorName).toBe('Michel');
+  });
+
+  test('só conta o MESMO checklist, loja e dia', () => {
+    const outros = [
+      conclusao({ id: 'x', templateId: 'outro' }),
+      conclusao({ id: 'y', unitId: 'ibr2' }),
+      conclusao({ id: 'z', date: '2026-07-28' }),
+    ];
+    expect(rounds.submittedTasksFrom(outros, ctx)).toEqual({});
+  });
+
+  test('duas submissões no mesmo dia: a última descreve a tarefa', () => {
+    const sub = rounds.submittedTasksFrom([
+      conclusao({ id: 'c1', completedAt: '2026-07-29T19:00:00Z',
+        items: [{ id: 'i1', done: true, doneByName: 'Juliany' }] }),
+      conclusao({ id: 'c2', completedAt: '2026-07-29T20:00:00Z',
+        items: [{ id: 'i1', done: true, doneByName: 'Michel' }] }),
+    ], ctx);
+    expect(sub.i1.operatorName).toBe('Michel');
+  });
+
+  test('merge: sem rodada nenhuma, o registro trava a tarefa', () => {
+    const v = rounds.mergeRoundState({}, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i1.done).toBe(true);
+    expect(v.i1.submitted).toBe(true);
+  });
+
+  test('merge: rodada com a tarefa concluída manda (executor mais fresco)', () => {
+    const live = { i1: { done: true, operatorName: 'Bruno', operatorUserId: 'bru' } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i1.operatorName).toBe('Bruno');
+    expect(v.i1.submitted).toBeUndefined();
+  });
+
+  test('merge: linha de rascunho de evidência NÃO desfaz serviço registrado', () => {
+    // set_live_task_evidence insere done:false só para carregar nota/foto.
+    const live = { i1: { done: false, reopenedCount: 0, note: 'anotação nova' } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i1.done).toBe(true);
+    expect(v.i1.submitted).toBe(true);
+    expect(v.i1.note).toBe('anotação nova'); // a nota mais recente prevalece
+  });
+
+  test('merge: REABERTA libera a tarefa mesmo já registrada', () => {
+    const live = { i1: { done: false, reopenedCount: 1, reopenedByName: 'Ana' } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i1.done).toBe(false);
+    expect(v.i1.submitted).toBeUndefined(); // destravada: dá para refazer
+  });
+
+  test('merge: a foto do registro anterior sobrevive quando a rodada não tem', () => {
+    const live = { i1: { done: true, operatorName: 'Bruno', photoPath: null } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    // Rodada concluída manda inteira — a foto dela é a válida (pode ser null).
+    expect(v.i1.operatorName).toBe('Bruno');
+    const v2 = rounds.mergeRoundState({ i1: { done: false, reopenedCount: 0 } },
+      rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v2.i1.photoPath).toBe('compl-1/i1.jpg');
+  });
+
+  test('entradas vazias não derrubam a tela de execução', () => {
+    expect(rounds.submittedTasksFrom(null, ctx)).toEqual({});
+    expect(rounds.submittedTasksFrom([{ templateId: 'abertura-salao', unitId: 'ibr1', date: '2026-07-29' }], ctx)).toEqual({});
+    expect(rounds.mergeRoundState(null, null)).toEqual({});
+    expect(rounds.mergeRoundState(undefined, { i1: { done: true, submitted: true } }).i1.done).toBe(true);
+  });
+});

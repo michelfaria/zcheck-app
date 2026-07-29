@@ -45,3 +45,74 @@ export function latestPerRound(completions) {
   });
   return [...porRodada.values()];
 }
+
+/**
+ * Tarefas JÁ REGISTRADAS hoje neste checklist — o que não se executa de novo.
+ *
+ * Fonte independente da rodada ao vivo (`live_tasks`), e é isso que importa: a
+ * rodada pode não ter a marcação (a pessoa marcou offline, quem executou foi
+ * outro aparelho, a purga levou uma rodada antiga) e ainda assim o serviço está
+ * feito e gravado. Quem responde por "foi feito?" é a conclusão submetida.
+ *
+ * "Concluído" no cartão do checklist significa SUBMETIDO, não "tudo feito" —
+ * quem fechou com 5 de 8 deixou 3 pendentes. Por isso o bloqueio é por tarefa:
+ * barrar o checklist inteiro trancaria junto o trabalho que ainda falta.
+ *
+ * A foto aponta para o arquivo da conclusão anterior (`{completionId}/{itemId}.jpg`,
+ * a convenção de `pushPhoto` em sync.js), então quem submeter de novo carrega a
+ * evidência em vez de gravar um item sem prova.
+ *
+ * @returns {Object} itemId → { done, operatorUserId, operatorName, completedAt,
+ *                              note, photoPath, submitted: true }
+ */
+export function submittedTasksFrom(completions, { templateId, unitId, date }) {
+  const map = {};
+  (completions || [])
+    .filter(c => c && c.templateId === templateId && c.unitId === unitId && c.date === date)
+    // Da mais antiga para a mais recente: em caso de repetição, a última vence.
+    .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''))
+    .forEach(c => {
+      (c.items || []).forEach(i => {
+        if (!i?.done) return;
+        map[i.id] = {
+          done: true,
+          operatorUserId: i.doneBy || c.operatorUserId || null,
+          operatorName: i.doneByName || c.operatorName || null,
+          completedAt: i.doneAt || c.completedAt || null,
+          note: i.note || '',
+          photoPath: i.hasPhoto ? `${c.id}/${i.id}.jpg` : null,
+          submitted: true,
+        };
+      });
+    });
+  return map;
+}
+
+/**
+ * Rodada ao vivo + tarefas já registradas, numa visão só — o que a tela usa.
+ *
+ * Precedência:
+ *  1. REABERTURA deliberada manda (`reopenedCount > 0` com a tarefa pendente):
+ *     a tarefa volta a ser executável mesmo tendo sido registrada antes. É o
+ *     sentido de reabrir, e sem esta regra o registro que se quer refazer
+ *     trancaria a própria correção.
+ *  2. Rodada com a tarefa CONCLUÍDA manda: traz o executor mais fresco.
+ *  3. Fora disso, o registro gravado vence. Uma linha `done: false` na rodada
+ *     pode ser só um rascunho de evidência (nota entra na rodada sem concluir
+ *     nada) e não desfaz um serviço já entregue.
+ *
+ * Nota e foto se somam nos dois sentidos: o que a rodada tem de mais recente
+ * prevalece, o que falta vem do registro anterior.
+ */
+export function mergeRoundState(live, submitted) {
+  const out = { ...(live || {}) };
+  Object.entries(submitted || {}).forEach(([id, sub]) => {
+    const l = (live || {})[id];
+    const reaberta = l && !l.done && (l.reopenedCount || 0) > 0;
+    if (reaberta) return;
+    if (!l || !l.done) {
+      out[id] = { ...sub, note: l?.note || sub.note, photoPath: l?.photoPath || sub.photoPath };
+    }
+  });
+  return out;
+}
