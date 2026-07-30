@@ -117,6 +117,22 @@ Estes são independentes. Esquecer qualquer um deixa o app se contradizendo.
    `latestPerRound`/`earliestPerRound` (30/07), mas continuam contando por
    EXISTÊNCIA: uma rodada parcial conta como entrega inteira.
 
+### 3.2.0 Armadilha ao escrever SQL: `date` tem tipo diferente por tabela
+
+Descoberto na prática em 30/07/2026, com uma consulta que falhou:
+
+- **`completions.date` é `date`** — comparar com `to_char(...)` dá
+  `42883: operator does not exist: date >= text`. Use `date >= current_date - 2`.
+- **`live_tasks.date` é `text`** (`YYYY-MM-DD`, ver `0003_live_tasks.sql`) —
+  comparação lexical, e é o que `purge_live_tasks` usa. Aqui `to_char()` é o certo.
+
+Literal entre aspas (`date = '2026-07-30'`) funciona nas duas, porque o Postgres
+faz a coerção. O que não funciona é reusar o padrão de uma tabela na outra.
+
+O repositório **não tem DDL de `completions`** (a tabela é anterior às migrations;
+`00-setup-estado-quebrado.sql` é só um esqueleto para teste), então a fonte da
+verdade sobre tipos é o banco — ou a mensagem de erro.
+
 ### 3.2.1 De onde sai o dado (não precisa de migration)
 
 A completude já está gravada: `completions.items` é JSONB e cada item tem
