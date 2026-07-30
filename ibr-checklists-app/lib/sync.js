@@ -72,6 +72,15 @@ export async function fetchTemplates(seedTemplates) {
         name: row.name,
         deadline: row.deadline,
         items: row.items,
+        // Checklist desativado CONTINUA vindo do banco de propósito: ele não
+        // aparece na operação, mas é o que permite contar o passado com a
+        // configuração que existia naquele dia. Quem lista para executar ou
+        // gerenciar filtra por `active` — ver `templateAtiva` em app/app/page.js.
+        // Antes da migration 20260730 as colunas não existem: `active` cai em
+        // true e `deactivatedAt` em null, que é o comportamento de sempre.
+        active: row.active !== false,
+        deactivatedAt: row.deactivated_at ?? null,
+        createdAt: row.created_at ?? null,
       }));
       await cache.set('ibr_templates', mapped);
       console.log('[Supabase] Loaded', mapped.length, 'templates');
@@ -82,6 +91,43 @@ export async function fetchTemplates(seedTemplates) {
   }
   const cached = await cache.get('ibr_templates');
   return cached || seedTemplates;
+}
+
+/**
+ * Desativa o checklist em vez de apagá-lo.
+ *
+ * `delete` reescrevia o passado: as execuções ficavam órfãs em `completions` e o
+ * "previstos" de dias já fechados encolhia, porque ele é contado da lista ATUAL
+ * de checklists. A linha ia embora e não havia como reconstruir a configuração
+ * do dia anterior.
+ *
+ * `deactivated_at` é preenchido pelo trigger da migration 20260730 — não é
+ * enviado aqui de propósito, para que uma escrita direta no banco também não
+ * consiga deixar um checklist inativo sem data.
+ *
+ * LANÇA em falha. O chamador precisa poder contar a verdade: o botão de excluir
+ * engolia o erro num `catch` vazio e a linha voltava no próximo carregamento.
+ */
+export async function deactivateTemplate(id) {
+  const { data, error } = await db()
+    .from('templates')
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('id');
+  if (error) {
+    // Sem a migration, `active` não existe. Cai no comportamento antigo para o
+    // app não travar no intervalo entre o deploy e a migration — com aviso, que
+    // aqui a diferença é perda de dado.
+    if (error.code === '42703' || /active/.test(error.message || '')) {
+      console.warn('[sync] templates.active ausente — rode 20260730_templates_desativar.sql. Apagando (comportamento antigo).');
+      const { error: delErr } = await db().from('templates').delete().eq('id', id);
+      if (delErr) throw delErr;
+      return { legacy: true };
+    }
+    throw error;
+  }
+  if (!data || data.length === 0) throw new Error('o checklist não foi desativado no banco');
+  return { legacy: false };
 }
 
 export async function saveTemplates(templates, changedIds = null) {
@@ -188,9 +234,18 @@ export async function fetchUsers(seedUsers) {
 // aprovação. Daí: INSERT para quem é novo, UPDATE para quem já existe, e erro
 // que sobe para a tela.
 //
-// `changedIds` segue o mesmo contrato de saveTemplates: escreve só o que mudou.
-// Sem ele, a lista é tratada como completa e quem sumiu dela é apagado.
-export async function saveUsers(users, changedIds = null) {
+// Opções:
+//   · changedIds — mesmo contrato de saveTemplates: grava só o que mudou.
+//     `[]` significa "só estado local e cache, não escreve nada no banco".
+//     Ausente/null grava a lista inteira.
+//   · deleteIds  — quem apagar, NOMEADO. Antes a exclusão era o diff entre a
+//     lista recebida e o banco: quem não estivesse na lista morria. Uma lista
+//     parcial (o fallback offline do cache devolve o que tiver, e antes do
+//     login `users` é só a lista de nomes do /entrar) apagava gente viva sem
+//     ninguém ter pedido. Aconteceu de verdade em 30/07/2026, num script de
+//     teste com a lista errada: 5 usuários de uma empresa foram apagados de uma
+//     vez. Exclusão agora só acontece com o id na mão.
+export async function saveUsers(users, { changedIds = null, deleteIds = null } = {}) {
   // Cache SEM os PINs: ele é só o fallback de leitura offline (fetchUsers já
   // descarta `pin` ao ler), e não há por que deixar segredo em repouso no
   // IndexedDB do aparelho.
@@ -239,17 +294,16 @@ export async function saveUsers(users, changedIds = null) {
     }
     if (falhas.length) throw new Error(falhas.join(' | '));
 
-    // Exclusão só quando a lista é a completa. Com `changedIds` em mãos não dá
-    // para saber se quem falta foi removido ou só não veio nesta chamada — e o
-    // diff apagaria gente viva.
-    if (!changedIds) {
-      const currentIds = new Set(users.map(u => u.id));
-      const toDelete = [...existingIds].filter(id => !currentIds.has(id));
-      if (toDelete.length > 0) {
-        // return=minimal de propósito: pedir a representação exige SELECT de
-        // todas as colunas (inclusive `pin`) e o DELETE volta 42501.
-        const { error } = await db().from('users').delete().in('id', toDelete);
-        if (error) throw error;
+    // Exclusão: só os ids pedidos, e só os que existem. Nunca um diff.
+    const toDelete = (deleteIds || []).filter(id => existingIds.has(id));
+    if (toDelete.length > 0) {
+      // Sem .select() de propósito: pedir a representação de volta exige SELECT
+      // de TODAS as colunas (inclusive `pin`) e o DELETE volta 42501.
+      const { error } = await db().from('users').delete().in('id', toDelete);
+      if (error) throw error;
+      const { data: sobrou } = await db().from('users').select('id').in('id', toDelete);
+      if (sobrou?.length) {
+        throw new Error(`o servidor não confirmou a remoção de ${sobrou.length} usuário(s) — recarregue e tente de novo`);
       }
     }
 

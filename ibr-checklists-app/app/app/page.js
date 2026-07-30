@@ -24,6 +24,7 @@ import {
   fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
   uploadRoundPhoto, linkRoundPhoto,
+  deactivateTemplate,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
   reviewCompletion, fetchTaskReviews,
@@ -38,7 +39,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -799,11 +800,16 @@ function filterCompletions(completions, f) {
 
 // Number of checklists expected on a given date, considering each template's item-level recurrence:
 // a template counts as "expected" that day if at least one of its items applies to that weekday.
+// Checklist que a OPERAÇÃO vê. Desativado continua carregado (o histórico
+// depende dele), mas não aparece para executar nem para gerenciar.
+const templateAtiva = t => t.active !== false;
+
 function countApplicableTemplatesOnDate(templates, f, dateStr) {
   return templates.filter(t => {
     if (f.unitId && t.unitId !== f.unitId) return false;
     if (f.sector && t.sector !== f.sector) return false;
     if (f.shift && !matchesShift(t, f.shift)) return false;
+    if (!templateExistedOn(t, dateStr)) return false;
     return t.items.some(i => isItemApplicable(i, dateStr));
   }).length;
 }
@@ -1104,9 +1110,22 @@ function compressImage(file, maxDim = 640, quality = 0.6) {
   });
 }
 
+/**
+ * Status do checklist no dia. Devolve 'done' | 'partial' | 'overdue' | 'pending'.
+ *
+ * `partial` existe porque "concluído" aqui sempre quis dizer só "foi submetido".
+ * Um checklist fechado com 5 de 8 itens ficava verde, com a mesma cara de um 8/8
+ * — e desde que o bloqueio passou a ser por tarefa, abrir esse "concluído" e
+ * encontrar 3 itens executáveis deixava o rótulo contradizendo a própria tela.
+ *
+ * Submetido sem nenhum item feito também é `partial`: foi entregue (vazio), não
+ * está pendente. Quem nunca foi submetido segue em `pending`/`overdue`, com a
+ * regra de prazo intacta.
+ */
 function templateStatus(t, completions, today) {
-  const done = completions.some(c => c.templateId === t.id && c.date === today);
-  if (done) return 'done';
+  const previstas = applicableItems(t, today).map(i => i.id);
+  const p = roundProgress(completions, { templateId: t.id, unitId: t.unitId, date: today }, previstas);
+  if (p.submissions > 0) return p.total > 0 && p.done >= p.total ? 'done' : 'partial';
   if (t.deadline) {
     const [h, m] = t.deadline.split(':').map(Number);
     const now = new Date();
@@ -1115,8 +1134,21 @@ function templateStatus(t, completions, today) {
   return 'pending';
 }
 
+// Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de
+// só "parcial", que informa o estado mas não o tamanho do que falta.
+function templateProgress(t, completions, today) {
+  return roundProgress(
+    completions,
+    { templateId: t.id, unitId: t.unitId, date: today },
+    applicableItems(t, today).map(i => i.id),
+  );
+}
+
 const STATUS_CFG = {
   done: { label: 'Concluído', color: C.success },
+  // Âmbar, não verde nem vermelho: foi entregue (não é falha) mas não está
+  // completo (não é sucesso). Contraste medido contra C.bg — ver lib/tokens.js.
+  partial: { label: 'Parcial', color: C.warning },
   overdue: { label: 'Atrasado', color: C.critical },
   pending: { label: 'Pendente', color: C.pending },
 };
@@ -2226,6 +2258,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   if (typeConfig) {
     // Get all templates for this type in visible sectors
     const typeTemplates = templates.filter(t =>
+      templateAtiva(t) &&
       t.unitId === unit.id &&
       sectors.includes(t.sector) &&
       typeConfig.match(t) &&
@@ -2250,6 +2283,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
             <div className="space-y-2">
               {ts.map(t => {
                 const status = templateStatus(t, completions, today);
+                const prog = templateProgress(t, completions, today);
                 const count = applicableItems(t, today).length;
                 // Extract praça name — format is "Praça — Tipo (detalhes)"
                 const displayName = t.name.includes(' — ') ? t.name.split(' — ')[0] : t.sector;
@@ -2260,7 +2294,11 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
                         <div style={{ minWidth: 0 }}>
                           <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{displayName}</p>
                           <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                            {count} item{count > 1 ? 's' : ''} hoje{t.deadline ? ` · até ${t.deadline}` : ''}
+                            {/* No parcial, o que importa é o TAMANHO do que falta —
+                                "Parcial" sozinho não diz se falta 1 ou 7. */}
+                            {status === 'partial'
+                              ? `${prog.done} de ${prog.total} feitos${t.deadline ? ` · até ${t.deadline}` : ''}`
+                              : `${count} item${count > 1 ? 's' : ''} hoje${t.deadline ? ` · até ${t.deadline}` : ''}`}
                           </p>
                         </div>
                         <StatusBadge status={status} />
@@ -2283,12 +2321,18 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
       <div className="space-y-2">
         {activeTypes.map(({ key, label, match }) => {
           const list = templates.filter(t =>
+            templateAtiva(t) &&
             t.unitId === unit.id && match(t) && applicableItems(t, today).length > 0 &&
             sectors.includes(t.sector)
           );
-          const done = list.filter(t => templateStatus(t, completions, today) === 'done').length;
+          // Um status por checklist, calculado UMA vez: `templateStatus` agora
+          // varre as conclusões do dia, e chamá-lo três vezes por checklist (como
+          // antes) triplicaria esse trabalho a cada render.
+          const statuses = list.map(t => templateStatus(t, completions, today));
+          const done = statuses.filter(s => s === 'done').length;
+          const partial = statuses.filter(s => s === 'partial').length;
           const total = list.length;
-          const overdue = list.filter(t => templateStatus(t, completions, today) === 'overdue').length;
+          const overdue = statuses.filter(s => s === 'overdue').length;
           if (total === 0) return null;
           const isPraca = unit.id === 'ibr1'; // praça (fem.) · setor (masc.)
           const unitLabel = isPraca ? (total > 1 ? 'praças' : 'praça') : (total > 1 ? 'setores' : 'setor');
@@ -2300,6 +2344,9 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
                     <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{label}</p>
                     <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                       {done}/{total} {unitLabel} concluíd{isPraca ? 'a' : 'o'}{total > 1 ? 's' : ''}
+                      {/* O parcial sai do "concluídos" e ganha linha própria: ele
+                          era contado como concluído e escondia trabalho pendente. */}
+                      {partial > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {partial} parcial{partial > 1 ? 'is' : ''}</span>}
                       {overdue > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {overdue} atrasad{isPraca ? 'a' : 'o'}{overdue > 1 ? 's' : ''}</span>}
                     </p>
                   </div>
@@ -2397,6 +2444,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
   const calcRate = (date, unitId, filterSectors) => {
     if (isUnitClosed(closures, unitId, date)) return null;
     const dayTemplates = templates.filter(t =>
+      templateAtiva(t) &&
       t.unitId === unitId &&
       filterSectors.includes(t.sector) &&
       applicableItems(t, date).length > 0
@@ -2564,6 +2612,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
               // Turno breakdown
               const turnoRate = (shift) => {
                 const shiftTemplates = templates.filter(t =>
+                  templateAtiva(t) &&
                   t.unitId === u.id &&
                   (Array.isArray(t.shift) ? t.shift.includes(shift) : t.shift === shift) &&
                   applicableItems(t, viewDate).length > 0
@@ -2769,20 +2818,26 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
           <Eyebrow>Por tipo de checklist</Eyebrow>
           {activeTypes.map(({ key, label, match }) => {
             const typeTemplates = templates.filter(t =>
+              templateAtiva(t) &&
               t.unitId === unit.id && match(t) &&
               sectors.includes(t.sector) &&
               applicableItems(t, viewDate).length > 0
             );
             if (typeTemplates.length === 0) return null;
-            const allDone = typeTemplates.every(t => templateStatus(t, completions, viewDate) === 'done');
-            const anyOverdue = typeTemplates.some(t => templateStatus(t, completions, viewDate) === 'overdue');
-            const doneCount = typeTemplates.filter(t => templateStatus(t, completions, viewDate) === 'done').length;
+            // Um status por checklist, uma vez só (eram três varreduras por
+            // checklist). `allDone` agora exige COMPLETO: com o estado parcial,
+            // um tipo com checklist entregue pela metade deixa de ficar verde.
+            const tipoStatus = typeTemplates.map(t => templateStatus(t, completions, viewDate));
+            const allDone = tipoStatus.every(s => s === 'done');
+            const anyOverdue = tipoStatus.some(s => s === 'overdue');
+            const anyPartial = tipoStatus.some(s => s === 'partial');
+            const doneCount = tipoStatus.filter(s => s === 'done').length;
             return (
-              <Ticket key={key} accent={allDone ? C.success : anyOverdue ? C.critical : unit.color}>
+              <Ticket key={key} accent={allDone ? C.success : anyOverdue ? C.critical : anyPartial ? C.warning : unit.color}>
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-display" style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>{label}</p>
                   <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 12, fontWeight: W.semibold, color: allDone ? C.success : anyOverdue ? C.critical : unit.color }}>
+                    <span style={{ fontSize: 12, fontWeight: W.semibold, color: allDone ? C.success : anyOverdue ? C.critical : anyPartial ? C.warning : unit.color }}>
                       {doneCount}/{typeTemplates.length}
                     </span>
                     {allDone && <CheckCircle2 size={16} color={C.success} />}
@@ -2794,10 +2849,14 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                     const t = typeTemplates.find(t => t.sector === sector);
                     if (!t) return null;
                     const status = templateStatus(t, completions, viewDate);
-                    const comp = completions.find(c => c.templateId === t.id && c.date === viewDate);
-                    const applicable = applicableItems(t, viewDate);
-                    const doneItems = comp ? comp.items.filter(i => i.done).length : 0;
-                    const totalItems = comp ? comp.items.length : applicable.length;
+                    // A ÚLTIMA submissão do dia, não a primeira que o `find`
+                    // achasse: com duas submissões, a primeira mostrava contagem e
+                    // fotos desatualizadas — e é a última que carrega a união do
+                    // que foi feito.
+                    const comp = latestPerRound(completions.filter(c => c.templateId === t.id && c.unitId === t.unitId && c.date === viewDate))[0];
+                    const prog = templateProgress(t, completions, viewDate);
+                    const doneItems = prog.done;
+                    const totalItems = prog.total || (comp ? comp.items.length : 0);
                     const photoItems = comp ? comp.items.filter(i => i.hasPhoto) : [];
                     return (
                       <div key={sector}>
@@ -5315,12 +5374,33 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
+  /**
+   * Remover checklist DESATIVA — não apaga.
+   *
+   * `delete` reescrevia o passado: as execuções ficavam órfãs em `completions` e
+   * o "previstos" de dias já fechados encolhia, porque ele é contado da lista
+   * atual de checklists. A aderência de uma semana fechada mudava sozinha.
+   *
+   * E o erro morria num `catch` vazio: uma falha de RLS tirava o checklist da
+   * tela sem tirar do banco, e ele voltava no próximo carregamento.
+   */
   const handleDelete = async id => {
+    const alvo = templates.find(t => t.id === id);
+    if (!confirm(`Remover "${alvo?.name || 'este checklist'}"?\n\nEle sai da operação, mas o histórico de execuções é preservado — e dá para reativar depois.`)) return;
     try {
-      const supabase = (await import('../../lib/supabase')).authedSupabase();
-      await supabase.from('templates').delete().eq('id', id);
-    } catch(e) {}
-    Promise.resolve(onSaveTemplates(templates.filter(t => t.id !== id))).catch(() => {});
+      const { legacy } = await deactivateTemplate(id);
+      if (legacy) showToast('Checklist removido (histórico não preservado — migration pendente).');
+      else showToast('Checklist desativado. O histórico foi preservado.');
+    } catch (e) {
+      console.error('handleDelete', e);
+      showToast(`Não foi possível remover: ${e?.message || 'tente de novo'}`);
+      return;   // a lista NÃO muda: o banco recusou
+    }
+    // Só sai da lista local depois que o banco confirmou.
+    Promise.resolve(onSaveTemplates(
+      templates.map(t => (t.id === id ? { ...t, active: false, deactivatedAt: new Date().toISOString() } : t)),
+      [id],
+    )).catch(() => {});
   };
 
   if (editing) {
@@ -5459,7 +5539,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
   if (checklistType && sector) {
     const typeConfig = activeTypes.find(c => c.key === checklistType);
     const list = templates
-      .filter(t => t.unitId === unit.id && t.sector === sector && typeConfig.match(t))
+      .filter(t => templateAtiva(t) && t.unitId === unit.id && t.sector === sector && typeConfig.match(t))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
     // Extract praça label same as ExecutarView
@@ -5554,7 +5634,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
           // IBR2/3: flat list of sectors
           <div className="space-y-2">
             {unit.sectors.map(s => {
-              const count = templates.filter(t => t.unitId === unit.id && t.sector === s && typeConfig.match(t)).length;
+              const count = templates.filter(t => templateAtiva(t) && t.unitId === unit.id && t.sector === s && typeConfig.match(t)).length;
               return (
                 <button key={s} onClick={() => setSector(s)} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                   <Ticket accent={unit.color}>
@@ -5632,7 +5712,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
           <Eyebrow>Gerenciar — {unit.name}</Eyebrow>
           <div className="space-y-2">
             {activeTypes.map(({ key, label, match }) => {
-              const total = templates.filter(t => t.unitId === unit.id && match(t)).length;
+              const total = templates.filter(t => templateAtiva(t) && t.unitId === unit.id && match(t)).length;
               return (
                 <button key={key} onClick={() => { setChecklistType(key); setSector(null); }} className="w-full text-left" style={{ background: 'none', border: 'none', padding: 0 }}>
                   <Ticket accent={unit.color}>
@@ -6786,7 +6866,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // reescrever nada. A RPC já gravou; reescrever daqui só criaria uma
         // segunda chance de falhar DEPOIS de o acesso já existir, e aí a
         // solicitação voltaria para a fila e seria aprovada duas vezes.
-        await onSaveUsers([...users, newUser], []);
+        await onSaveUsers([...users, newUser], { changedIds: [] });
       } else {
         // Apply changes to existing user
         const FIELD_MAP = {
@@ -6814,7 +6894,12 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
             if (userField) updates[userField] = value;
           }
           if (Object.keys(updates).length > 0) {
-            onSaveUsers(users.map(u => u.id === existingUser.id ? { ...u, ...updates } : u));
+            // Aqui a gravação é MESMO daqui (não há RPC): se falhar, o erro
+            // sobe, a solicitação continua na fila e nada é dado por aprovado.
+            await onSaveUsers(
+              users.map(u => u.id === existingUser.id ? { ...u, ...updates } : u),
+              { changedIds: [existingUser.id] },
+            );
           }
         }
       }
@@ -6905,10 +6990,9 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       ? [...users, { ...u, id }]
       : users.map(x => x.id === id ? { ...x, ...u } : x);
     try {
-      // `changedIds` manda para o banco só a linha mexida. Sem ele, salvar um
-      // usuário reescreveria a lista inteira — e rodaria o diff de exclusão
-      // junto, que apaga quem não estiver na lista em mãos.
-      await onSaveUsers(next, [id]);
+      // `changedIds` manda para o banco só a linha mexida — salvar um usuário
+      // não é motivo para reescrever a equipe inteira.
+      await onSaveUsers(next, { changedIds: [id] });
       setEditing(null);
       showToast(novo ? 'Usuário criado!' : 'Usuário atualizado!');
     } catch (_) {
@@ -6918,13 +7002,14 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
   };
 
   const handleDelete = async u => {
-    // Sem changedIds de propósito: a exclusão é justamente o diff entre a lista
-    // completa e o que está no banco.
     try {
-      await onSaveUsers(users.filter(x => x.id !== u.id));
+      // `deleteIds` nomeia quem sai. Nada é inferido da lista.
+      await onSaveUsers(users.filter(x => x.id !== u.id), { changedIds: [], deleteIds: [u.id] });
       showToast('Usuário removido.');
-    } catch (_) {}
-    setConfirmDelete(null);
+      setConfirmDelete(null);
+    } catch (_) {
+      // Toast do erro já subiu; o modal fica aberto para tentar de novo.
+    }
   };
 
   if (editing) {
@@ -8824,6 +8909,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
   const tDone = latestPerRound(filterCompletions(completions, scopeFilter([today]))).length;
   const scopeTemplates = templates.filter(t =>
+    templateAtiva(t) &&
     (!scopeUnitId || t.unitId === scopeUnitId) &&
     !isUnitClosed(closures, t.unitId, today) &&
     applicableItems(t, today).length > 0);
@@ -8994,8 +9080,8 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const base = {
     units: unitIds.length,
     unitsClosed: unitIds.filter(uid => isUnitClosed(closures, uid, today)).length,
-    sectors: new Set(templates.filter(t => !scopeUnitId || t.unitId === scopeUnitId).map(t => t.sector).filter(Boolean)).size,
-    templates: templates.filter(t => !scopeUnitId || t.unitId === scopeUnitId).length,
+    sectors: new Set(templates.filter(t => templateAtiva(t) && (!scopeUnitId || t.unitId === scopeUnitId)).map(t => t.sector).filter(Boolean)).size,
+    templates: templates.filter(t => templateAtiva(t) && (!scopeUnitId || t.unitId === scopeUnitId)).length,
     peopleToday: new Set(tAll.map(c => c.operatorUserId || c.operatorName).filter(Boolean)).size,
     executionsToday: tAll.length,
     criticalOpenToday: tSummary.criticalPending,
@@ -9725,7 +9811,13 @@ function longestStreak(days) {
 // `tz` é o da loja da pessoa: a sequência de dias seguidos tem que virar à
 // meia-noite dela, senão quem trabalha à noite em Manaus perde ou ganha um dia.
 function computeOperationalProfile(completions, userId, userName, tz) {
-  const mine = (completions || [])
+  // Uma rodada por checklist/dia, ANTES de qualquer contagem. É o que sustenta o
+  // ranking da Equipe e o Meu ID: sem isso, reexecutar um checklist inflava
+  // nível, conquistas, evidências e a contagem de tarefas da pessoa — e a mesma
+  // tarefa era creditada duas vezes, porque a segunda submissão carrega os itens
+  // da primeira (com o `doneBy` original).
+  const rounds = latestPerRound(completions);
+  const mine = rounds
     .filter(c => c.operatorUserId === userId || c.operatorName === userName)
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
@@ -9747,7 +9839,7 @@ function computeOperationalProfile(completions, userId, userName, tz) {
   // doneBy creditam ao responsável pelo checklist.
   let tasksDone = 0, criticalDone = 0;
   const participationDays = new Set();
-  (completions || []).forEach(c => {
+  rounds.forEach(c => {
     const isSubmitter = c.operatorUserId === userId || c.operatorName === userName;
     (c.items || []).forEach(i => {
       if (!taskCounts(i)) return;
@@ -9837,8 +9929,12 @@ function computeOperationalProfile(completions, userId, userName, tz) {
 function computeUnitProfile(completions, templates, closures, unit, days = 30, sector = null) {
   const uid = unit.id;
   const tz = tzOf(unit); // a janela é a dos últimos N dias DELA
-  const mine = (completions || [])
-    .filter(c => c.unitId === uid && (!sector || c.sector === sector))
+  // Uma rodada por checklist/dia: sem isso a loja que reexecutou um checklist
+  // aparecia com mais entregas do que o previsto (aderência acima de 100%, aqui
+  // sem nem o teto que o índice da liderança tem) e com os ITENS da mesma rodada
+  // somados duas vezes na taxa de tarefas e na contagem de evidências.
+  const mine = latestPerRound((completions || [])
+    .filter(c => c.unitId === uid && (!sector || c.sector === sector)))
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
   // Janela de datas, do mais antigo ao mais recente.
@@ -10022,11 +10118,18 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   const dates = lastDays(days, null, tz);
   const dateSet = new Set(dates);
 
-  const team = (completions || []).filter(c => scopeIds.has(c.unitId) && dateSet.has(c.date));
+  // `teamRaw` guarda as submissões; `team` é uma por rodada. A distinção importa
+  // porque as três partes do índice pesam coisas diferentes — ver cada uma abaixo.
+  const teamRaw = (completions || []).filter(c => scopeIds.has(c.unitId) && dateSet.has(c.date));
+  const team = latestPerRound(teamRaw);
 
-  // ── No prazo ──
+  // ── No prazo (peso 0.4 do índice) ──
+  // Pela PRIMEIRA entrega de cada rodada, igual ao J.I.T.: entrega feita no prazo
+  // não vira atraso porque alguém reabriu uma tarefa e submeteu de novo horas
+  // depois. Sem desduplicar, a mesma rodada entrava duas vezes — uma no prazo e
+  // outra fora — e isso derrubava o componente de maior peso da nota do líder.
   let onTimeTotal = 0, onTimeDone = 0;
-  team.forEach(c => {
+  earliestPerRound(teamRaw).forEach(c => {
     const ok = completionOnTime(c, tpl, null, units);
     if (ok === null) return;
     onTimeTotal++;
@@ -10041,7 +10144,7 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   const doneByUnitDate = new Map();
   // Uma rodada por checklist/dia: reexecução do mesmo checklist não conta como
   // dois entregues. O teto de 100 abaixo vira defesa, não a correção principal.
-  latestPerRound(team).forEach(c => {
+  team.forEach(c => {
     const k = `${c.unitId}|${c.date}`;
     doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);
   });
@@ -11990,11 +12093,11 @@ function AppInner() {
     }
   };
 
-  const saveUsers = async (next, changedIds = null) => {
+  const saveUsers = async (next, opts) => {
     const anterior = users;
     setUsers(next);
     try {
-      await dbSaveUsers(next, changedIds);
+      await dbSaveUsers(next, opts);
     } catch (e) {
       console.error('saveUsers', e);
       // Desfaz o otimismo: era exatamente ele que enganava — o colaborador
@@ -12136,7 +12239,8 @@ function AppInner() {
       const existingNames = new Set(users.map(u => u.name));
       const newUsers = SEED_USERS.filter(u => ['u5', 'u9', 'u13'].includes(u.id) && !existingNames.has(u.name));
       const nextUsers = newUsers.length ? [...users, ...newUsers] : users;
-      if (newUsers.length) await dbSaveUsers(nextUsers);
+      // Grava só os usuários de teste — a equipe existente não é reescrita.
+      if (newUsers.length) await dbSaveUsers(nextUsers, { changedIds: newUsers.map(u => u.id) });
 
       const simulated = generateSimulatedCompletions(templates, nextUsers, days);
       const nextCompletions = [...completions, ...simulated];

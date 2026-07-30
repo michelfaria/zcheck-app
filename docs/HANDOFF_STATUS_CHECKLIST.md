@@ -1,5 +1,73 @@
-# HANDOFF — Status do checklist: "CONCLUÍDO" quando não está tudo feito
+# HANDOFF — Status do checklist (IMPLEMENTADO em 30/07/2026)
 
+> **Este documento virou registro, não plano.** As duas tarefas que ele descrevia
+> foram implementadas na sessão de 30/07/2026. O que sobrou está na §0 — leia ela
+> primeiro. O resto do documento é o mapa do terreno, que segue válido e útil para
+> mexer nessas áreas.
+
+---
+
+## 0. O que foi feito, o que ficou e por quê
+
+### Feito
+
+**Status `partial`.** `templateStatus` deixou de responder "existe conclusão?" e
+passou a responder "tudo que era previsto foi feito?". Devolve
+`done | partial | overdue | pending`. Submetido sem nenhum item feito é `partial`
+(foi entregue, vazio — não é pendência). A regra de completude está em
+`roundProgress` (`lib/rounds.js`), com 8 testes: soma a união das submissões do
+dia e intersecta com os itens previstos para a data, o que impede um item removido
+do checklist de fazer um parcial parecer completo.
+
+Onde apareceu: badge "Parcial" em âmbar (`C.warning`) no Executar e no Painel; o
+cartão passa a dizer **"5 de 8 feitos"** em vez de "8 items hoje" quando é
+parcial; o nível 1 do Executar ganhou contador próprio de parciais, que antes
+entravam no "concluídos"; e no Painel o tipo só fica verde se estiver COMPLETO.
+
+**Desativar em vez de apagar** (`20260730_templates_desativar.sql`). `templates`
+ganhou `active`, `deactivated_at` e `created_at`, com trigger que impede ficar
+inativo sem data. O botão de remover em Gerenciar desativa, confirma antes,
+mostra o erro do banco e **não** tira da lista se o banco recusar (era um
+`catch(e) {}` vazio). `templateExistedOn` (`lib/rounds.js`, 5 testes) fecha a
+janela histórica: checklist criado hoje não é cobrado de ontem, e desativado hoje
+deixa de ser previsto a partir de hoje — o passado para de mudar sozinho.
+`notify-overdue` foi para **v10** e ignora checklist desativado.
+
+### Não feito, de propósito — decisão do dono do produto
+
+**Parcial continua contando como UMA entrega na aderência**, e continua
+silenciando o push de atraso. Não mudei nem um nem outro, e a razão é a mesma nos
+dois casos: mudar a definição move o número de todo cliente, e o certo depende de
+uma escolha que não é técnica.
+
+- Na aderência: contar parcial como zero derruba o índice de toda loja que fecha
+  checklist incompleto, sem ninguém ter trabalhado menos. Contar fração
+  (`done/total`) é mais justo, mas muda a métrica e o histórico deixa de ser
+  comparável.
+- No push: se parcial passar a disparar "atrasado", quem entregou 7 de 8 recebe
+  cobrança. Se não disparar, fechar com 1 de 8 silencia o dia — a brecha que já
+  existe.
+
+**A decisão ficou muito mais fácil de tomar agora**: `roundProgress` já entrega
+`done`/`total` por rodada, então qualquer das opções é uma linha em
+`computeUnitProfile`, `computeLeadershipProfile` e `buildJit`. O que falta é
+escolher, não construir.
+
+**Sem teste de dois aparelhos.** Perder a disputa por um item, foto obrigatória
+fechada por quem não tirou a foto, e a observação do colega entrando no registro
+de quem submete. A camada de banco está coberta (o claim atômico tem teste em
+PGlite); o que falta é o comportamento de UI com dois logins simultâneos, que
+precisa de duas mãos.
+
+---
+
+## Contexto original da tarefa
+
+> Tudo daqui para baixo é o documento como foi escrito em 29/07, ANTES da
+> implementação. Preservado porque o mapa do terreno (inventário, armadilhas,
+> decisões) continua valendo — mas os trechos de código citados mostram o estado
+> ANTIGO, não o atual.
+>
 > Documento autossuficiente para retomar a tarefa sem contexto prévio.
 > Criado em **29/07/2026**. Repo em `main`; último commit de CÓDIGO: **`77e0107`**
 > (o que vem depois é só documentação). Referências de linha deste documento
@@ -27,7 +95,10 @@ significa muda número em quatro lugares. É por isso que virou tarefa separada.
 
 ---
 
-## 2. Onde está a regra hoje
+## 2. Onde estava a regra (estado ANTES da implementação)
+
+> Hoje `templateStatus` usa `roundProgress` e devolve `partial`. O código abaixo é
+> o que existia até 30/07 — está aqui para explicar o que foi trocado e por quê.
 
 **`ibr-checklists-app/app/app/page.js:1107`** — a fonte única do status:
 
@@ -76,7 +147,10 @@ Levantado por `grep` em 29/07/2026. **São 4 consumidores de `templateStatus` e 
 lugares que repetem a mesma regra por conta própria** — estes últimos são a
 armadilha da tarefa.
 
-### 3.1 Chamam `templateStatus` (mudam junto, automaticamente)
+### 3.1 Chamam `templateStatus` (mudaram junto, automaticamente)
+
+> Todos já receberam o estado `partial`. As linhas são as de `77e0107` e andaram
+> com a implementação — use os nomes das funções para localizar.
 
 | Onde | Linha | O que faz com o status |
 |---|---|---|
@@ -90,7 +164,9 @@ armadilha da tarefa.
 
 Estes são independentes. Esquecer qualquer um deixa o app se contradizendo.
 
-1. **`supabase/functions/notify-overdue/index.ts` (v9)** — a mais importante.
+1. **`supabase/functions/notify-overdue/index.ts` (hoje v10)** — a mais importante.
+   **Já corrigida para ignorar checklist desativado; o comportamento com parcial
+   segue o antigo, de propósito (ver §0).**
    Roda no Deno, monta `feitos = new Set(completions.map(c => \`${c.template_id}|${c.date}\`))`
    e manda push para o que passou do prazo e não está no Set. Se "parcial" deixar
    de contar como feito, quem entregou 5 de 8 **passa a receber push de atraso**.

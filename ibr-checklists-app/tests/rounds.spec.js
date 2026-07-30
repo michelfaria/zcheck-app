@@ -261,3 +261,118 @@ test.describe('primeira vs última submissão da rodada', () => {
     expect(rounds.earliestPerRound(semHora).map(c => c.id)).toEqual(['x']);
   });
 });
+
+/**
+ * Progresso da rodada — a base do status "parcial".
+ *
+ * Antes, "concluído" no cartão significava só "existe conclusão gravada": um
+ * checklist fechado com 5 de 8 itens ficava verde, igual a um 8/8.
+ */
+test.describe('progresso da rodada', () => {
+  const ctx = { templateId: 'abertura', unitId: 'ibr1', date: '2026-07-30' };
+  const sub = (items, over = {}) => ({
+    id: 'c1', templateId: 'abertura', unitId: 'ibr1', date: '2026-07-30',
+    completedAt: '2026-07-30T11:00:00Z', items, ...over,
+  });
+
+  test('5 de 8 é parcial, não concluído', () => {
+    const items = Array.from({ length: 8 }, (_, n) => ({ id: `i${n}`, done: n < 5 }));
+    const p = rounds.roundProgress([sub(items)], ctx, items.map(i => i.id));
+    expect(p).toEqual({ submissions: 1, done: 5, total: 8 });
+  });
+
+  test('8 de 8 é completo', () => {
+    const items = Array.from({ length: 8 }, (_, n) => ({ id: `i${n}`, done: true }));
+    const p = rounds.roundProgress([sub(items)], ctx, items.map(i => i.id));
+    expect(p.done).toBe(p.total);
+  });
+
+  test('duas submissões SOMAM as tarefas feitas (união, não a última)', () => {
+    const ids = ['i1', 'i2', 'i3'];
+    const p = rounds.roundProgress([
+      sub([{ id: 'i1', done: true }, { id: 'i2', done: false }, { id: 'i3', done: false }], { id: 'c1', completedAt: '2026-07-30T11:00:00Z' }),
+      sub([{ id: 'i1', done: true }, { id: 'i2', done: true }, { id: 'i3', done: false }], { id: 'c2', completedAt: '2026-07-30T18:00:00Z' }),
+    ], ctx, ids);
+    expect(p).toEqual({ submissions: 2, done: 2, total: 3 });
+  });
+
+  test('submetido com ZERO feito conta como entrega, não como pendência', () => {
+    const items = [{ id: 'i1', done: false }, { id: 'i2', done: false }];
+    const p = rounds.roundProgress([sub(items)], ctx, items.map(i => i.id));
+    expect(p.submissions).toBe(1);
+    expect(p.done).toBe(0);
+  });
+
+  test('item que saiu do checklist NÃO infla o numerador', () => {
+    // `i9` foi feito e depois removido do template: não é mais previsto hoje.
+    const p = rounds.roundProgress(
+      [sub([{ id: 'i1', done: true }, { id: 'i9', done: true }])],
+      ctx, ['i1', 'i2'],
+    );
+    expect(p.done).toBe(1);   // sem a interseção viria 2 e o parcial pareceria completo
+    expect(p.total).toBe(2);
+  });
+
+  test('nunca submetido: nenhuma submissão, nenhuma tarefa', () => {
+    const p = rounds.roundProgress([], ctx, ['i1', 'i2']);
+    expect(p).toEqual({ submissions: 0, done: 0, total: 2 });
+  });
+
+  test('não confunde outro checklist, outra loja nem outro dia', () => {
+    const items = [{ id: 'i1', done: true }];
+    const outros = [
+      sub(items, { templateId: 'fechamento' }),
+      sub(items, { unitId: 'ibr2' }),
+      sub(items, { date: '2026-07-29' }),
+    ];
+    expect(rounds.roundProgress(outros, ctx, ['i1'])).toEqual({ submissions: 0, done: 0, total: 1 });
+  });
+
+  test('entradas vazias não derrubam a lista de checklists', () => {
+    expect(rounds.roundProgress(null, ctx, ['i1']).total).toBe(1);
+    expect(rounds.roundProgress([null], ctx, null)).toEqual({ submissions: 0, done: 0, total: 0 });
+    expect(rounds.roundProgress([sub([null, { id: 'i1', done: true }])], ctx, ['i1']).done).toBe(1);
+  });
+});
+
+/**
+ * Janela de existência do checklist — o que impede o passado de mudar sozinho.
+ *
+ * "Previstos" saía da lista ATUAL de checklists para qualquer data passada.
+ * Criar um checklist inflava o previsto de dias anteriores; apagar encolhia o
+ * denominador e a aderência de uma semana já fechada subia acima de 100%.
+ */
+test.describe('checklist era previsto naquele dia', () => {
+  const t = (over = {}) => ({ id: 't1', unitId: 'ibr1', ...over });
+
+  test('checklist criado HOJE não é cobrado de ontem', () => {
+    const novo = t({ createdAt: '2026-07-30T09:00:00Z' });
+    expect(rounds.templateExistedOn(novo, '2026-07-29')).toBe(false);
+    expect(rounds.templateExistedOn(novo, '2026-07-30')).toBe(true);
+    expect(rounds.templateExistedOn(novo, '2026-07-31')).toBe(true);
+  });
+
+  test('checklist desativado hoje deixa de ser previsto A PARTIR de hoje', () => {
+    const off = t({ deactivatedAt: '2026-07-30T09:00:00Z' });
+    expect(rounds.templateExistedOn(off, '2026-07-29')).toBe(true);  // ontem era previsto
+    expect(rounds.templateExistedOn(off, '2026-07-30')).toBe(false);
+    expect(rounds.templateExistedOn(off, '2026-07-31')).toBe(false);
+  });
+
+  test('a janela fecha nos dois lados', () => {
+    const janela = t({ createdAt: '2026-07-10T00:00:00Z', deactivatedAt: '2026-07-20T00:00:00Z' });
+    expect(rounds.templateExistedOn(janela, '2026-07-09')).toBe(false);
+    expect(rounds.templateExistedOn(janela, '2026-07-15')).toBe(true);
+    expect(rounds.templateExistedOn(janela, '2026-07-20')).toBe(false);
+  });
+
+  test('sem datas, comportamento antigo: sempre existiu', () => {
+    expect(rounds.templateExistedOn(t(), '2020-01-01')).toBe(true);
+    expect(rounds.templateExistedOn(t(), '2030-01-01')).toBe(true);
+  });
+
+  test('não quebra com entrada faltando', () => {
+    expect(rounds.templateExistedOn(null, '2026-07-30')).toBe(true);
+    expect(rounds.templateExistedOn(t({ createdAt: '2026-07-30T09:00:00Z' }), null)).toBe(true);
+  });
+});

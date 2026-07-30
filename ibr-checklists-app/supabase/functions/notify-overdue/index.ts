@@ -1,4 +1,4 @@
-// IBR Checklists — notify-overdue v9
+// IBR Checklists — notify-overdue v10
 //
 // ── v9, 29/07/2026: o aviso enviado passa a virar registro ─────────────────
 // A função só deixava rastro na chave `notified_<data>` de `config` — um array
@@ -81,7 +81,7 @@ const falha = (etapa: string, e: any) => {
 };
 
 Deno.serve(async () => {
-  console.log('notify-overdue v9 started');
+  console.log('notify-overdue v10 started');
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -97,10 +97,18 @@ Deno.serve(async () => {
   const empresaDaLoja = new Map<string, string | null>(
     (units || []).map((u: any): [string, string | null] => [u.id, u.company_id ?? null]));
 
+  // `select('*')` de propósito: `active` nasceu em 20260730_templates_desativar
+  // e nomear a coluna faria a query falhar (42703) num banco sem a migration —
+  // derrubando o aviso de atraso inteiro por causa de uma coluna nova.
   const { data: templates, error: eTpl } = await supabase
-    .from('templates').select('id, unit_id, company_id, sector, name, deadline');
+    .from('templates').select('*');
   if (eTpl) return falha('templates', eTpl);
-  const comPrazo = (templates || []).filter((t: any) => t.deadline);
+  // Checklist DESATIVADO não é cobrado. Sem este filtro, remover um checklist em
+  // Gerenciar (que agora desativa em vez de apagar, preservando o histórico)
+  // deixaria a equipe recebendo push de atraso de uma rotina que não existe mais.
+  const ativos = (templates || []).filter((t: any) => t.active !== false);
+  const comPrazo = ativos.filter((t: any) => t.deadline);
+  console.log(`Templates: ${ativos.length} ativos de ${(templates || []).length}`);
 
   // As datas de operação em jogo — uma por fuso presente no parque, não uma só.
   const datas = [...new Set(comPrazo.map((t: any) =>

@@ -110,6 +110,56 @@ export function submittedTasksFrom(completions, { templateId, unitId, date }) {
 }
 
 /**
+ * Este checklist era previsto NAQUELE dia?
+ *
+ * Sem esta janela, "previstos" saía da lista ATUAL de checklists para qualquer
+ * data passada — e o passado mudava sozinho: criar um checklist inflava o
+ * previsto de todos os dias anteriores (derrubando a aderência histórica) e
+ * apagar um encolhia o denominador (jogando a aderência de dias já fechados
+ * acima de 100%). Ver 20260730_templates_desativar.sql.
+ *
+ * Datas ausentes = comportamento antigo, de propósito: checklist sem `createdAt`
+ * conta como "sempre existiu", que é o que as linhas já gravadas significam. A
+ * comparação é por STRING de data (YYYY-MM-DD): o dia de operação já vem
+ * resolvido no fuso da loja, e converter para Date aqui reintroduziria UTC.
+ */
+export function templateExistedOn(t, dateStr) {
+  if (!t || !dateStr) return true;
+  if (t.createdAt && String(t.createdAt).slice(0, 10) > dateStr) return false;
+  if (t.deactivatedAt && String(t.deactivatedAt).slice(0, 10) <= dateStr) return false;
+  return true;
+}
+
+/**
+ * Progresso REAL da rodada: quantas das tarefas previstas para o dia foram
+ * feitas, somando todas as submissões.
+ *
+ * Existe porque "concluído" no cartão sempre significou apenas "existe conclusão
+ * gravada" — um checklist fechado com 5 de 8 itens aparecia igualzinho a um 8/8,
+ * em verde. `submissions` é separado de `done` de propósito: dá para submeter com
+ * zero item feito, e isso é uma entrega (incompleta), não uma pendência.
+ *
+ * A união entre submissões é a semântica certa: tarefa feita em QUALQUER
+ * submissão do dia está feita. E a interseção com `applicableItemIds` é o que
+ * impede um item que saiu do checklist (removido, ou fora da recorrência do dia)
+ * de inflar o numerador e fazer um parcial parecer completo.
+ *
+ * Uma passada só, sem alocar mapa de evidência: isto roda por checklist a cada
+ * render das listas.
+ */
+export function roundProgress(completions, { templateId, unitId, date }, applicableItemIds) {
+  const previstas = new Set(applicableItemIds || []);
+  const feitas = new Set();
+  let submissions = 0;
+  (completions || []).forEach(c => {
+    if (!c || c.templateId !== templateId || c.unitId !== unitId || c.date !== date) return;
+    submissions++;
+    (c.items || []).forEach(i => { if (i?.done && previstas.has(i.id)) feitas.add(i.id); });
+  });
+  return { submissions, done: feitas.size, total: previstas.size };
+}
+
+/**
  * Rodada ao vivo + tarefas já registradas, numa visão só — o que a tela usa.
  *
  * Precedência:
