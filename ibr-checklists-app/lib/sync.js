@@ -962,6 +962,37 @@ export async function requestPushPermission(user) {
   }
 }
 
+/**
+ * Quem da empresa tem inscrição de push ativa.
+ *
+ * Devolve um Map `userId → última atualização` (a mais recente entre os
+ * aparelhos da pessoa), ou **null** quando não foi possível saber.
+ *
+ * A diferença entre `null` e Map vazio é o ponto: se a leitura falhar (RLS,
+ * offline, tabela ausente) e devolvêssemos um Map vazio, a tela marcaria TODA a
+ * equipe como "sem notificação" — uma acusação falsa, e o tipo de erro que faz a
+ * gestão perseguir gente que está com tudo em ordem. `null` significa "não sei",
+ * e a tela não mostra nada.
+ */
+export async function fetchPushStatus() {
+  try {
+    const { data, error } = await db()
+      .from('push_subscriptions')
+      .select('user_id, updated_at');
+    if (error) throw error;
+    const porUsuario = new Map();
+    (data || []).forEach(r => {
+      if (!r.user_id) return;   // inscrição antiga, anterior à coluna user_id
+      const atual = porUsuario.get(r.user_id) || '';
+      if ((r.updated_at || '') > atual) porUsuario.set(r.user_id, r.updated_at || '');
+    });
+    return porUsuario;
+  } catch (e) {
+    console.warn('fetchPushStatus falhou (a tela não vai acusar ninguém):', e.message);
+    return null;
+  }
+}
+
 export async function hasPushPermission() {
   if (typeof window === 'undefined') return false;
   if (!('Notification' in window)) return false;

@@ -30,7 +30,7 @@ import {
   reviewCompletion, fetchTaskReviews,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
-  requestPushPermission, hasPushPermission,
+  requestPushPermission, hasPushPermission, fetchPushStatus,
   setCacheScope,
 } from '../../lib/sync';
 import { getTenantSlug } from '../../lib/tenant';
@@ -6804,6 +6804,23 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     setup();
     return () => { if (channel) channel.unsubscribe(); };
   }, [currentUser?.id]);
+  /**
+   * Quem está sem notificação ativa.
+   *
+   * `undefined` = carregando · `null` = não deu para saber (a tela não acusa
+   * ninguém) · Map = userId → última inscrição. A distinção existe porque marcar
+   * a equipe inteira como "sem notificação" por causa de uma falha de leitura
+   * mandaria a gestão cobrar gente que está com tudo certo.
+   *
+   * Só o alvo do push importa aqui: é a inscrição do APARELHO, não a permissão
+   * do navegador. Uma pessoa pode ter concedido a permissão e não ter inscrição
+   * (endpoint podado por 404/410, PWA reinstalado) — e é justamente esse caso
+   * que não aparecia em lugar nenhum.
+   */
+  const [pushPorUsuario, setPushPorUsuario] = useState(undefined);
+  useEffect(() => { fetchPushStatus().then(setPushPorUsuario); }, []);
+  const semPush = u => pushPorUsuario instanceof Map && !pushPorUsuario.has(u.id);
+
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [requests, setRequests] = useState([]);
@@ -7349,6 +7366,33 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           tenant). "Importar CSV" foi para a aba Gerenciar. */}
       {/* Users list */}
       <Eyebrow>Usuários e níveis de acesso</Eyebrow>
+      {/* Resumo de quem não recebe alerta. Fica ANTES da lista porque o marcador
+          por linha resolve "quem", e este bloco resolve "quantos e o que fazer" —
+          sem ele a gestão precisaria varrer a lista para descobrir o tamanho do
+          problema. Só aparece quando há alguém de fora: empresa com todos
+          inscritos não ganha um aviso permanente para ignorar. */}
+      {(() => {
+        if (!(pushPorUsuario instanceof Map)) return null;
+        const fora = users.filter(u => !u.suspended && semPush(u));
+        if (fora.length === 0) return null;
+        const ativos = users.filter(u => !u.suspended).length;
+        return (
+          <div className="flex items-start gap-2 px-3 py-2" style={{ background: `${C.warning}14`, border: `1px solid ${C.warning}`, borderRadius: 10 }}>
+            <BellOff size={16} color={C.warning} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>
+                {fora.length} de {ativos} sem notificação ativa
+              </p>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 1.5 }}>
+                Essas pessoas não recebem alerta de checklist atrasado nem de entrega
+                incompleta. Cada uma precisa ativar no próprio aparelho, em "Notif. OFF"
+                no topo do app — não há como ativar por elas daqui. No iPhone, só
+                funciona com o app instalado na Tela de Início.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
       <div className="space-y-2">
         {users.map(u => {
           const lastGestao = u.role === 'gestao' && gestaoCount <= 1;
@@ -7362,6 +7406,15 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                     {u.suspended && (
                       <span style={{ fontSize: 10, fontWeight: W.semibold, color: C.critical, background: '#FFF3F0', border: `1px solid ${C.critical}`, borderRadius: 20, padding: '1px 7px', letterSpacing: '0.04em' }}>
                         SUSPENSO
+                      </span>
+                    )}
+                    {!u.suspended && semPush(u) && (
+                      <span
+                        title="Não recebe alerta de atraso nem de entrega incompleta. Só a própria pessoa pode ativar, no aparelho dela."
+                        className="flex items-center gap-1"
+                        style={{ fontSize: 10, fontWeight: W.semibold, color: C.warning, background: `${C.warning}18`, border: `1px solid ${C.warning}`, borderRadius: 20, padding: '1px 7px', letterSpacing: '0.04em' }}
+                      >
+                        <BellOff size={10} /> SEM NOTIFICAÇÃO
                       </span>
                     )}
                   </div>
