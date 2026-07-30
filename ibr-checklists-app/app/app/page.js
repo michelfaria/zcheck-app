@@ -11882,25 +11882,35 @@ function AppInner() {
     return () => clearTimeout(t);
   }, [currentUser?.id]);
 
-  // Check push permission status on mount and re-register if needed
+  /**
+   * Reinscrição automática do push, a cada abertura de quem já deu permissão.
+   *
+   * Antes isto rodava só quando a pessoa tinha ZERO inscrições
+   * (`count === 0` por `user_id`), e o atalho abria três buracos — todos
+   * silenciosos, com o cabeçalho exibindo "Notif. ON" e nada chegando:
+   *
+   *   1. Segundo aparelho. Quem já tinha o celular registrado nunca registrava o
+   *      tablet ou o desktop: a contagem por usuário já era > 0 e o novo
+   *      dispositivo ficava de fora para sempre.
+   *   2. Inscrição podada. A notify-overdue apaga endpoint que o serviço de push
+   *      rejeita com 404/410 (v8). Depois disso a linha não voltava sozinha —
+   *      dependia da pessoa desativar e reativar a notificação na mão.
+   *   3. Troca de navegador/reinstalação do PWA gera endpoint novo, e o antigo
+   *      contava como inscrição válida.
+   *
+   * `requestPushPermission` é idempotente: `Notification.requestPermission()` não
+   * pergunta nada se já está concedida, `pushManager.subscribe` devolve a
+   * inscrição existente do aparelho, e a gravação é upsert por `endpoint`. Rodar
+   * sempre custa uma escrita por abertura e faz o estado se curar sozinho.
+   */
   useEffect(() => {
     hasPushPermission().then(async (granted) => {
       setPushEnabled(granted);
-      // If permission already granted but we have a logged-in user,
-      // re-register subscription in case the DB table was just created
-      if (granted && currentUser) {
-        try {
-          const supabase = (await import('../../lib/supabase')).authedSupabase();
-          const { count } = await supabase
-            .from('push_subscriptions')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', currentUser.id);
-          if (count === 0) {
-            console.log('[Push] Re-registering subscription...');
-            await requestPushPermission(currentUser);
-          }
-        } catch (e) { console.warn('[Push] Re-register check failed:', e); }
-      }
+      if (!granted || !currentUser) return;
+      try {
+        const sub = await requestPushPermission(currentUser);
+        if (!sub) console.warn('[Push] permissão concedida mas a inscrição falhou');
+      } catch (e) { console.warn('[Push] reinscrição falhou:', e); }
     });
   }, [currentUser?.id]);
 
