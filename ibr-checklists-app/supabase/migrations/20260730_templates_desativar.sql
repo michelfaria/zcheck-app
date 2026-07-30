@@ -17,9 +17,21 @@
 -- permite contar o passado com a configuração que existia naquele dia.
 --
 -- `created_at` entra pelo mesmo motivo, no outro extremo: checklist criado hoje
--- não pode ser cobrado de semana passada. Para as linhas que já existem, o
--- backfill assume que sempre existiram (NULL = sem início conhecido), que é o
--- comportamento atual e não muda nenhum número.
+-- não pode ser cobrado de semana passada.
+--
+-- ATENÇÃO ao aplicar (verificado no IBR em 30/07/2026): **a tabela pode JÁ TER
+-- `created_at`**, vindo do schema original — o `add column if not exists` viraria
+-- no-op e as linhas existentes trariam a data REAL de criação, não NULL. É melhor
+-- (a janela histórica fica exata), mas não é neutro: para dias anteriores à
+-- criação de um checklist ele deixa de contar como previsto, e a aderência
+-- daqueles dias sobe. Confira ANTES de aplicar em outro projeto:
+--
+--   select count(created_at) as com_data, count(*) as total,
+--          count(*) filter (where created_at > now() - interval '90 days') as recentes
+--     from public.templates;
+--
+-- `recentes = 0` significa que a mudança não alcança a janela que o app lê (90
+-- dias) e nenhum número se move.
 --
 -- ADITIVA. Rodar no SQL Editor do Supabase (projeto rjuulamozdhssgqrzfji).
 -- Teste local: node supabase/migrations/20260730_templates_desativar.test.mjs

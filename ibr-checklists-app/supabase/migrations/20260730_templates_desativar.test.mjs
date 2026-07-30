@@ -76,12 +76,18 @@ check(novo.rows[0].active === true && novo.rows[0].deactivated_at === null, 'che
 check(novo.rows[0].created_at !== null,
   'checklist novo registra created_at — sem isso ele seria cobrado da semana passada');
 
-// O outro lado, que é o mais delicado: as linhas ANTIGAS têm que ficar em NULL.
-// `add column ... default now()` num só passo preencheria todas com "agora" e
-// todo checklist do parque deixaria de ser previsto em datas anteriores.
+// O outro lado, que é o mais delicado: a migration não pode inventar data para
+// quem já existia. `add column ... default now()` num só passo preencheria todas
+// com "agora" e todo checklist do parque deixaria de ser previsto em datas
+// anteriores — mês fechado mudando de valor.
+//
+// Este teste parte de uma tabela SEM `created_at`, então o esperado é NULL. Em
+// banco onde a coluna já existe (foi o caso do IBR em 30/07), as linhas trazem a
+// data real e a janela histórica fica exata — melhor, mas não neutro: ver o
+// cabeçalho do .sql.
 const antigas = await db.query(`select count(*)::int as n from public.templates where id in ('t1','t2') and created_at is null`);
 check(antigas.rows[0].n === 2,
-  'checklists que já existiam ficam SEM created_at (= sempre existiram): nenhum número histórico se move');
+  'a migration não inventa data para quem já existia (tabela sem a coluna: fica NULL)');
 
 // ── Idempotência ─────────────────────────────────────────────────────────────
 await db.exec(MIGRATION);
