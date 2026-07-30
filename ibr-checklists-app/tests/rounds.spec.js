@@ -158,11 +158,34 @@ test.describe('tarefa já registrada hoje', () => {
     expect(v.i1.submitted).toBe(true);
   });
 
-  test('merge: rodada com a tarefa concluída manda (executor mais fresco)', () => {
+  test('merge: rodada concluída dá o executor, mas a trava do registro sobrevive', () => {
     const live = { i1: { done: true, operatorName: 'Bruno', operatorUserId: 'bru' } };
     const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
-    expect(v.i1.operatorName).toBe('Bruno');
-    expect(v.i1.submitted).toBeUndefined();
+    expect(v.i1.operatorName).toBe('Bruno');   // rodada é mais fresca
+    expect(v.i1.submitted).toBe(true);         // mas já foi registrada: não se refaz
+  });
+
+  /**
+   * O caso que o teste real de 30/07 pegou e a 1ª versão desta função errava.
+   *
+   * É o cenário MAIS COMUM que existe: a pessoa marca a tarefa, conclui o
+   * checklist e volta. A linha da rodada continua `done = true` no nome dela.
+   * A versão antiga deixava a rodada ganhar inteira, `submitted` se perdia, e o
+   * toque abria o modal de reabertura em vez de barrar — a tela dizia "Concluída
+   * por você" onde devia dizer "Registrada por você".
+   */
+  test('merge: marquei, submeti e voltei — a tarefa está TRAVADA', () => {
+    const live = { i1: { done: true, operatorUserId: 'ju', operatorName: 'Juliany', reopenedCount: 0 } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i1.submitted).toBe(true);
+    expect(v.i1.operatorUserId).toBe('ju');
+  });
+
+  test('merge: tarefa concluída na rodada e AINDA NÃO submetida segue destravada', () => {
+    // Caminho de desfazer no meio da execução: não pode virar bloqueio.
+    const live = { i2: { done: true, operatorUserId: 'ju', operatorName: 'Juliany' } };
+    const v = rounds.mergeRoundState(live, rounds.submittedTasksFrom([conclusao()], ctx));
+    expect(v.i2.submitted).toBeUndefined();
   });
 
   test('merge: linha de rascunho de evidência NÃO desfaz serviço registrado', () => {

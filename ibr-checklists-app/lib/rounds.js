@@ -103,16 +103,27 @@ export function submittedTasksFrom(completions, { templateId, unitId, date }) {
  *
  * Nota e foto se somam nos dois sentidos: o que a rodada tem de mais recente
  * prevalece, o que falta vem do registro anterior.
+ *
+ * `submitted: true` é o que BLOQUEIA refazer, e ele acompanha o registro
+ * gravado — não a rodada. Isso vale inclusive quando a rodada já tem a tarefa
+ * como concluída: aí o executor vem da rodada (mais fresco) mas a marca de
+ * "já registrada" tem que sobreviver. Foi exatamente aqui que a primeira versão
+ * errou: no caso mais comum de todos — a pessoa marca, conclui o checklist e
+ * volta, com a linha da rodada ainda `done = true` no nome dela — a rodada
+ * ganhava inteira, `submitted` se perdia e o toque caía no antigo caminho de
+ * reabertura em vez de barrar. Teste real de 30/07 mostrou "Concluída por você"
+ * onde devia estar "Registrada por você".
  */
 export function mergeRoundState(live, submitted) {
   const out = { ...(live || {}) };
   Object.entries(submitted || {}).forEach(([id, sub]) => {
     const l = (live || {})[id];
-    const reaberta = l && !l.done && (l.reopenedCount || 0) > 0;
-    if (reaberta) return;
-    if (!l || !l.done) {
-      out[id] = { ...sub, note: l?.note || sub.note, photoPath: l?.photoPath || sub.photoPath };
-    }
+    // Reabertura deliberada: a tarefa volta a ser pendente e executável.
+    if (l && !l.done && (l.reopenedCount || 0) > 0) return;
+    out[id] = l?.done
+      // Rodada concluída + já registrada: executor da rodada, trava do registro.
+      ? { ...l, submitted: true, note: l.note || sub.note, photoPath: l.photoPath || sub.photoPath }
+      : { ...sub, note: l?.note || sub.note, photoPath: l?.photoPath || sub.photoPath };
   });
   return out;
 }

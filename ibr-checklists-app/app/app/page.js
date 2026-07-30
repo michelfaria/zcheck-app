@@ -1957,6 +1957,24 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
     setCompletionRecord(record); // show celebration first
   };
 
+  // Âncora da tela de conclusão.
+  //
+  // Ela nascia na posição de rolagem em que a pessoa estava no checklist — que,
+  // ao apertar "Concluir", é o fim da lista. Resultado: a tela abria cortada, com
+  // o ícone e o título já fora do viewport. Aqui subimos a página E todo
+  // container rolável acima da âncora (no desktop quem rola é um painel interno,
+  // não a janela), para ela começar logo abaixo do cabeçalho de lojas.
+  const celebRef = useRef(null);
+  useEffect(() => {
+    if (!completionRecord) return;
+    try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) {}
+    let p = celebRef.current?.parentElement;
+    while (p) {
+      if (p.scrollHeight > p.clientHeight + 1) p.scrollTop = 0;
+      p = p.parentElement;
+    }
+  }, [completionRecord]);
+
   const finish = () => {
     // A foto exigida pode estar em três lugares, e qualquer um serve: comigo, na
     // rodada (colega anexou) ou implícita no item que o colega já concluiu.
@@ -1986,7 +2004,12 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
     const level = levels.find(l => rate >= l.min);
     const LevelIcon = level.Icon;
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      // `minHeight: 100vh` era o outro motivo do corte: somado ao cabeçalho de
+      // lojas, o bloco sempre ficava mais alto que a tela, então SEMPRE havia
+      // rolagem e o conteúdo centrado nunca caberia inteiro. Agora ele tem a
+      // altura do próprio conteúdo e começa no topo — junto com a âncora, aparece
+      // completo abaixo do cabeçalho. O padding inferior livra a barra de navegação.
+      <div ref={celebRef} style={{ background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '12px 24px', paddingBottom: 'calc(var(--zc-nav-h) + 32px + env(safe-area-inset-bottom, 0px))' }}>
         <LevelIcon size={56} color={level.color} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
         <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: level.color, textAlign: 'center', marginBottom: 8 }}>{level.title}</p>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, marginBottom: 20 }}>{level.msg}</p>
