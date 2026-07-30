@@ -1,4 +1,15 @@
-// IBR Checklists — notify-overdue v11
+// IBR Checklists — notify-overdue v12
+//
+// ── v12, 30/07/2026: modo simulação (?dry=1) ───────────────────────────────
+// Esta função roda a cada 5 minutos e ENVIA PUSH para a operação real. Até aqui
+// não havia como inspecioná-la sem notificar gente — e foi exatamente isso que a
+// deixou meses quebrada respondendo "No overdue" sem ninguém notar (ver v7).
+//
+// `?dry=1` calcula tudo e devolve no corpo: o que enviaria, para quantos alvos, e
+// um DIAGNÓSTICO de cada checklist com prazo (entregue? completo? quantas
+// tarefas? já venceu?). Não envia push, não grava deduplicação, não escreve no
+// log, não poda inscrição. Serve para conferir a régua a qualquer hora do dia,
+// não só depois do prazo vencer.
 //
 // ── v11, 30/07/2026: o alerta de ENTREGUE INCOMPLETO ───────────────────────
 // Havia uma brecha: qualquer submissão silenciava a cobrança do dia. Fechar o
@@ -114,8 +125,10 @@ const falha = (etapa: string, e: any) => {
     { status: 500, headers: { 'Content-Type': 'application/json' } });
 };
 
-Deno.serve(async () => {
-  console.log('notify-overdue v11 started');
+Deno.serve(async (req: Request) => {
+  // `dry` nunca vem do cron (body vazio, sem query): produção segue idêntica.
+  const dry = new URL(req.url).searchParams.get('dry') === '1';
+  console.log(`notify-overdue v12 started${dry ? ' (DRY RUN)' : ''}`);
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -212,6 +225,61 @@ Deno.serve(async () => {
     return { ...t, _feitas: previstas.length - pendentes.length, _total: previstas.length, _pendentes: pendentes.length };
   }).filter(Boolean) as any[];
   console.log(`Incompletos: ${incompletos.length}`);
+
+  // ── Simulação ──────────────────────────────────────────────────────────────
+  // Sai ANTES de qualquer escrita ou envio. O diagnóstico classifica todo
+  // checklist com prazo, inclusive os que ainda estão no prazo — é o que permite
+  // conferir a conta de completude às 9h com prazo às 16h50.
+  if (dry) {
+    const { data: subsDry } = await supabase
+      .from('push_subscriptions').select('endpoint, unit_id, company_id, role');
+    const PAPEIS = ['gestao', 'gerencia', 'lideranca'];
+    const alvosDe = (t: any) => {
+      const empresa = t.company_id ?? empresaDaLoja.get(t.unit_id) ?? null;
+      return (subsDry || []).filter((s: any) => {
+        const e = s.company_id ?? empresaDaLoja.get(s.unit_id) ?? null;
+        if (empresa == null || e !== empresa) return false;
+        return s.unit_id === t.unit_id || PAPEIS.includes(s.role);
+      }).length;
+    };
+
+    const diagnostico = comPrazo.map((t: any) => {
+      const { date, minutes } = localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ);
+      const feitas = entregas.get(`${t.id}|${date}`);
+      const [h, m] = t.deadline.split(':').map(Number);
+      const venceu = minutes > h * 60 + m;
+      let previstas = previstasDoDia(t, date);
+      if (previstas.length === 0 && feitas) previstas = [...feitas];
+      const nFeitas = previstas.filter((id: string) => feitas?.has(id)).length;
+      const completo = previstas.length > 0 && nFeitas === previstas.length;
+      return {
+        loja: t.unit_id, checklist: t.name, setor: t.sector, prazo: t.deadline,
+        dia: date, agora: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+        venceu, entregue: !!feitas, tarefas: `${nFeitas}/${previstas.length}`,
+        veredito: !feitas ? (venceu ? 'ATRASO' : 'aguardando entrega')
+          : completo ? 'completo' : (venceu ? 'INCOMPLETO' : 'incompleto, ainda no prazo'),
+        alvos: alvosDe(t),
+      };
+    });
+
+    const previa = [
+      ...atrasados.map((t: any) => ({ tipo: 'atraso', loja: t.unit_id, checklist: t.name, alvos: alvosDe(t) })),
+      ...incompletos.map((t: any) => ({
+        tipo: 'incompleto', loja: t.unit_id, checklist: t.name,
+        corpo: `${t.name} (${t.sector}): ${t._feitas} de ${t._total} tarefas. ${t._pendentes} pendente${t._pendentes > 1 ? 's' : ''}.`,
+        alvos: alvosDe(t),
+      })),
+    ];
+
+    return new Response(JSON.stringify({
+      ok: true, dry: true, versao: 'v12',
+      comPrazo: comPrazo.length, ativos: ativos.length,
+      atrasados: atrasados.length, incompletos: incompletos.length,
+      inscricoes: (subsDry || []).length,
+      jaAvisados: [...jaAvisados].length, jaAvisadosIncompletos: [...jaAvisadosInc].length,
+      previa, diagnostico,
+    }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+  }
 
   if (atrasados.length === 0 && incompletos.length === 0) {
     return new Response(JSON.stringify({ ok: true, sent: 0, message: 'Nenhum atrasado nem incompleto', comPrazo: comPrazo.length }),
