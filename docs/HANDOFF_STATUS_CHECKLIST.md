@@ -1,7 +1,7 @@
 # HANDOFF — Checklists: execução, status e métricas
 
 > Ponto de partida para uma sessão nova sobre checklists. Autossuficiente.
-> Última atualização: **30/07/2026**. `main` = `498c1ba`, empurrado e em produção.
+> Última atualização: **30/07/2026**. `main` = `7fa0313`+, empurrado e em produção.
 > (O nome do arquivo é histórico — nasceu para a tarefa do status, que já foi
 > feita. Hoje ele cobre o domínio de checklists inteiro.)
 
@@ -96,22 +96,31 @@ Pendências concretas:
   ninguém da operação foi avisado. Vale comunicar antes que alguém leia como
   queda de desempenho.
 
-### 2.4 Dívida técnica encontrada e NÃO corrigida
+### 2.4 Dívida técnica — corrigida em 30/07
 
-- **`templateStatus` usa o fuso de quem olha.** `new Date().getHours()` decide se
-  passou do prazo — viola a regra do `CLAUDE.md` (o dia e a hora são os da LOJA).
-  Uma gerência em outro fuso vê "Atrasado" na hora errada. O certo é
-  `instantAt(date, t.deadline, tzOf(unit))`, como `completionOnTime` já faz.
-  Não toquei porque estava fora do escopo pedido, mas é bug real.
-- **Os agendamentos de cron não estão no repositório.** `notify-overdue-checklists`
-  (`*/5 * * * *`), `cleanup-checklist-photos` (`0 6 * * *`) e
-  `cleanup-login-attempts` (`0 * * * *`) só existem no banco, criados à mão. Só o
-  `purge-live-tasks` está versionado (na migration de 29/07). Se o projeto for
-  recriado, os três desaparecem sem aviso.
-- **`ibr-checklists-app-codex-update/`** é cópia morta no repo. **`supabase/`** na
-  raiz é artefato do CLI e deveria estar no `.gitignore`.
-  **`video-colaboradores/`** são 44 MB não rastreados — decisão sua se entram num
-  repo público.
+- ~~**`templateStatus` usava o fuso de quem olha.**~~ **CORRIGIDO.** O prazo virou
+  um INSTANTE no relógio da loja (`instantAt(date, deadline, tz)`), e todos os 5
+  call sites passam o fuso: `ExecutarView` e `PainelView` via `tzOf(unit)`,
+  `buildJit` via `tzOfUnit(units, t.unitId)` — numa rede multi-fuso não existe um
+  fuso único para a lista de atrasados. A regra saiu para
+  `statusFromProgress` (`lib/rounds.js`) com 10 testes, incluindo os dois defeitos
+  que ninguém tinha visto: **dia passado sem entrega ficava "pendente" para
+  sempre** (só a hora era comparada, a data era ignorada) e **prazo 23:30 contra
+  00:10 dava "no prazo"**.
+- ~~**Agendamentos de cron fora do repositório.**~~ **VERSIONADOS** em
+  `20260730_crons_versionados.sql`: os quatro (`notify-overdue-checklists`,
+  `cleanup-checklist-photos`, `cleanup-login-attempts`, `purge-live-tasks`). Cada
+  um só é criado se NÃO existir — no banco de hoje a migration é no-op, de
+  propósito: substituir o que está no ar por uma transcrição arriscaria derrubar o
+  alerta por um erro de digitação. O valor dela é o dia em que o projeto for
+  recriado.
+- ~~**`supabase/` na raiz**~~ entrou no `.gitignore` (artefato do CLI).
+
+Segue em aberto, porque é decisão sua e envolve apagar coisa:
+
+- **`ibr-checklists-app-codex-update/`** — cópia morta (já ignorada pelo git).
+- **`video-colaboradores/`** — 44 MB não rastreados; num repo público é sua
+  chamada se entram, ficam de fora ou vão para outro lugar.
 
 ---
 
@@ -153,6 +162,7 @@ purga agendada 06:30) · `20260730_reopen_sem_rodada` · `20260730_templates_des
 | `submittedTasksFrom` | tarefas já registradas hoje — o que não se refaz |
 | `mergeRoundState` | rodada ao vivo + registradas; a precedência decide se dá para refazer |
 | `templateExistedOn` | o checklist era previsto naquele dia? |
+| `statusFromProgress` | done / partial / overdue / pending — prazo no relógio da LOJA |
 
 **Precedência do merge** (a mais delicada): reabertura deliberada > rodada com a
 tarefa concluída > registro gravado. A terceira regra existe porque uma linha
@@ -195,7 +205,7 @@ cd ibr-checklists-app && npx playwright test tests/rounds.spec.js tests/dates.sp
 ```
 
 ```bash
-cd ibr-checklists-app && npm i --no-save @electric-sql/pglite && for f in 20260729_live_tasks_colaborativo 20260730_reopen_sem_rodada 20260730_templates_desativar; do node supabase/migrations/$f.test.mjs; done
+cd ibr-checklists-app && npm i --no-save @electric-sql/pglite && for f in 20260729_live_tasks_colaborativo 20260730_reopen_sem_rodada 20260730_templates_desativar 20260730_crons_versionados; do node supabase/migrations/$f.test.mjs; done
 ```
 
 ```bash
@@ -208,7 +218,7 @@ Inspecionar o push sem notificar ninguém:
 curl -s -X POST "https://rjuulamozdhssgqrzfji.supabase.co/functions/v1/notify-overdue?dry=1" -H "Authorization: Bearer $(grep -o 'eyJ[A-Za-z0-9_.-]*' ibr-checklists-app/lib/supabase.js | head -1)" -d '{}'
 ```
 
-61 testes puros + 3 suítes de migration + 14 asserções da edge function passavam
+71 testes puros + 4 suítes de migration + 14 asserções da edge function passavam
 em 30/07.
 
 ---

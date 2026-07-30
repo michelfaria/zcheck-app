@@ -19,6 +19,8 @@
  * componente React de 12 mil linhas não tem teste. Aqui tem (tests/rounds.spec.js).
  */
 
+import { instantAt, APP_TZ } from './dates';
+
 /** Chave da rodada. `templateName` é o fallback de registros antigos sem id. */
 export function roundKey(c) {
   return `${c?.unitId}|${c?.templateId || c?.templateName}|${c?.date}`;
@@ -181,6 +183,36 @@ export function roundIsComplete(completion, applicableItemIds) {
     : (completion?.items || []).map(i => i?.id).filter(Boolean);
   if (!previstas.length) return false;
   return previstas.every(id => feitas.has(id));
+}
+
+/**
+ * Status do checklist no dia: `done` | `partial` | `overdue` | `pending`.
+ *
+ * Duas regras, nesta ordem:
+ *
+ *  1. Foi submetido? Então é `done` (todas as previstas feitas) ou `partial`.
+ *     Submetido sem nenhum item feito é `partial`: entregue vazio não é pendência.
+ *  2. Não foi submetido? Então depende do PRAZO — que é um instante no relógio da
+ *     LOJA, não um par de números comparado com o relógio de quem olha.
+ *
+ * A regra 2 corrige três defeitos da versão que comparava `new Date().getHours()`
+ * com a hora do prazo:
+ *
+ *   · fuso de quem olha: gerência em outro fuso via "Atrasado" na hora errada;
+ *   · a DATA era ignorada — um dia passado só aparecia como atrasado se o relógio
+ *     de agora por acaso estivesse depois do horário do prazo;
+ *   · virada de meia-noite: prazo 23:30 contra 00:10 dava "no prazo".
+ *
+ * `agora` é injetável para o teste poder fixar o instante.
+ */
+export function statusFromProgress(progress, { deadline, date, tz = APP_TZ } = {}, agora = new Date()) {
+  const p = progress || { submissions: 0, done: 0, total: 0 };
+  if (p.submissions > 0) return p.total > 0 && p.done >= p.total ? 'done' : 'partial';
+  if (deadline && date) {
+    const limite = instantAt(date, deadline, tz);
+    if (limite && agora > limite) return 'overdue';
+  }
+  return 'pending';
 }
 
 /**

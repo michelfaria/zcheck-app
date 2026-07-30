@@ -11,3 +11,7 @@ ibr-checklists-app-codex-update/
 .claude/agent-memory/
 **/.claude/settings.local.json
 **/.claude/agent-memory/
+
+# Estado local do CLI do Supabase (link do projeto). Não é código, e o
+# `supabase/` que importa é o de ibr-checklists-app/, esse sim versionado.
+/supabase/

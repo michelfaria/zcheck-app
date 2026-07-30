@@ -39,7 +39,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, roundProgress, roundIsComplete, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -1142,16 +1142,12 @@ function compressImage(file, maxDim = 640, quality = 0.6) {
  * está pendente. Quem nunca foi submetido segue em `pending`/`overdue`, com a
  * regra de prazo intacta.
  */
-function templateStatus(t, completions, today) {
+function templateStatus(t, completions, today, tz = APP_TZ) {
   const previstas = applicableItems(t, today).map(i => i.id);
   const p = roundProgress(completions, { templateId: t.id, unitId: t.unitId, date: today }, previstas);
-  if (p.submissions > 0) return p.total > 0 && p.done >= p.total ? 'done' : 'partial';
-  if (t.deadline) {
-    const [h, m] = t.deadline.split(':').map(Number);
-    const now = new Date();
-    if (now.getHours() * 60 + now.getMinutes() > h * 60 + m) return 'overdue';
-  }
-  return 'pending';
+  // A regra (e o porquê do prazo ser um INSTANTE no relógio da loja, não uma
+  // comparação com o relógio de quem olha) está em lib/rounds.js, com teste.
+  return statusFromProgress(p, { deadline: t.deadline, date: today, tz });
 }
 
 // Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de
@@ -2302,7 +2298,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
             {sector && <Eyebrow>{sector}</Eyebrow>}
             <div className="space-y-2">
               {ts.map(t => {
-                const status = templateStatus(t, completions, today);
+                const status = templateStatus(t, completions, today, tzOf(unit));
                 const prog = templateProgress(t, completions, today);
                 const count = applicableItems(t, today).length;
                 // Extract praça name — format is "Praça — Tipo (detalhes)"
@@ -2348,7 +2344,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
           // Um status por checklist, calculado UMA vez: `templateStatus` agora
           // varre as conclusões do dia, e chamá-lo três vezes por checklist (como
           // antes) triplicaria esse trabalho a cada render.
-          const statuses = list.map(t => templateStatus(t, completions, today));
+          const statuses = list.map(t => templateStatus(t, completions, today, tzOf(unit)));
           const done = statuses.filter(s => s === 'done').length;
           const partial = statuses.filter(s => s === 'partial').length;
           const total = list.length;
@@ -2847,7 +2843,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
             // Um status por checklist, uma vez só (eram três varreduras por
             // checklist). `allDone` agora exige COMPLETO: com o estado parcial,
             // um tipo com checklist entregue pela metade deixa de ficar verde.
-            const tipoStatus = typeTemplates.map(t => templateStatus(t, completions, viewDate));
+            const tipoStatus = typeTemplates.map(t => templateStatus(t, completions, viewDate, tzOf(unit)));
             const allDone = tipoStatus.every(s => s === 'done');
             const anyOverdue = tipoStatus.some(s => s === 'overdue');
             const anyPartial = tipoStatus.some(s => s === 'partial');
@@ -2868,7 +2864,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                   {sectors.map(sector => {
                     const t = typeTemplates.find(t => t.sector === sector);
                     if (!t) return null;
-                    const status = templateStatus(t, completions, viewDate);
+                    const status = templateStatus(t, completions, viewDate, tzOf(unit));
                     // A ÚLTIMA submissão do dia, não a primeira que o `find`
                     // achasse: com duas submissões, a primeira mostrava contagem e
                     // fotos desatualizadas — e é a última que carrega a união do
@@ -8995,7 +8991,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
     (!scopeUnitId || t.unitId === scopeUnitId) &&
     !isUnitClosed(closures, t.unitId, today) &&
     applicableItems(t, today).length > 0);
-  const overdue = scopeTemplates.filter(t => templateStatus(t, completions, today) === 'overdue');
+  const overdue = scopeTemplates.filter(t => templateStatus(t, completions, today, tzOfUnit(units, t.unitId)) === 'overdue');
 
   // ── Recomendações (rule-based; IA generativa fica para depois — §16) ──
   const recs = [];

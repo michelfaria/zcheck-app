@@ -425,3 +425,70 @@ test.describe('rodada completa', () => {
     expect(completa).toBe(false);                // aderência não conta
   });
 });
+
+/**
+ * Status do checklist — e o prazo no relógio da LOJA.
+ *
+ * A versão antiga comparava `new Date().getHours()` com a hora do prazo. Três
+ * defeitos: usava o fuso de QUEM OLHA, ignorava a data (dia passado ficava
+ * "pendente" para sempre) e errava na virada da meia-noite.
+ */
+test.describe('status do checklist', () => {
+  const prog = (submissions, done, total) => ({ submissions, done, total });
+  // 2026-07-30, 16:00 em Brasília (UTC-3) = 19:00Z.
+  const instante = (iso) => new Date(iso);
+  const ctx = (over = {}) => ({ deadline: '16:50', date: '2026-07-30', tz: 'America/Sao_Paulo', ...over });
+
+  test('submetido e completo = done', () => {
+    expect(rounds.statusFromProgress(prog(1, 8, 8), ctx(), instante('2026-07-30T19:00:00Z'))).toBe('done');
+  });
+
+  test('submetido pela metade = partial, mesmo depois do prazo', () => {
+    expect(rounds.statusFromProgress(prog(1, 5, 8), ctx(), instante('2026-07-30T23:00:00Z'))).toBe('partial');
+  });
+
+  test('submetido com zero feito = partial (entregue vazio não é pendência)', () => {
+    expect(rounds.statusFromProgress(prog(1, 0, 8), ctx(), instante('2026-07-30T19:00:00Z'))).toBe('partial');
+  });
+
+  test('não submetido, antes do prazo = pending', () => {
+    // 19:00Z = 16:00 em Brasília, antes das 16:50.
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx(), instante('2026-07-30T19:00:00Z'))).toBe('pending');
+  });
+
+  test('não submetido, depois do prazo = overdue', () => {
+    // 20:00Z = 17:00 em Brasília, depois das 16:50.
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx(), instante('2026-07-30T20:00:00Z'))).toBe('overdue');
+  });
+
+  /**
+   * O CORAÇÃO da correção: o mesmo instante, duas lojas em fusos diferentes.
+   * 19:20Z = 16:20 em São Paulo (ainda no prazo) e 15:20 em Manaus (idem), mas
+   * 20:20Z = 17:20 em SP (vencido) e 16:20 em Manaus (ainda no prazo).
+   */
+  test('o mesmo instante pode estar vencido numa loja e no prazo na outra', () => {
+    const agora = instante('2026-07-30T20:20:00Z');
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ tz: 'America/Sao_Paulo' }), agora)).toBe('overdue');
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ tz: 'America/Manaus' }), agora)).toBe('pending');
+  });
+
+  test('dia PASSADO sem entrega é overdue, não pendente para sempre', () => {
+    // Era o bug: às 10h de hoje, um checklist de ontem com prazo 16:50 aparecia
+    // "pendente", porque só a HORA era comparada.
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ date: '2026-07-29' }), instante('2026-07-30T13:00:00Z'))).toBe('overdue');
+  });
+
+  test('virada da meia-noite: prazo 23:30 contra 00:10 do dia seguinte', () => {
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ deadline: '23:30' }), instante('2026-07-31T03:10:00Z'))).toBe('overdue');
+  });
+
+  test('checklist SEM prazo nunca é atrasado', () => {
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ deadline: null }), instante('2027-01-01T00:00:00Z'))).toBe('pending');
+  });
+
+  test('entradas faltando não quebram a lista de checklists', () => {
+    expect(rounds.statusFromProgress(null, ctx(), instante('2026-07-30T19:00:00Z'))).toBe('pending');
+    expect(rounds.statusFromProgress(prog(0, 0, 0), {}, instante('2026-07-30T19:00:00Z'))).toBe('pending');
+    expect(rounds.statusFromProgress(prog(1, 0, 0), {})).toBe('partial');
+  });
+});
