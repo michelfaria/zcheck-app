@@ -38,7 +38,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -6766,8 +6766,8 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           sectorId: approvalSector,
         };
         // Cria o usuário server-side copiando o PIN da solicitação (ou o
-        // override digitado pela gestão). Roda ANTES do onSaveUsers para que o
-        // upsert-sem-pin que vem depois preserve o PIN no ON CONFLICT.
+        // override digitado pela gestão). É a RPC que grava tudo — o
+        // onSaveUsers logo abaixo só põe a linha na lista da tela.
         const { error: rpcErr } = await supabase.rpc('create_user_from_request', {
           p_request_id: req.id,
           p_user_id: newUser.id,
@@ -6782,7 +6782,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // solicitação como aprovada. A pessoa ficava aprovada sem existir em
         // `users` — fora da lista de login e fora da fila de aprovação.
         if (rpcErr) throw new Error(`Não foi possível criar o acesso de ${newUser.name}: ${rpcErr.message}`);
-        onSaveUsers([...users, newUser]);
+        // Lista vazia de alterações = atualiza só o estado local e o cache, sem
+        // reescrever nada. A RPC já gravou; reescrever daqui só criaria uma
+        // segunda chance de falhar DEPOIS de o acesso já existir, e aí a
+        // solicitação voltaria para a fila e seria aprovada duas vezes.
+        await onSaveUsers([...users, newUser], []);
       } else {
         // Apply changes to existing user
         const FIELD_MAP = {
@@ -6894,16 +6898,32 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     setProcessingId(null);
   };
 
-  const handleSave = u => {
-    let next;
-    if (u.id) next = users.map(x => x.id === u.id ? { ...x, ...u } : x);
-    else next = [...users, { ...u, id: uid() }];
-    onSaveUsers(next);
-    setEditing(null);
+  const handleSave = async u => {
+    const novo = !u.id;
+    const id = u.id || uid();
+    const next = novo
+      ? [...users, { ...u, id }]
+      : users.map(x => x.id === id ? { ...x, ...u } : x);
+    try {
+      // `changedIds` manda para o banco só a linha mexida. Sem ele, salvar um
+      // usuário reescreveria a lista inteira — e rodaria o diff de exclusão
+      // junto, que apaga quem não estiver na lista em mãos.
+      await onSaveUsers(next, [id]);
+      setEditing(null);
+      showToast(novo ? 'Usuário criado!' : 'Usuário atualizado!');
+    } catch (_) {
+      // O motivo já foi ao toast em saveUsers. O editor continua aberto, com o
+      // que foi digitado, para dar para corrigir e tentar de novo.
+    }
   };
 
-  const handleDelete = u => {
-    onSaveUsers(users.filter(x => x.id !== u.id));
+  const handleDelete = async u => {
+    // Sem changedIds de propósito: a exclusão é justamente o diff entre a lista
+    // completa e o que está no banco.
+    try {
+      await onSaveUsers(users.filter(x => x.id !== u.id));
+      showToast('Usuário removido.');
+    } catch (_) {}
     setConfirmDelete(null);
   };
 
@@ -8788,7 +8808,12 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const scopeFilter = dates => (scopeUnitId ? { dates, unitId: scopeUnitId } : { dates });
 
   // ── Ontem ──
-  const yFiltered = filterCompletions(completions, scopeFilter([yStr]));
+  // `latestPerRound`: o mesmo checklist submetido duas vezes no dia é UMA rodada.
+  // Sem isso o J.I.T. contava 19 entregas para 13 previstos e anunciava 146% de
+  // aderência — número que não significa nada e que a gestão lia como elogio.
+  // Também corrige `ySummary` e o `groupStats` por loja, que somavam os itens da
+  // mesma rodada duas vezes.
+  const yFiltered = latestPerRound(filterCompletions(completions, scopeFilter([yStr])));
   const ySummary = summarizeCompletions(yFiltered);
   let yExpected = 0;
   unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, yStr)) yExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, yStr); });
@@ -8797,7 +8822,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // ── Hoje ──
   let tExpected = 0;
   unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
-  const tDone = filterCompletions(completions, scopeFilter([today])).length;
+  const tDone = latestPerRound(filterCompletions(completions, scopeFilter([today]))).length;
   const scopeTemplates = templates.filter(t =>
     (!scopeUnitId || t.unitId === scopeUnitId) &&
     !isUnitClosed(closures, t.unitId, today) &&
@@ -8809,7 +8834,10 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
 
   // 1. Itens críticos que ficaram pendentes ≥2× nos últimos 7 dias.
   const last7 = lastDays(7, addDays(today, -1));
-  const f7 = filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 });
+  // Uma rodada por dia: sem isso, um crítico pendente em duas submissões do MESMO
+  // dia já batia o limite de "≥2× nos últimos 7 dias" e virava recomendação —
+  // hotspot inventado a partir de uma reexecução.
+  const f7 = latestPerRound(filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 }));
   const hotspot = new Map();
   f7.forEach(c => (c.items || []).forEach(i => {
     if (i.critical && !i.done) { const k = `${c.unitId}|${i.id}`; hotspot.set(k, (hotspot.get(k) || 0) + 1); }
@@ -8900,7 +8928,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // gráfico. Tudo derivado dos MESMOS dados; nenhuma consulta nova.
 
   // (a) Por setor, hoje. `groupStats` já sabe agrupar por setor.
-  const tFiltered = filterCompletions(completions, scopeFilter([today]));
+  const tFiltered = latestPerRound(filterCompletions(completions, scopeFilter([today])));
   const sectors = groupStats(tFiltered, 'setor', units)
     .map(g => ({ name: g.key, checklists: g.checklists, rate: Math.round(g.rate), criticalPending: g.criticalPending }))
     .slice(0, 8);
@@ -8942,9 +8970,16 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // alterna entre os dois na tela — o cálculo dos dois é barato e já está tudo
   // em memória.
   const dates7 = lastDays(7, today);
+  // Pontualidade usa a PRIMEIRA submissão da rodada, não a última: uma entrega
+  // feita no prazo não vira atrasada porque alguém reabriu uma tarefa e submeteu
+  // de novo horas depois. Sem desduplicar, a mesma rodada aparecia duas vezes —
+  // uma no prazo e outra fora — e era isso que produzia "10 no prazo, 9 fora"
+  // num dia de 13 checklists previstos.
+  // Parte da lista CRUA de propósito: `tFiltered` já foi reduzido à última
+  // submissão de cada rodada, e filtrar a primeira sobre isso não teria efeito.
   const punctuality = {
-    today: punctualityStats(tFiltered, templates, units),
-    last7: punctualityStats(filterCompletions(completions, scopeFilter(dates7)), templates, units),
+    today: punctualityStats(earliestPerRound(filterCompletions(completions, scopeFilter([today]))), templates, units),
+    last7: punctualityStats(earliestPerRound(filterCompletions(completions, scopeFilter(dates7))), templates, units),
   };
 
   /**
@@ -11955,9 +11990,20 @@ function AppInner() {
     }
   };
 
-  const saveUsers = async next => {
+  const saveUsers = async (next, changedIds = null) => {
+    const anterior = users;
     setUsers(next);
-    try { await dbSaveUsers(next); } catch (e) { console.error('saveUsers', e); }
+    try {
+      await dbSaveUsers(next, changedIds);
+    } catch (e) {
+      console.error('saveUsers', e);
+      // Desfaz o otimismo: era exatamente ele que enganava — o colaborador
+      // aparecia na lista, o banco tinha recusado, e só o reload contava a
+      // verdade. Volta a lista e diz o motivo.
+      setUsers(anterior);
+      showToast(`Não foi possível salvar no servidor: ${e?.message || 'tente de novo.'}`);
+      throw e;
+    }
   };
 
   const saveClosures = async next => {

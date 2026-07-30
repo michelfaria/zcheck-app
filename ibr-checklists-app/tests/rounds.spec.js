@@ -221,3 +221,43 @@ test.describe('tarefa já registrada hoje', () => {
     expect(rounds.mergeRoundState(undefined, { i1: { done: true, submitted: true } }).i1.done).toBe(true);
   });
 });
+
+/**
+ * Pontualidade usa a PRIMEIRA submissão; todo o resto usa a última.
+ *
+ * O J.I.T. mostrava "10 no prazo, 9 fora do prazo" num dia de 13 checklists
+ * previstos: a mesma rodada entrava duas vezes, uma por submissão, e a segunda
+ * (feita horas depois, para completar o que faltava) contava como atraso.
+ */
+test.describe('primeira vs última submissão da rodada', () => {
+  const r = (id, hora) => ({
+    id, unitId: 'ibr1', templateId: 'abertura', date: '2026-07-30',
+    completedAt: `2026-07-30T${hora}:00Z`,
+  });
+
+  test('a pontualidade olha a primeira entrega, não a correção posterior', () => {
+    const lista = [r('manha', '11'), r('tarde', '21')];
+    expect(rounds.earliestPerRound(lista).map(c => c.id)).toEqual(['manha']);
+    expect(rounds.latestPerRound(lista).map(c => c.id)).toEqual(['tarde']);
+  });
+
+  test('a ordem de leitura do banco não muda o resultado', () => {
+    const ordem1 = [r('manha', '11'), r('tarde', '21')];
+    const ordem2 = [r('tarde', '21'), r('manha', '11')];
+    expect(rounds.earliestPerRound(ordem1)[0].id).toBe(rounds.earliestPerRound(ordem2)[0].id);
+    expect(rounds.latestPerRound(ordem1)[0].id).toBe(rounds.latestPerRound(ordem2)[0].id);
+  });
+
+  test('rodadas distintas continuam separadas nas duas funções', () => {
+    const lista = [r('a', '11'), { ...r('b', '12'), templateId: 'fechamento' }, { ...r('c', '13'), unitId: 'ibr2' }];
+    expect(rounds.earliestPerRound(lista)).toHaveLength(3);
+    expect(rounds.latestPerRound(lista)).toHaveLength(3);
+  });
+
+  test('entradas vazias e sem horário não derrubam a conta', () => {
+    expect(rounds.earliestPerRound(null)).toEqual([]);
+    expect(rounds.earliestPerRound([])).toEqual([]);
+    const semHora = [{ id: 'x', unitId: 'u', templateId: 't', date: 'd' }, { id: 'y', unitId: 'u', templateId: 't', date: 'd' }];
+    expect(rounds.earliestPerRound(semHora).map(c => c.id)).toEqual(['x']);
+  });
+});

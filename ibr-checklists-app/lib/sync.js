@@ -173,8 +173,28 @@ export async function fetchUsers(seedUsers) {
   return (cached || seedUsers).map(({ pin: _pin, ...u }) => u);
 }
 
-export async function saveUsers(users) {
-  await cache.set('ibr_users', users);
+// NUNCA usar .upsert() nesta tabela. O `authenticated` tem SELECT só de COLUNA
+// em `users` — é assim que o `pin` fica escondido de quem tem a anon key (ver
+// 20260709_secure_pin_validation.sql, que revoga o SELECT de tabela e reconcede
+// coluna a coluna). E o `INSERT ... ON CONFLICT DO UPDATE` que o .upsert() gera
+// exige SELECT da TABELA INTEIRA: todo upsert aqui volta 42501 "permission
+// denied for table users". Verificado em produção em 30/07/2026 com um token de
+// sessão real — upsert 403, INSERT puro 201, UPDATE 204, DELETE 204.
+//
+// Como nenhum retorno era conferido (o supabase-js NÃO lança: devolve
+// `{ data, error }`, e o try/catch em volta era decorativo), a gestão criava um
+// colaborador, via o nome na tela, e a linha nunca existia. Nenhum dos 10
+// usuários de produção nasceu por esta função — todos vieram da RPC de
+// aprovação. Daí: INSERT para quem é novo, UPDATE para quem já existe, e erro
+// que sobe para a tela.
+//
+// `changedIds` segue o mesmo contrato de saveTemplates: escreve só o que mudou.
+// Sem ele, a lista é tratada como completa e quem sumiu dela é apagado.
+export async function saveUsers(users, changedIds = null) {
+  // Cache SEM os PINs: ele é só o fallback de leitura offline (fetchUsers já
+  // descarta `pin` ao ler), e não há por que deixar segredo em repouso no
+  // IndexedDB do aparelho.
+  await cache.set('ibr_users', users.map(({ pin: _pin, ...u }) => u));
   try {
     const baseRow = u => ({
       id: u.id,
@@ -186,37 +206,68 @@ export async function saveUsers(users) {
       updated_at: new Date().toISOString(),
     });
 
-    // The anon role can no longer read the `pin` column, so we never fetch PINs
-    // back to preserve them. Instead: rows that carry a new PIN are upserted
-    // WITH the pin column; rows without a PIN are upserted WITHOUT it, so the
-    // ON CONFLICT UPDATE leaves the stored PIN untouched. (New users always
-    // arrive with a PIN — the forms require one — so no INSERT ever lands a
-    // null PIN.)
-    const withPin = users.filter(u => u.pin);
-    const withoutPin = users.filter(u => !u.pin);
+    // Quem já está no banco decide INSERT vs UPDATE. Ler só `id` não é
+    // sensível, e o RLS já escopa por empresa.
+    const { data: existing, error: readErr } = await db().from('users').select('id');
+    if (readErr) throw readErr;
+    const existingIds = new Set((existing || []).map(u => u.id));
 
-    if (withPin.length) {
-      await db().from('users').upsert(
-        withPin.map(u => ({ ...baseRow(u), pin: u.pin })),
-        { onConflict: 'id' }
-      );
-    }
-    if (withoutPin.length) {
-      await db().from('users').upsert(
-        withoutPin.map(baseRow),
-        { onConflict: 'id' }
-      );
+    const toSave = changedIds ? users.filter(u => changedIds.includes(u.id)) : users;
+    // changedIds apontando para id fora da lista = a edição se perdeu no
+    // caminho. Sair calado faria a tela dizer "salvo" sem nada gravado.
+    if (changedIds?.length && toSave.length === 0) {
+      throw new Error('o usuário editado não está mais na lista carregada — recarregue a página e tente de novo');
     }
 
-    // Only delete users that were explicitly removed (exist in DB but not in
-    // our list). Diff against ids only — reading ids is not sensitive.
-    const { data: existing } = await db().from('users').select('id');
-    const currentIds = new Set(users.map(u => u.id));
-    const toDelete = (existing || []).filter(u => !currentIds.has(u.id)).map(u => u.id);
-    if (toDelete.length > 0) {
-      await db().from('users').delete().in('id', toDelete);
+    const falhas = [];
+    for (const u of toSave) {
+      if (existingIds.has(u.id)) {
+        // `pin` só entra quando um PIN novo foi digitado. Sem ele o PIN gravado
+        // fica intacto — o cliente nunca chega a LER o PIN de ninguém para
+        // poder reenviá-lo.
+        const patch = baseRow(u);
+        if (u.pin) patch.pin = u.pin;
+        const { error } = await db().from('users').update(patch).eq('id', u.id);
+        if (error) { console.error('saveUsers: update', u.name, error); falhas.push(`${u.name}: ${error.message}`); }
+      } else {
+        // `users.pin` é NOT NULL e não tem default: usuário novo sem PIN é
+        // recusado pelo banco com 23502. Os formulários já exigem 4 dígitos.
+        if (!u.pin) { falhas.push(`${u.name}: usuário novo precisa de um PIN de 4 dígitos`); continue; }
+        const { error } = await db().from('users').insert({ ...baseRow(u), pin: u.pin });
+        if (error) { console.error('saveUsers: insert', u.name, error); falhas.push(`${u.name}: ${error.message}`); }
+      }
     }
-  } catch (e) { console.warn('saveUsers: Supabase error', e); }
+    if (falhas.length) throw new Error(falhas.join(' | '));
+
+    // Exclusão só quando a lista é a completa. Com `changedIds` em mãos não dá
+    // para saber se quem falta foi removido ou só não veio nesta chamada — e o
+    // diff apagaria gente viva.
+    if (!changedIds) {
+      const currentIds = new Set(users.map(u => u.id));
+      const toDelete = [...existingIds].filter(id => !currentIds.has(id));
+      if (toDelete.length > 0) {
+        // return=minimal de propósito: pedir a representação exige SELECT de
+        // todas as colunas (inclusive `pin`) e o DELETE volta 42501.
+        const { error } = await db().from('users').delete().in('id', toDelete);
+        if (error) throw error;
+      }
+    }
+
+    // Confere no banco o que acabou de ser gravado — mesma razão de
+    // saveTemplates: um "ok" do PostgREST não garante linha visível.
+    if (toSave.length > 0) {
+      const { data: gravados } = await db().from('users')
+        .select('id').in('id', toSave.map(u => u.id));
+      const ok = new Set((gravados || []).map(r => r.id));
+      const faltando = toSave.filter(u => !ok.has(u.id));
+      if (faltando.length) {
+        throw new Error(`o servidor não confirmou a gravação de ${faltando.map(u => `"${u.name}"`).join(', ')} — recarregue e tente de novo`);
+      }
+    }
+  } catch (e) {
+    console.warn('saveUsers: Supabase error', e);
+    throw e;
+  }
 }
 
 // ── Completions ───────────────────────────────────────────────────────────────

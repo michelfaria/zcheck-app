@@ -36,12 +36,33 @@ export function roundKey(c) {
  * @returns {Array} subconjunto de `completions`, sem cópias
  */
 export function latestPerRound(completions) {
+  return umaPorRodada(completions, (nova, atual) => (nova.completedAt || '') > (atual.completedAt || ''));
+}
+
+/**
+ * Uma submissão por rodada — a PRIMEIRA.
+ *
+ * Existe por causa da pontualidade, e só dela: uma rodada entregue às 9h dentro
+ * do prazo não vira atrasada porque alguém reabriu uma tarefa e submeteu de novo
+ * às 18h. Quem responde "entregou no prazo?" é a primeira entrega.
+ *
+ * Para todo o resto (completude, crédito, aderência) quem vale é
+ * `latestPerRound`, que carrega a união das tarefas feitas.
+ */
+export function earliestPerRound(completions) {
+  return umaPorRodada(completions, (nova, atual) => (nova.completedAt || '') < (atual.completedAt || ''));
+}
+
+// Sem `completedAt` em nenhuma das duas, fica a primeira que apareceu na lista —
+// arbitrário de propósito: sem horário não há como saber qual venceu, e inventar
+// critério mudaria a contagem conforme a ordem de leitura do banco.
+function umaPorRodada(completions, vence) {
   const porRodada = new Map();
   (completions || []).forEach(c => {
     if (!c) return;
     const k = roundKey(c);
     const atual = porRodada.get(k);
-    if (!atual || (c.completedAt || '') > (atual.completedAt || '')) porRodada.set(k, c);
+    if (!atual || vence(c, atual)) porRodada.set(k, c);
   });
   return [...porRodada.values()];
 }

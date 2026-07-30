@@ -112,8 +112,10 @@ Estes são independentes. Esquecer qualquer um deixa o app se contradizendo.
    `doneByUnitDate`). Conta uma entrega por `(loja, dia)` usando
    `latestPerRound(team)`. É contagem por existência: parcial conta como entrega
    inteira hoje.
-3. **`buildJit`, linha ~8779** — `tDone = filterCompletions(...).length`, o
-   numerador de aderência de hoje no painel. Mesma coisa.
+3. **`buildJit`** — aderência de ontem e de hoje, `ySummary`, `groupStats` por
+   loja, hotspot de crítico e pontualidade. Todos já passam por
+   `latestPerRound`/`earliestPerRound` (30/07), mas continuam contando por
+   EXISTÊNCIA: uma rodada parcial conta como entrega inteira.
 
 ### 3.2.1 De onde sai o dado (não precisa de migration)
 
@@ -200,6 +202,48 @@ resultado — decida antes de escrever código.**
 
 ---
 
+## 5.1 Tarefa vizinha, da mesma família: apagar checklist reescreve o passado
+
+Descoberto em 30/07/2026 testando em produção. **Não é resíduo de teste — atinge
+qualquer cliente que limpe a configuração**, e mexe na mesma pergunta desta
+tarefa ("o que conta como previsto e como concluído?"). Trate junto, ou logo
+depois.
+
+O que acontece, em duas partes que se somam:
+
+1. **`handleDelete` ([page.js:5318](../ibr-checklists-app/app/app/page.js)) faz
+   `DELETE` puro em `templates`.** As execuções ficam em `completions`, que guarda
+   `template_name` desnormalizado — então continuam aparecendo em Relatórios com o
+   nome do checklist que já não existe. Isso, isolado, é até defensável: histórico
+   é histórico.
+2. **"Previstos" é contado da lista ATUAL de checklists, para QUALQUER data
+   passada** (`countApplicableTemplatesOnDate`, `page.js:802`). Não existe registro
+   de quando um checklist passou a existir ou deixou de existir. Então apagar um
+   checklist **encolhe o denominador retroativamente** enquanto as execuções
+   seguem no numerador.
+
+Resultado observado: o J.I.T. mostrou **aderência de 146% (19/13)** para o dia
+anterior. Criar um checklist tem o efeito inverso — infla o previsto de todos os
+dias passados e derruba a aderência histórica.
+
+Um terceiro detalhe, menor mas da mesma natureza: `handleDelete` engole o erro
+num `catch(e) {}`. Uma falha de RLS apaga da tela sem apagar do banco, e a linha
+volta no próximo carregamento.
+
+**Direção sugerida:** desativação em vez de exclusão — `templates.active = false`,
+com as leituras filtrando por `active` e a contagem de previstos preservando o
+histórico. Já existe precedente no projeto: `units` tem `active` e `fetchUnits`
+filtra por ele. Exige migration (coluna `active` com default `true`) e decidir o
+que fazer com os templates já apagados, cujas execuções estão órfãs.
+
+**Limpeza de execuções de teste** (o que fizemos em 30/07 — o padrão vale para
+qualquer limpeza pontual): sempre `select` primeiro, conferir a lista, só então
+`delete`. Nada tem cascade para `completions` (`photos` e `task_reviews` ficariam
+órfãos), e `live_tasks` do dia precisa ser limpo à parte. `events` foram
+preservados de propósito: são o registro de que o teste aconteceu.
+
+---
+
 ## 6. Riscos concretos
 
 | Risco | Como evitar |
@@ -224,6 +268,19 @@ Dois commits em `main`, **os dois em produção e no GitHub** (deploy
   "executar de novo cria um segundo registro"; tarefa já registrada hoje está
   travada (com "Reabrir" + motivo como escape); tarefas pendentes de um checklist
   já submetido são executáveis.
+
+Depois vieram, validados no aparelho com usuário de teste (30/07):
+
+- **`66ff373`** — a trava da tarefa registrada sobrevive à rodada (o bloqueio não
+  engatava no caso mais comum: marcar, submeter e voltar), e a tela de conclusão
+  ganhou âncora e deixou de nascer cortada. Confirmado em produção: rótulo
+  "Registrada por você", aviso de bloqueio na tela e 5 eventos
+  `duplicate_execution_blocked` com `submitted: true`.
+- **desduplicação do J.I.T.** — aderência, resumo, `groupStats` por loja e hotspot
+  de crítico passam por `latestPerRound`; **pontualidade** usa
+  `earliestPerRound`, porque entrega feita no prazo não vira atrasada quando
+  alguém reabre uma tarefa e submete de novo horas depois. Era o que produzia
+  "146% de aderência" e "10 no prazo / 9 fora" num dia de 13 previstos.
 
 Conferido no domínio, não presumido pelo "READY" do deploy: o chunk servido em
 `ilhabelarepublic.zcheckapp.com/app` contém "foi feita hoje", "Registrada" e
