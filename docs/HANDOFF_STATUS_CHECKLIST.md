@@ -33,25 +33,35 @@ janela histórica: checklist criado hoje não é cobrado de ontem, e desativado 
 deixa de ser previsto a partir de hoje — o passado para de mudar sozinho.
 `notify-overdue` foi para **v10** e ignora checklist desativado.
 
-### Não feito, de propósito — decisão do dono do produto
+### Decidido pelo dono do produto em 30/07: parcial NÃO conta como entrega
 
-**Parcial continua contando como UMA entrega na aderência**, e continua
-silenciando o push de atraso. Não mudei nem um nem outro, e a razão é a mesma nos
-dois casos: mudar a definição move o número de todo cliente, e o certo depende de
-uma escolha que não é técnica.
+Implementado. `roundIsComplete` (`lib/rounds.js`, 7 testes) é a régua, e é a
+MESMA fonte do badge da tela — aderência e rótulo discordando seria pior que os
+dois errados. Aplicada nos três lugares que calculam aderência:
+`computeUnitProfile` (Unidades), `computeLeadershipProfile` (Equipe · Liderança)
+e `buildJit` (J.I.T.).
 
-- Na aderência: contar parcial como zero derruba o índice de toda loja que fecha
-  checklist incompleto, sem ninguém ter trabalhado menos. Contar fração
-  (`done/total`) é mais justo, mas muda a métrica e o histórico deixa de ser
-  comparável.
-- No push: se parcial passar a disparar "atrasado", quem entregou 7 de 8 recebe
-  cobrança. Se não disparar, fechar com 1 de 8 silencia o dia — a brecha que já
-  existe.
+O parcial não desaparece da conta, vira número próprio: `partialChecklists` /
+`yesterday.partial` / `today.partial`. No J.I.T. o rótulo "Checklists" virou
+**"Completos"** e ganhou **"Parciais"** ao lado. Sem isso a aderência cairia e a
+tela não explicaria o motivo — que é o pior tipo de métrica.
 
-**A decisão ficou muito mais fácil de tomar agora**: `roundProgress` já entrega
-`done`/`total` por rodada, então qualquer das opções é uma linha em
-`computeUnitProfile`, `computeLeadershipProfile` e `buildJit`. O que falta é
-escolher, não construir.
+`pending` de hoje passou a descontar completos E parciais: um checklist entregue
+pela metade não é pendente nem concluído, e sem o desconto a soma não fecha com
+os previstos.
+
+**Efeito esperado:** a aderência CAI onde havia entrega incompleta. É a correção
+pretendida — antes a métrica media se alguém apertou "Concluir", não se o
+trabalho foi feito.
+
+### Ainda não decidido: o push de atraso
+
+`notify-overdue` (v10) continua tratando qualquer submissão como entrega, então
+fechar com 1 de 8 silencia a cobrança do dia. Não segui a mesma regra da
+aderência aqui de propósito: se parcial passar a disparar "atrasado", quem
+entregou 7 de 8 recebe cobrança injusta. O certo provavelmente é um alerta
+próprio ("entregue incompleto"), que é superfície nova de produto — e deploy
+separado da edge function.
 
 **Sem teste de dois aparelhos.** Perder a disputa por um item, foto obrigatória
 fechada por quem não tirou a foto, e a observação do colega entrando no registro

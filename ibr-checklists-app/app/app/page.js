@@ -39,7 +39,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, roundProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundProgress, roundIsComplete, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -803,6 +803,26 @@ function filterCompletions(completions, f) {
 // Checklist que a OPERAÇÃO vê. Desativado continua carregado (o histórico
 // depende dele), mas não aparece para executar nem para gerenciar.
 const templateAtiva = t => t.active !== false;
+
+/**
+ * Fábrica do teste "esta rodada foi entregue completa?" para a aderência.
+ *
+ * Resolve o checklist e os itens previstos para o dia — com cache por
+ * (checklist, data), porque a aderência varre 30 dias × todas as execuções e sem
+ * o cache seria um `find` + `applicableItems` por linha, a cada render.
+ */
+function completeRoundChecker(templates) {
+  const byId = new Map((templates || []).map(t => [t.id, t]));
+  const cache = new Map();
+  return c => {
+    const k = `${c.templateId}|${c.date}`;
+    if (!cache.has(k)) {
+      const t = byId.get(c.templateId);
+      cache.set(k, t ? applicableItems(t, c.date).map(i => i.id) : null);
+    }
+    return roundIsComplete(c, cache.get(k));
+  };
+}
 
 function countApplicableTemplatesOnDate(templates, f, dateStr) {
   return templates.filter(t => {
@@ -8902,12 +8922,19 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const ySummary = summarizeCompletions(yFiltered);
   let yExpected = 0;
   unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, yStr)) yExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, yStr); });
-  const yAdherence = yExpected ? Math.round((yFiltered.length / yExpected) * 100) : null;
+  // Só entrega COMPLETA conta como entrega (30/07/2026). O parcial vira número
+  // próprio: a aderência cai, e a tela precisa poder dizer POR QUE caiu.
+  const completa = completeRoundChecker(templates);
+  const yDone = yFiltered.filter(completa).length;
+  const yPartial = yFiltered.length - yDone;
+  const yAdherence = yExpected ? Math.round((yDone / yExpected) * 100) : null;
 
   // ── Hoje ──
   let tExpected = 0;
   unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
-  const tDone = latestPerRound(filterCompletions(completions, scopeFilter([today]))).length;
+  const tRounds = latestPerRound(filterCompletions(completions, scopeFilter([today])));
+  const tDone = tRounds.filter(completa).length;
+  const tPartial = tRounds.length - tDone;
   const scopeTemplates = templates.filter(t =>
     templateAtiva(t) &&
     (!scopeUnitId || t.unitId === scopeUnitId) &&
@@ -9093,8 +9120,12 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
     scopeUnitId: scopeUnitId || null,
     scopeLabel: scopeUnitId ? unitName(scopeUnitId) : `todas as ${unitIds.length} unidade${unitIds.length === 1 ? '' : 's'}`,
     base,
-    yesterday: { adherence: yAdherence, checklists: yFiltered.length, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
-    today: { expected: tExpected, done: tDone, pending: Math.max(0, tExpected - tDone), overdue: overdue.length },
+    // `checklists` = entregas COMPLETAS (o numerador da aderência); `partial` = as
+    // que foram submetidas incompletas. `pending` desconta as duas, senão a soma
+    // "concluídos + pendentes" não fecha com os previstos e a tela mente de outro
+    // jeito: um checklist entregue pela metade não é pendente nem concluído.
+    yesterday: { adherence: yAdherence, checklists: yDone, partial: yPartial, expected: yExpected, rate: Math.round(ySummary.rate), criticalPending: ySummary.criticalPending },
+    today: { expected: tExpected, done: tDone, partial: tPartial, pending: Math.max(0, tExpected - tDone - tPartial), overdue: overdue.length },
     recommendations: recs.slice(0, 3),
     stores,
     insight,
@@ -9583,7 +9614,11 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
             <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Ontem</p>
             <div style={{ display: 'flex' }}>
               <Stat label="Aderência" value={y.adherence != null ? `${y.adherence}%` : '—'} color={y.adherence == null ? C.mutedLight : y.adherence >= 80 ? C.success : C.critical} />
-              <Stat label="Checklists" value={`${y.checklists}${y.expected ? `/${y.expected}` : ''}`} />
+              {/* "Completos", não "Checklists": desde 30/07 a aderência conta só
+                  entrega completa, e o parcial ganhou número próprio ao lado —
+                  sem ele, o índice cai e a tela não explica o motivo. */}
+              <Stat label="Completos" value={`${y.checklists}${y.expected ? `/${y.expected}` : ''}`} />
+              {y.partial > 0 && <Stat label="Parciais" value={y.partial} color={C.warning} />}
               <Stat label="Críticos pend." value={y.criticalPending} color={y.criticalPending > 0 ? C.critical : C.ink} />
             </div>
           </div>
@@ -9593,7 +9628,8 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
             <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Hoje</p>
             <div style={{ display: 'flex' }}>
               <Stat label="Previstos" value={t.expected} />
-              <Stat label="Concluídos" value={t.done} color={C.success} />
+              <Stat label="Completos" value={t.done} color={C.success} />
+              {t.partial > 0 && <Stat label="Parciais" value={t.partial} color={C.warning} />}
               <Stat label="Pendentes" value={t.pending} />
               <Stat label="Atrasados" value={t.overdue} color={t.overdue > 0 ? C.critical : C.ink} />
             </div>
@@ -9940,14 +9976,20 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   // Janela de datas, do mais antigo ao mais recente.
   const dates = lastDays(days, null, tz);
 
-  // Aderência: concluídos ÷ previstos, dia a dia, ignorando dias de folga.
-  let expected = 0, doneChecklists = 0;
+  // Aderência: ENTREGAS COMPLETAS ÷ previstos, dia a dia, ignorando folga.
+  // Entrega incompleta não conta (decisão de 30/07/2026): submeter com 1 de 8
+  // itens contava igual a 8 de 8, e a métrica media se alguém apertou "Concluir",
+  // não se o trabalho foi feito. As entregas parciais voltam em `partialChecklists`
+  // para a tela poder explicar a diferença em vez de só mostrar o índice menor.
+  const completa = completeRoundChecker(templates);
+  let expected = 0, doneChecklists = 0, partialChecklists = 0;
   const daily = dates.map(ds => {
     const closed = isUnitClosed(closures, uid, ds);
     const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, sector ? { unitId: uid, sector } : { unitId: uid }, ds);
-    const done = mine.filter(c => c.date === ds).length;
-    expected += exp; doneChecklists += done;
-    return { date: ds, expected: exp, done, closed, rate: exp ? Math.round((done / exp) * 100) : null };
+    const doDia = mine.filter(c => c.date === ds);
+    const done = doDia.filter(completa).length;
+    expected += exp; doneChecklists += done; partialChecklists += doDia.length - done;
+    return { date: ds, expected: exp, done, partial: doDia.length - done, closed, rate: exp ? Math.round((done / exp) * 100) : null };
   });
   const adherence = expected ? Math.round((doneChecklists / expected) * 100) : null;
 
@@ -10018,7 +10060,11 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   return {
     unit, sector, index, parts,
     adherence, taskRate, criticalRate, criticalPending,
-    checklists: mine.length, expected, evidences,
+    // `checklists` = submissões (o que a loja entregou); `doneChecklists` = as
+    // COMPLETAS, que é o numerador da aderência. Quando os dois divergem, a
+    // diferença é `partialChecklists` — e é ela que explica um índice mais baixo
+    // sem que ninguém tenha deixado de trabalhar.
+    checklists: mine.length, doneChecklists, partialChecklists, expected, evidences,
     operators: operators.size,
     streak, bestStreak, activeDays: activeDays.length,
     level, intoLevel, perLevel,
@@ -10142,12 +10188,15 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // dois loops, que em 3 lojas × 30 dias × 1000 execuções vira 90 mil varreduras
   // a cada render do ranking.
   const doneByUnitDate = new Map();
-  // Uma rodada por checklist/dia: reexecução do mesmo checklist não conta como
-  // dois entregues. O teto de 100 abaixo vira defesa, não a correção principal.
-  team.forEach(c => {
+  // Uma rodada por checklist/dia (reexecução não conta como dois entregues) E só
+  // as COMPLETAS: entrega pela metade deixou de contar como entrega em 30/07/2026.
+  // O teto de 100 abaixo vira defesa, não a correção principal.
+  const completa = completeRoundChecker(tpl);
+  team.filter(completa).forEach(c => {
     const k = `${c.unitId}|${c.date}`;
     doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);
   });
+  const partialChecklists = team.length - team.filter(completa).length;
   let expected = 0, doneChecklists = 0;
   scopeUnits.forEach(u => dates.forEach(ds => {
     if (isUnitClosed(clo, u.id, ds)) return;
@@ -10176,7 +10225,7 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   return {
     index, parts,
     onTimeRate, onTimeDone, onTimeTotal,
-    adherence, expected, doneChecklists,
+    adherence, expected, doneChecklists, partialChecklists,
     reviewRate, reviewedByMe, reviewable: reviewable.length, pending,
     teamChecklists: team.length,
     scopeUnits, windowDays: days,

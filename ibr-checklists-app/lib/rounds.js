@@ -160,6 +160,30 @@ export function roundProgress(completions, { templateId, unitId, date }, applica
 }
 
 /**
+ * A rodada foi entregue COMPLETA?
+ *
+ * É a régua da aderência desde 30/07/2026: entrega incompleta não conta como
+ * entrega. Antes, submeter com 1 de 8 itens contava igual a 8 de 8 — a aderência
+ * media se ALGUÉM APERTOU "Concluir", não se o trabalho foi feito.
+ *
+ * `applicableItemIds` é o que era previsto para AQUELE dia; sem ele (checklist
+ * apagado antes da migration de desativação, registro órfão) cai nos itens do
+ * próprio registro, que é o que o operador tinha na tela. Rodada sem item
+ * nenhum não é completa: não há trabalho comprovado.
+ *
+ * Usa a MESMA fonte do badge da tela (`roundProgress`/`applicableItems`) de
+ * propósito: aderência e rótulo discordando seria pior que os dois errados.
+ */
+export function roundIsComplete(completion, applicableItemIds) {
+  const feitas = new Set((completion?.items || []).filter(i => i?.done).map(i => i.id));
+  const previstas = applicableItemIds && applicableItemIds.length
+    ? applicableItemIds
+    : (completion?.items || []).map(i => i?.id).filter(Boolean);
+  if (!previstas.length) return false;
+  return previstas.every(id => feitas.has(id));
+}
+
+/**
  * Rodada ao vivo + tarefas já registradas, numa visão só — o que a tela usa.
  *
  * Precedência:

@@ -376,3 +376,52 @@ test.describe('checklist era previsto naquele dia', () => {
     expect(rounds.templateExistedOn(t({ createdAt: '2026-07-30T09:00:00Z' }), null)).toBe(true);
   });
 });
+
+/**
+ * Entrega COMPLETA — a régua da aderência desde 30/07/2026.
+ *
+ * Antes, submeter com 1 de 8 itens contava igual a 8 de 8: a aderência media se
+ * alguém apertou "Concluir", não se o trabalho foi feito.
+ */
+test.describe('rodada completa', () => {
+  const comp = (items) => ({ id: 'c1', templateId: 'abertura', unitId: 'ibr1', date: '2026-07-30', items });
+
+  test('todos os itens previstos feitos = completa', () => {
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }, { id: 'i2', done: true }]), ['i1', 'i2'])).toBe(true);
+  });
+
+  test('um item previsto pendente = NÃO completa', () => {
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }, { id: 'i2', done: false }]), ['i1', 'i2'])).toBe(false);
+  });
+
+  test('item previsto que nem aparece no registro = NÃO completa', () => {
+    // O checklist ganhou um item depois da submissão: não dá para chamar de completa.
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }]), ['i1', 'i2'])).toBe(false);
+  });
+
+  test('item feito que saiu do checklist não atrapalha', () => {
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }, { id: 'i9', done: true }]), ['i1'])).toBe(true);
+  });
+
+  test('sem lista de previstos, cai nos itens do próprio registro', () => {
+    // Registro órfão (checklist apagado antes da migration de desativação).
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }]), null)).toBe(true);
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }, { id: 'i2', done: false }]), null)).toBe(false);
+    expect(rounds.roundIsComplete(comp([{ id: 'i1', done: true }]), [])).toBe(true);
+  });
+
+  test('rodada sem item nenhum não é completa — não há trabalho comprovado', () => {
+    expect(rounds.roundIsComplete(comp([]), [])).toBe(false);
+    expect(rounds.roundIsComplete(comp([]), null)).toBe(false);
+    expect(rounds.roundIsComplete(null, null)).toBe(false);
+  });
+
+  test('a régua bate com a do badge: parcial na tela é parcial na aderência', () => {
+    const items = Array.from({ length: 8 }, (_, n) => ({ id: `i${n}`, done: n < 5 }));
+    const ids = items.map(i => i.id);
+    const prog = rounds.roundProgress([comp(items)], { templateId: 'abertura', unitId: 'ibr1', date: '2026-07-30' }, ids);
+    const completa = rounds.roundIsComplete(comp(items), ids);
+    expect(prog.done < prog.total).toBe(true);   // badge diz "Parcial"
+    expect(completa).toBe(false);                // aderência não conta
+  });
+});
