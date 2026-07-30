@@ -54,14 +54,42 @@ os previstos.
 pretendida — antes a métrica media se alguém apertou "Concluir", não se o
 trabalho foi feito.
 
-### Ainda não decidido: o push de atraso
+### Resolvido: alerta de "entregue incompleto" (notify-overdue v11)
 
-`notify-overdue` (v10) continua tratando qualquer submissão como entrega, então
-fechar com 1 de 8 silencia a cobrança do dia. Não segui a mesma regra da
-aderência aqui de propósito: se parcial passar a disparar "atrasado", quem
-entregou 7 de 8 recebe cobrança injusta. O certo provavelmente é um alerta
-próprio ("entregue incompleto"), que é superfície nova de produto — e deploy
-separado da edge function.
+A brecha era: qualquer submissão silenciava a cobrança do dia — fechar com 1 de 8
+matava o aviso de atraso. Fechá-la com a régua do atraso seria errado (quem
+entregou 7 de 8 receberia "atrasado", que é falso e queima a confiança no aviso),
+então são **dois alertas** com textos e deduplicações separadas:
+
+| | dispara quando | texto |
+|---|---|---|
+| `atraso` | passou do prazo e **não** foi entregue | ⚠ Checklist atrasado — LOJA |
+| `incompleto` | passou do prazo, **foi** entregue, e ficou tarefa pendente | 📋 Entregue incompleto — LOJA · "5 de 8 tarefas. 3 pendentes." |
+
+Deduplicação em chaves separadas (`notified_<data>` e `incomplete_<data>`): um
+checklist pode ser avisado como atrasado às 10h (sem entrega) e como incompleto às
+14h (entregue pela metade) — são dois fatos, não repetição.
+
+O prazo é o gatilho de propósito: sem ele o aviso sairia no instante da submissão,
+cobrando quem talvez esteja terminando o resto. **Consequência assumida:**
+checklist sem prazo (o "Intermediário") não gera este alerta.
+
+A régua de "completo" é a mesma do app, incluindo recorrência por dia da semana —
+`previstasDoDia` é o espelho de `applicableItems`, reescrito porque a função é
+deployada isolada e não pode importar `lib/`. O risco não é a lógica ser difícil,
+é ela divergir sem ninguém notar; por isso
+`supabase/functions/notify-overdue/incompleto.test.mjs` extrai a função do próprio
+`index.ts` (sem copiar) e exercita 14 casos.
+
+`KIND_LABEL` no painel de notificações ganhou "Entregue incompleto".
+
+**Deploy é separado do app:**
+
+```bash
+npx supabase functions deploy notify-overdue --project-ref rjuulamozdhssgqrzfji
+```
+
+Confirme nos logs da próxima execução: `notify-overdue v11 started`.
 
 **Sem teste de dois aparelhos.** Perder a disputa por um item, foto obrigatória
 fechada por quem não tirou a foto, e a observação do colega entrando no registro

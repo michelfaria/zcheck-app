@@ -1,4 +1,21 @@
-// IBR Checklists — notify-overdue v10
+// IBR Checklists — notify-overdue v11
+//
+// ── v11, 30/07/2026: o alerta de ENTREGUE INCOMPLETO ───────────────────────
+// Havia uma brecha: qualquer submissão silenciava a cobrança do dia. Fechar o
+// checklist com 1 de 8 itens matava o aviso de atraso — a métrica e o push
+// mediam se alguém apertou "Concluir", não se o trabalho foi feito.
+//
+// Fechá-la com a régua do atraso seria errado: quem entregou 7 de 8 receberia
+// "checklist atrasado", que é falso e queima a confiança no aviso. Então são
+// DOIS alertas com textos e deduplicações separadas:
+//   · atraso     → passou do prazo e NÃO foi entregue
+//   · incompleto → passou do prazo, FOI entregue, e ficou tarefa pendente
+//
+// A régua de "completo" é a mesma do app (lib/rounds.js `roundIsComplete`):
+// itens PREVISTOS para aquele dia, não os que sobraram no registro. A
+// recorrência por dia da semana é reescrita aqui porque a função é deployada
+// isolada — o contrato é o mesmo, e `previstasDoDia` é o espelho de
+// `applicableItems`.
 //
 // ── v9, 29/07/2026: o aviso enviado passa a virar registro ─────────────────
 // A função só deixava rastro na chave `notified_<data>` de `config` — um array
@@ -74,6 +91,23 @@ function localParts(d: Date, tz: string) {
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
 }
 
+// Espelho de `weekdayOf` + `isItemApplicable`/`applicableItems` do app. Meio-dia
+// UTC de propósito: a data já vem resolvida no fuso da loja, e usar 00:00 faria o
+// dia da semana virar em quem está a oeste de Greenwich.
+const diaDaSemana = (dateStr: string) => new Date(`${dateStr}T12:00:00Z`).getUTCDay();
+
+function previstasDoDia(t: any, dateStr: string): string[] {
+  const n = String(t.name || '').toLowerCase();
+  const tipo = n.includes('abertura') ? 'abertura'
+    : n.includes('fechamento') ? 'fechamento'
+    : n.includes('intermedi') ? 'intermediario' : null;
+  return (t.items || []).filter((i: any) => {
+    if (i?.appearsIn?.length && tipo && !i.appearsIn.includes(tipo)) return false;
+    if (!i?.recurrence || i.recurrence.length === 0) return true;
+    return i.recurrence.includes(diaDaSemana(dateStr));
+  }).map((i: any) => i?.id).filter(Boolean);
+}
+
 const falha = (etapa: string, e: any) => {
   console.error(`[notify-overdue] falhou em ${etapa}:`, e?.message || e);
   return new Response(JSON.stringify({ ok: false, etapa, erro: e?.message || String(e) }),
@@ -81,7 +115,7 @@ const falha = (etapa: string, e: any) => {
 };
 
 Deno.serve(async () => {
-  console.log('notify-overdue v10 started');
+  console.log('notify-overdue v11 started');
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -114,10 +148,22 @@ Deno.serve(async () => {
   const datas = [...new Set(comPrazo.map((t: any) =>
     localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ).date))];
 
+  // `items` entrou na v11: sem ele não há como saber se a entrega ficou pela
+  // metade. É o JSONB das tarefas de UM dia — algumas dezenas de linhas.
   const { data: completions, error: eComp } = await supabase
-    .from('completions').select('template_id, date').in('date', datas.length ? datas : ['1970-01-01']);
+    .from('completions').select('template_id, date, items').in('date', datas.length ? datas : ['1970-01-01']);
   if (eComp) return falha('completions', eComp);
-  const feitos = new Set((completions || []).map((c: any) => `${c.template_id}|${c.date}`));
+
+  // Uma entrada por RODADA (checklist × dia), com a UNIÃO das tarefas feitas em
+  // todas as submissões: tarefa feita em qualquer submissão do dia está feita.
+  const entregas = new Map<string, Set<string>>();
+  for (const c of (completions || [])) {
+    const k = `${c.template_id}|${c.date}`;
+    if (!entregas.has(k)) entregas.set(k, new Set<string>());
+    const feitas = entregas.get(k)!;
+    for (const i of (c.items || [])) if (i?.done && i?.id) feitas.add(i.id);
+  }
+  const feitos = new Set(entregas.keys());
 
   // A chave de deduplicação segue o dia de Brasília: é uma janela de controle,
   // não um dado de operação. Numa rede multi-fuso o pior caso é uma repetição
@@ -137,8 +183,38 @@ Deno.serve(async () => {
   });
   console.log(`Atrasados: ${atrasados.length} de ${comPrazo.length} com prazo`);
 
-  if (atrasados.length === 0) {
-    return new Response(JSON.stringify({ ok: true, sent: 0, message: 'Nenhum atrasado', comPrazo: comPrazo.length }),
+  // ── Entregue incompleto ────────────────────────────────────────────────────
+  // Passou do prazo, FOI entregue, e ficou tarefa pendente. Deduplicação em
+  // chave própria: um checklist pode ser avisado como atrasado às 10h (sem
+  // entrega) e como incompleto às 14h (entregue pela metade) — são dois fatos.
+  //
+  // O prazo é o gatilho de propósito. Sem ele o aviso sairia no instante da
+  // submissão, cobrando quem talvez esteja terminando o resto agora. Consequência
+  // assumida: checklist SEM prazo (o "Intermediário") não gera este alerta.
+  const incompKey = `incomplete_${localParts(agora, APP_TZ).date}`;
+  const { data: cfgInc, error: eCfgInc } = await supabase
+    .from('config').select('value').eq('key', incompKey).maybeSingle();
+  if (eCfgInc) return falha('config incompleto', eCfgInc);
+  const jaAvisadosInc: Set<string> = new Set(cfgInc?.value ? JSON.parse(cfgInc.value) : []);
+
+  const incompletos = comPrazo.map((t: any) => {
+    const { date, minutes } = localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ);
+    const feitas = entregas.get(`${t.id}|${date}`);
+    if (!feitas) return null;                       // não entregue = é atraso, não incompleto
+    if (jaAvisadosInc.has(t.id)) return null;
+    const [h, m] = t.deadline.split(':').map(Number);
+    if (minutes <= h * 60 + m) return null;         // ainda dá tempo de terminar
+    // Mesma régua do app: previstas do dia; na falta delas, o que veio no registro.
+    let previstas = previstasDoDia(t, date);
+    if (previstas.length === 0) previstas = [...feitas];
+    const pendentes = previstas.filter((id: string) => !feitas.has(id));
+    if (pendentes.length === 0) return null;        // entregue completo: nada a avisar
+    return { ...t, _feitas: previstas.length - pendentes.length, _total: previstas.length, _pendentes: pendentes.length };
+  }).filter(Boolean) as any[];
+  console.log(`Incompletos: ${incompletos.length}`);
+
+  if (atrasados.length === 0 && incompletos.length === 0) {
+    return new Response(JSON.stringify({ ok: true, sent: 0, message: 'Nenhum atrasado nem incompleto', comPrazo: comPrazo.length }),
       { headers: { 'Content-Type': 'application/json' } });
   }
 
@@ -158,13 +234,21 @@ Deno.serve(async () => {
   let sent = 0;
   let semAlvo = 0;
   const avisadosAgora: string[] = [];
+  const avisadosIncAgora: string[] = [];
   // Uma linha por checklist avisado — o histórico que o painel lê. Só entra o
   // que teve entrega confirmada, o mesmo critério de `avisadosAgora`.
   const registros: any[] = [];
   const falhas: Record<string, number> = {};
   const mortas = new Set<string>();
 
-  for (const t of atrasados) {
+  // Um loop para os dois alertas: alvo, poda de inscrição morta e log são os
+  // mesmos. O que muda é o texto e a chave de deduplicação.
+  const aAvisar = [
+    ...atrasados.map((t: any) => ({ t, tipo: 'atraso' as const })),
+    ...incompletos.map((t: any) => ({ t, tipo: 'incompleto' as const })),
+  ];
+
+  for (const { t, tipo } of aAvisar) {
     const empresa = t.company_id ?? empresaDaLoja.get(t.unit_id) ?? null;
     const alvos = (subs as any[]).filter(s => {
       const empresaDoSub = s.company_id ?? empresaDaLoja.get(s.unit_id) ?? null;
@@ -181,8 +265,16 @@ Deno.serve(async () => {
       continue;
     }
 
-    const titulo = `⚠ Checklist atrasado — ${String(t.unit_id ?? '').toUpperCase()}`;
-    const corpo = `${t.name} (${t.sector}) — prazo: ${t.deadline}`;
+    const loja = String(t.unit_id ?? '').toUpperCase();
+    // Textos deliberadamente diferentes: "atrasado" é ausência de entrega,
+    // "incompleto" é entrega com tarefa pendente. Misturar os dois queima a
+    // confiança no aviso — quem entregou 7 de 8 não pode ler "atrasado".
+    const titulo = tipo === 'atraso'
+      ? `⚠ Checklist atrasado — ${loja}`
+      : `📋 Entregue incompleto — ${loja}`;
+    const corpo = tipo === 'atraso'
+      ? `${t.name} (${t.sector}) — prazo: ${t.deadline}`
+      : `${t.name} (${t.sector}): ${t._feitas} de ${t._total} tarefas. ${t._pendentes} pendente${t._pendentes > 1 ? 's' : ''}.`;
     const payload = JSON.stringify({ title: titulo, body: corpo });
 
     let entregues = 0;
@@ -205,9 +297,9 @@ Deno.serve(async () => {
     // rodava incondicionalmente: um dia em que todos os envios falhavam ficava
     // marcado como avisado e os alertas daquele dia se perdiam em silêncio.
     if (entregues > 0) {
-      avisadosAgora.push(t.id);
+      (tipo === 'atraso' ? avisadosAgora : avisadosIncAgora).push(t.id);
       registros.push({
-        company_id: empresa, unit_id: t.unit_id, kind: 'atraso',
+        company_id: empresa, unit_id: t.unit_id, kind: tipo === 'atraso' ? 'atraso' : 'incompleto',
         title: titulo, body: corpo,
         template_id: t.id, sector: t.sector, deadline: t.deadline,
         targets: alvos.length, delivered: entregues,
@@ -230,6 +322,14 @@ Deno.serve(async () => {
     if (eUp) return falha('config upsert', eUp);
   }
 
+  if (avisadosIncAgora.length > 0) {
+    const { error: eUpInc } = await supabase.from('config').upsert(
+      { key: incompKey, value: JSON.stringify([...jaAvisadosInc, ...avisadosIncAgora]), updated_at: new Date().toISOString() },
+      { onConflict: 'key' },
+    );
+    if (eUpInc) return falha('config upsert incompleto', eUpInc);
+  }
+
   // O histórico é secundário ao aviso: se esta gravação falhar, o push já saiu e
   // a deduplicação já está registrada. Não devolve 500 — mas também não some:
   // vai no retorno, para não repetir a história do erro engolido da v6.
@@ -242,10 +342,10 @@ Deno.serve(async () => {
     }
   }
 
-  console.log(`Done. Sent: ${sent}, avisados: ${avisadosAgora.length}, semAlvo: ${semAlvo}, falhas: ${JSON.stringify(falhas)}`);
+  console.log(`Done. Sent: ${sent}, avisados: ${avisadosAgora.length}, incompletos avisados: ${avisadosIncAgora.length}, semAlvo: ${semAlvo}, falhas: ${JSON.stringify(falhas)}`);
   return new Response(JSON.stringify({
-    ok: true, sent, atrasados: atrasados.length,
-    avisados: avisadosAgora.length, semAlvo,
+    ok: true, sent, atrasados: atrasados.length, incompletos: incompletos.length,
+    avisados: avisadosAgora.length, avisadosIncompletos: avisadosIncAgora.length, semAlvo,
     falhas, inscricoesRemovidas: mortas.size,
     registrados: logFalhou ? 0 : registros.length,
     ...(logFalhou ? { logFalhou } : {}),

@@ -3107,7 +3107,9 @@ function NotificationHistory({ templates, units, last7, unit }) {
   useEffect(() => { loadLog(); }, [loadLog]);
 
   const lojaDe = (unitId) => units.find(u => u.id === unitId);
-  const KIND_LABEL = { atraso: 'Atraso', cadastro: 'Cadastro' };
+  // `incompleto` nasceu na v11 da notify-overdue. Sem entrada aqui, o histórico
+  // mostraria a chave crua ("incompleto") como se fosse rótulo.
+  const KIND_LABEL = { atraso: 'Atraso', incompleto: 'Entregue incompleto', cadastro: 'Cadastro' };
 
   return (
     <div style={{ marginTop: 8 }}>
