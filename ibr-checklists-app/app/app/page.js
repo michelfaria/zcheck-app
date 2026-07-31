@@ -23,7 +23,7 @@ import {
   sendRecognition, fetchRecognitions,
   fetchActionPlans, createActionPlan, completeActionPlan,
   uploadPhoto, getPhotoUrl,
-  uploadRoundPhoto, linkRoundPhoto,
+  uploadRoundPhoto, linkRoundPhoto, getRoundPhotoUrl,
   deactivateTemplate,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
@@ -1434,6 +1434,18 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
   const fotoDaRodada = liveInfo?.photoPath || null;
   const needsPhoto = item.photoRequired && !state.photo && !fotoDaRodada && !collabDone;
 
+  // A foto do colega precisa ser VISTA, não só anunciada. Antes daqui a rodada
+  // dizia "Foto anexada nesta rodada" e pronto: quem ia fechar o checklist
+  // assinava por uma prova que não tinha como olhar. A URL é assinada e expira,
+  // então é resolvida na hora em que o item aparece, não guardada em lugar nenhum.
+  const [urlDaRodada, setUrlDaRodada] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!fotoDaRodada) { setUrlDaRodada(null); return; }
+    getRoundPhotoUrl(fotoDaRodada).then(u => { if (vivo) setUrlDaRodada(u); });
+    return () => { vivo = false; };
+  }, [fotoDaRodada]);
+
   return (
     <>
       <Ticket accent={lineColor}>
@@ -1597,9 +1609,14 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
               ) : fotoDaRodada ? (
                 // Já tem prova na rodada: anexar vira opcional, não pendência.
                 <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-                  <span className="flex items-center gap-1" style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>
-                    <Camera size={12} aria-hidden /> Foto anexada nesta rodada
-                  </span>
+                  {urlDaRodada ? (
+                    <img src={urlDaRodada} alt="Comprovação da rodada" onClick={() => setExpandedPhoto(urlDaRodada)}
+                      style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: `1px solid ${C.border}`, cursor: 'pointer' }} />
+                  ) : (
+                    <span className="flex items-center gap-1" style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success }}>
+                      <Camera size={12} aria-hidden /> Foto anexada nesta rodada
+                    </span>
+                  )}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     style={{ fontSize: T.label, fontWeight: W.semibold, color: accent, background: 'none', border: `1px solid ${accent}`, borderRadius: R.pill, padding: '2px 10px', cursor: 'pointer' }}
@@ -1698,7 +1715,7 @@ function ConfirmModal({ items, onCancel, onConfirm }) {
 
 /* ---------------------------- execution screen ----------------------------- */
 
-function ExecutionScreen({ template, unit, currentUser, completions, onCancel, onComplete }) {
+function ExecutionScreen({ template, unit, currentUser, completions, onCancel, onComplete, onDone }) {
   const [completionRecord, setCompletionRecord] = useState(null); // shows celebration when set
   // O dia gravado na execução é o da LOJA que a executou — é ele que o prazo,
   // o relatório e a aderência usam depois.
@@ -1983,6 +2000,18 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
       }),
     };
 
+    // A comemoração aparece já: nada abaixo depende de interação, e esperar o
+    // upload de três fotos de olho numa tela parada é o que fazia a pessoa
+    // fechar o app no meio.
+    setCompletionRecord(record);
+
+    // A CONCLUSÃO PRIMEIRO, as fotos depois. Esta ordem estava invertida: o
+    // metadado das fotos era gravado aqui com `recordId`, e a conclusão só ia
+    // para o banco quando a pessoa apertava "Concluir" na tela de comemoração.
+    // Toda linha de `photos` referenciava uma conclusão que ainda não existia e
+    // era recusada — o arquivo subia e a evidência sumia do relatório.
+    await onComplete(record);
+
     // Upload photos to Supabase Storage (falls back to local cache if offline)
     for (const i of items) {
       const photo = itemStates[i.id].photo;
@@ -2001,8 +2030,6 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
         await linkRoundPhoto(recordId, i.id, liveByItem[i.id].photoPath);
       }
     }
-
-    setCompletionRecord(record); // show celebration first
   };
 
   // Âncora da tela de conclusão.
@@ -2076,7 +2103,9 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
         <p style={{ fontSize: 12, color: C.muted, textAlign: 'center', marginBottom: 24 }}>
           {template.name} · {template.sector} · {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
         </p>
-        <button onClick={() => onComplete(completionRecord)}
+        {/* Só fecha. A gravação já aconteceu no `submit` — deixá-la aqui era o
+            que punha as fotos na frente da conclusão que elas referenciam. */}
+        <button onClick={() => onDone()}
           style={{ padding: '14px 40px', borderRadius: 12, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: 'pointer' }}>
           Concluir →
         </button>
@@ -2230,7 +2259,8 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
         template={activeTemplate} unit={unit} currentUser={currentUser}
         completions={completions}
         onCancel={() => setActiveTemplate(null)}
-        onComplete={record => { onSaveCompletion(record); setActiveTemplate(null); }}
+        onComplete={record => onSaveCompletion(record)}
+        onDone={() => setActiveTemplate(null)}
       />
     );
   }

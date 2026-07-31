@@ -369,8 +369,13 @@ export async function fetchCompletions() {
 
 export async function saveCompletion(record) {
   // 1. Update local cache immediately (optimistic)
+  //
+  // Filtra o mesmo id antes de acrescentar: a conclusão passou a ser salva no
+  // `submit` (para as fotos terem a que apontar) e uma segunda chamada com o
+  // mesmo registro duplicaria o card na lista até o próximo fetch. Idempotente
+  // por id, como já é o upsert do lado do servidor.
   const cached = (await cache.get('ibr_completions')) || [];
-  const next = [...cached, record].slice(-500);
+  const next = [...cached.filter(c => c.id !== record.id), record].slice(-500);
   await cache.set('ibr_completions', next);
 
   // 2. Push to Supabase
@@ -562,17 +567,54 @@ export async function uploadRoundPhoto({ templateId, unitId, date, itemId, dataU
   }
 }
 
+// URL para VER a foto da rodada durante a execução. Sem isto, quem não tirou a
+// foto só via o aviso "Foto anexada nesta rodada" — texto, sem imagem. Numa
+// execução a quatro mãos ninguém conseguia conferir a prova do colega antes de
+// fechar o checklist, que é justamente quando conferir ainda adianta algo.
+export async function getRoundPhotoUrl(storagePath) {
+  if (!storagePath || !isOnline()) return null;
+  try {
+    const { data } = await supabase.storage
+      .from('checklist-photos')
+      .createSignedUrl(storagePath, 300);
+    return data?.signedUrl || null;
+  } catch (e) {
+    console.warn('getRoundPhotoUrl falhou:', e.message);
+    return null;
+  }
+}
+
 // Liga uma foto já no storage (a da rodada) a esta conclusão. `ignoreDuplicates`
 // porque quem submete pode ter a própria foto do mesmo item — a dele vence, esta
 // só preenche o que faltava.
+//
+// Enfileira ANTES de tentar, como `uploadPhoto`. Esta função engolia o erro e
+// devolvia `false` que ninguém lia: quando a gravação falhava — e ela falhava
+// SEMPRE, porque a conclusão ainda não existia no banco quando o metadado era
+// escrito — a evidência da rodada ficava só como arquivo no bucket, sem nada
+// que a ligasse ao relatório. Foram 28 fotos assim entre 29 e 31/07/2026.
 export async function linkRoundPhoto(completionId, itemId, storagePath) {
   try {
-    const { error } = await db().from('photos').upsert({
-      completion_id: completionId, item_id: itemId, storage_path: storagePath,
-    }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
-    if (error) throw error;
+    await queueOfflinePhotoLink({ completionId, itemId, storagePath });
+  } catch (e) { console.warn('linkRoundPhoto persist failed', e); }
+
+  if (!isOnline()) return false;
+  try {
+    await pushPhotoLink(completionId, itemId, storagePath);
+    await removeQueuedPhotoLink(completionId, itemId);
     return true;
-  } catch (e) { console.warn('linkRoundPhoto falhou', e); return false; }
+  } catch (e) {
+    console.warn('linkRoundPhoto adiado para a fila:', e.message);
+    return false;
+  }
+}
+
+// Lança em falha, pelo mesmo motivo de pushPhoto: o dreno precisa saber.
+async function pushPhotoLink(completionId, itemId, storagePath) {
+  const { error } = await db().from('photos').upsert({
+    completion_id: completionId, item_id: itemId, storage_path: storagePath,
+  }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
+  if (error) throw error;
 }
 
 export async function getPhotoUrl(completionId, itemId) {
@@ -592,6 +634,15 @@ export async function getPhotoUrl(completionId, itemId) {
           .createSignedUrl(data.storage_path, 300); // 5 min expiry
         if (signed?.signedUrl) return signed.signedUrl;
       }
+      // Sem linha em `photos`, tenta o caminho pela CONVENÇÃO antes de desistir.
+      // O arquivo e o metadado são duas escritas separadas, e o histórico deste
+      // projeto é o de perder a segunda: em 12/07 por constraint ausente, em
+      // 30/07 por ordem de gravação. O arquivo sempre esteve lá — o gestor é que
+      // recebia "Não foi possível carregar a foto". Isto o entrega assim mesmo.
+      const { data: convencional } = await supabase.storage
+        .from('checklist-photos')
+        .createSignedUrl(`${completionId}/${itemId}.jpg`, 300);
+      if (convencional?.signedUrl) return convencional.signedUrl;
     } catch (e) { /* fall through to local cache */ }
   }
   // Offline fallback — return locally cached data URL
@@ -685,6 +736,24 @@ async function removeQueuedPhoto(completionId, itemId) {
   } catch (e) { console.warn('removeQueuedPhoto failed', e); }
 }
 
+// Vínculo da foto da rodada. Só o caminho no storage entra na fila — os bytes
+// já estão no bucket, o que falta reenviar é uma linha de metadado.
+async function queueOfflinePhotoLink({ completionId, itemId, storagePath }) {
+  const q = (await cache.getRaw('ibr_offline_queue')) || [];
+  if (!q.some(e => e.type === 'photo_link' && e.completionId === completionId && e.itemId === itemId)) {
+    q.push({ type: 'photo_link', completionId, itemId, storagePath, ts: Date.now() });
+    await cache.setRaw('ibr_offline_queue', q);
+  }
+}
+
+async function removeQueuedPhotoLink(completionId, itemId) {
+  try {
+    const q = (await cache.getRaw('ibr_offline_queue')) || [];
+    await cache.setRaw('ibr_offline_queue',
+      q.filter(e => !(e.type === 'photo_link' && e.completionId === completionId && e.itemId === itemId)));
+  } catch (e) { console.warn('removeQueuedPhotoLink failed', e); }
+}
+
 export async function drainOfflineQueue() {
   console.log('[Sync] drainOfflineQueue called, online:', isOnline());
   if (!isOnline()) return { drained: 0, failed: 0 };
@@ -709,6 +778,9 @@ export async function drainOfflineQueue() {
             await pushPhoto(entry.completionId, entry.itemId, r.value);
             drained++;
           }
+        } else if (entry.type === 'photo_link') {
+          await pushPhotoLink(entry.completionId, entry.itemId, entry.storagePath);
+          drained++;
         } else if (entry.type === 'live_task') {
           // Marcação de tarefa feita offline (execução colaborativa). Import
           // dinâmico para a camada de sync não puxar a de colaboração em toda
