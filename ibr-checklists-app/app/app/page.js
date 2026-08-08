@@ -39,7 +39,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundKey, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -3283,7 +3283,16 @@ const execPagerBtn = {
   display: 'grid', placeItems: 'center', fontFamily: 'inherit',
 };
 
-export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
+/**
+ * `allUnitsSelected` é o "Todas as lojas" do cabeçalho, e ele PRECISA descer
+ * até aqui. Sem ele, o Relatórios só recebia `unit`, que em `page.js` já vem
+ * colapsado: `ACTIVE_UNITS.find(u => u.id === unitId) || ACTIVE_UNITS[0]`.
+ * Gerência e diretoria (unitId null) caíam na PRIMEIRA loja da empresa e liam o
+ * relatório dela achando que era o da rede — sem nada na tela dizendo o
+ * contrário, e sem caminho de UI para chegar em "todas" (o export já sabia
+ * imprimir 'Todas as lojas', mas o estado nunca chegava lá).
+ */
+export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [reviewing, setReviewing] = useState(null);       // execução aberta para conferência
@@ -3303,14 +3312,16 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   const [customFrom, setCustomFrom] = useState(() => todayStr(reportTz));
   const [customTo, setCustomTo] = useState(() => todayStr(reportTz));
   const [selectedMonth, setSelectedMonth] = useState(() => todayStr(reportTz).slice(0, 7));
-  const [filterUnitId, setFilterUnitId] = useState(unit.id);
+  // `null` = todas as lojas. `filterCompletions`, `openDates` e o export já
+  // tratavam esse caso; o que faltava era alguém conseguir chegar nele.
+  const [filterUnitId, setFilterUnitId] = useState(allUnitsSelected ? null : unit.id);
 
   // Keep filterUnitId in sync when the user switches loja in the header
   useEffect(() => {
-    setFilterUnitId(unit.id);
+    setFilterUnitId(allUnitsSelected ? null : unit.id);
     setFilterUserId('');
     setFilterSector(null);
-  }, [unit.id]);
+  }, [unit.id, allUnitsSelected]);
   const [filterSector, setFilterSector] = useState(null);
   const [filterShift, setFilterShift] = useState(null);
   const [filterUserId, setFilterUserId] = useState('');
@@ -3326,12 +3337,43 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   };
 
   const resolvedSectors = sectorGroupToSectors(filterSector, filterUnitId);
-  const filtered = filterCompletions(completions, {
+  const submissoes = filterCompletions(completions, {
     dates, unitId: filterUnitId,
     sector: resolvedSectors ? null : filterSector, // pass null if we handle it via sectorList
     sectorList: resolvedSectors,
     shift: filterShift, userId: filterUserId || null,
   });
+
+  /**
+   * Uma linha por RODADA (loja + checklist + dia), não por submissão.
+   *
+   * O Relatórios era o último lugar do app que ainda contava submissões:
+   * `collaboratorStats` (861) e `computeProductivity` (989) já desduplicavam,
+   * e o índice da liderança também (`team` em computeLeadershipProfile). Só a
+   * tela ficou para trás — então os StatCards diziam um número, a tabela de
+   * colaboradores dizia outro, e a lista de execuções repetia o mesmo checklist
+   * do mesmo dia.
+   *
+   * O custo disso não era estético: medido em 08/08/2026 na IBR, 148 submissões
+   * para 105 rodadas. A liderança conferiu a mesma rodada duas vezes 43 vezes —
+   * 29% do trabalho dela. E como `reviewable` já contava por rodada, essas 43
+   * conferências nunca contaram para o índice dela.
+   *
+   * Nada some em silêncio: `submissoesPorRodada` alimenta o selo "2 submissões"
+   * na lista e a coluna nos dois exports. A submissão descartada continua no
+   * banco — aqui se escolhe a MAIS RECENTE, que é a que reflete o estado final.
+   */
+  const filtered = latestPerRound(submissoes);
+  // Sem useMemo de propósito: `submissoes` é um array novo a cada render (o
+  // ReportsView inteiro recalcula assim, ver `summary` e `groups`), então um
+  // useMemo aqui nunca acertaria a dependência — só daria a impressão de que
+  // memoiza. Quando este componente ganhar memoização, ela entra na origem.
+  const submissoesPorRodada = new Map();
+  submissoes.forEach(c => {
+    const k = roundKey(c);
+    submissoesPorRodada.set(k, (submissoesPorRodada.get(k) || 0) + 1);
+  });
+  const reexecucoes = filtered.filter(c => (submissoesPorRodada.get(roundKey(c)) || 1) > 1).length;
 
   const summary = summarizeCompletions(filtered);
   const reportFilter = { unitId: filterUnitId, sector: filterSector, shift: filterShift };
@@ -3345,10 +3387,15 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   const numDays = effectiveDates.length;
   const checklistRate = expectedChecklists ? (summary.checklists / expectedChecklists) * 100 : null;
 
-  // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors
+  // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors.
+  // Sem loja selecionada (rede inteira), a lista é a UNIÃO dos setores — senão
+  // o filtro de setor aparecia vazio justamente para quem vê mais coisa.
   const sectorOptions = filterUnitId === 'ibr1'
     ? [{ id: 'salao', label: 'Salão' }, { id: 'cozinha', label: 'Cozinha' }]
-    : (units.find(u => u.id === filterUnitId)?.sectors || []).map(s => ({ id: s, label: s }));
+    : (filterUnitId
+        ? (units.find(u => u.id === filterUnitId)?.sectors || [])
+        : [...new Set(units.flatMap(u => u.sectors || []))]
+      ).map(s => ({ id: s, label: s }));
 
   const collaborators = collaboratorStats(filtered);
   const groups = groupStats(filtered, groupBy, units, activeTypes);
@@ -3357,10 +3404,14 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   // O baseline é sempre a EMPRESA inteira no período (sem filtro de loja/setor),
   // para o score do colaborador/setor/loja ser comparável contra a mesma régua.
   const prod = computeProductivity(filterCompletions(completions, { dates }));
+  // Sem loja selecionada, o recorte é a rede inteira: filtrar por `null` daria
+  // três listas vazias para quem tem o escopo mais largo do app.
   const prodUnits = canSeeAllUnits ? prod.units : prod.units.filter(u => u.key === filterUnitId);
-  const prodSectors = prod.sectors.filter(s => s.key.startsWith(`${filterUnitId}|`));
+  const prodSectors = filterUnitId
+    ? prod.sectors.filter(s => s.key.startsWith(`${filterUnitId}|`))
+    : prod.sectors;
   const prodCollabs = prod.collaborators
-    .filter(cb => cb.unitIds.has(filterUnitId) && (!filterUserId || cb.key === filterUserId))
+    .filter(cb => (!filterUnitId || cb.unitIds.has(filterUnitId)) && (!filterUserId || cb.key === filterUserId))
     .slice(0, 15);
 
   // ── Export helpers ─────────────────────────────────────────────────────────
@@ -3372,7 +3423,10 @@ export function ReportsView({ unit, templates, completions, closures, users, can
 
   const exportCSV = () => {
     const rows = [
-      ['Data', 'Loja', 'Setor', 'Checklist', 'Responsável', 'Concluído às', 'Tarefas feitas', 'Total tarefas', '% Conclusão', 'Críticos pendentes'],
+      ['Data', 'Loja', 'Setor', 'Checklist', 'Responsável', 'Concluído às', 'Tarefas feitas', 'Total tarefas', '% Conclusão', 'Críticos pendentes', 'Submissões'],
+      // Uma linha por rodada, igual à tela. A coluna "Submissões" é o que
+      // impede a desduplicação de virar perda: quem precisa auditar uma
+      // reexecução vê que ela existiu e quantas foram.
       ...filtered.map(c => {
         const done = c.items.filter(i => i.done).length;
         const total = c.items.length;
@@ -3389,6 +3443,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           total,
           rate,
           crit,
+          submissoesPorRodada.get(roundKey(c)) || 1,
         ];
       }),
     ];
@@ -3445,6 +3500,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       .map(c => {
         const done = c.items.filter(i => i.done).length;
         const fotos = c.items.filter(i => i.hasPhoto).length;
+        const subs = submissoesPorRodada.get(roundKey(c)) || 1;
         return `<tr>
           <td style="white-space:nowrap">${new Date(c.completedAt).toLocaleDateString('pt-BR')} ${new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
           <td>${units.find(u => u.id === c.unitId)?.name || c.unitId}</td>
@@ -3452,6 +3508,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           <td>${c.operatorName}</td>
           <td style="text-align:center">${done}/${c.items.length}</td>
           <td style="text-align:center">${fotos > 0 ? fotos : '—'}</td>
+          <td style="text-align:center">${subs > 1 ? subs : '—'}</td>
         </tr>`;
       }).join('');
 
@@ -3573,6 +3630,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       <th>Responsável</th>
       <th style="text-align:center">Tarefas</th>
       <th style="text-align:center">Fotos</th>
+      <th style="text-align:center">Submissões</th>
     </tr></thead>
     <tbody>${execRows}</tbody>
   </table>` : ''}
@@ -3600,6 +3658,16 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   return (
     <div className="zc-view space-y-4 zc-rep">
       <div className="zc-rep-filters space-y-4">
+      {/* O escopo, dito em letras. Quem responde pela rede lia o relatório da
+          primeira loja achando que era o de todas — e nada na tela desmentia. */}
+      <Eyebrow>Escopo</Eyebrow>
+      <p style={{ fontSize: T.caption, color: C.muted }}>
+        {filterUnitId
+          ? <>Somente <strong style={{ color: C.ink, fontWeight: W.semibold }}>{units.find(u => u.id === filterUnitId)?.name || filterUnitId}</strong></>
+          : <><strong style={{ color: C.ink, fontWeight: W.semibold }}>Todas as lojas</strong> ({units.length})</>}
+        {canSeeAllUnits && ' · troque no seletor de loja do cabeçalho'}
+      </p>
+
       <Eyebrow>Período</Eyebrow>
       <div className="flex flex-wrap gap-2">
         {PERIODS.map(p => (
@@ -3660,7 +3728,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       >
         <option value="">Todos</option>
         {users
-          .filter(u => !u.unitId || u.unitId === filterUnitId)
+          .filter(u => !filterUnitId || !u.unitId || u.unitId === filterUnitId)
           .map(u => <option key={u.id} value={u.id}>{truncName(u.name, 30)}</option>)}
       </select>
       </div>
@@ -3846,6 +3914,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           </PillButton>
           <span style={{ fontSize: T.label, color: C.mutedLight }}>
             {filtered.filter(c => !c.reviewedAt).length} sem conferir no período
+            {reexecucoes > 0 && ` · ${reexecucoes} ${reexecucoes === 1 ? 'rodada reexecutada' : 'rodadas reexecutadas'}`}
           </span>
         </div>
       )}
@@ -3882,6 +3951,12 @@ export function ReportsView({ unit, templates, completions, closures, users, can
                           estar visível na mesma linha em que se confere. */}
                       {completionOnTime(c, templates, null, units) === false && (
                         <span style={{ color: C.critical, fontWeight: W.semibold }}> · fora do prazo</span>
+                      )}
+                      {/* A rodada teve mais de uma submissão e a lista mostra só
+                          a última. Dizer isso é o que separa desduplicar de
+                          esconder — sem o selo, o registro some sem aviso. */}
+                      {(submissoesPorRodada.get(roundKey(c)) || 1) > 1 && (
+                        <span> · {submissoesPorRodada.get(roundKey(c))} submissões, exibindo a última</span>
                       )}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-1" style={{ alignItems: 'center' }}>
@@ -12754,7 +12829,7 @@ function AppInner() {
         )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
+          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} allUnitsSelected={unitId == null} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}

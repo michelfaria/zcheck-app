@@ -76,9 +76,13 @@ begin
   -- conferida e inflar a nota de um líder que nunca a viu. `pushCompletion`
   -- não envia essas colunas, então nada do app quebra.
   --
-  -- APLICADO SEPARADAMENTE — este bloco ainda NÃO rodou em produção (26/07):
-  -- a automação do SQL Editor foi barrada no meio. Rode este arquivo inteiro
-  -- de novo (é idempotente) para aplicá-lo.
+  -- ESTE BLOCO ESTÁ APLICADO EM PRODUÇÃO. Verificado em 08/08/2026:
+  --   select grantee, privilege_type from information_schema.column_privileges
+  --    where table_name = 'completions' and column_name = 'reviewed_by';
+  --   -- authenticated: apenas SELECT e REFERENCES (nenhum INSERT/UPDATE)
+  -- (Uma versão anterior deste comentário dizia o contrário — que a automação
+  -- do SQL Editor teria sido barrada no meio em 26/07. Era falso, e mandou
+  -- procurar um buraco que não existe. Se reverificar, atualize a data acima.)
   execute 'revoke insert on public.completions from authenticated';
   execute format('grant insert (%s) on public.completions to authenticated', v_cols);
 end $$;
