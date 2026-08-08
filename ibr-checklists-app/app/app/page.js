@@ -4065,6 +4065,8 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
   const [soPendencias, setSoPendencias] = useState(false);
+  // Segundo passo da confirmação, quando há apontamento sem motivo. Ver `commit`.
+  const [confirmandoMudo, setConfirmandoMudo] = useState(false);
   const jaConferido = !!c.reviewedAt;
   const noPrazo = completionOnTime(c, templates, null, units);
 
@@ -4086,12 +4088,43 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
     });
     return inicial;
   });
-  const [notaAberta, setNotaAberta] = useState(null); // itemId com a caixa de observação aberta
+  /**
+   * Itens com a caixa de motivo aberta — um CONJUNTO, não um id só.
+   *
+   * Era um id único, e isso sabotava o pedido de motivo: abrir a caixa da
+   * segunda ressalva fechava a da primeira, que ainda estava vazia. Quem
+   * apontasse três coisas seguidas terminaria com uma caixa aberta e duas que
+   * piscaram e sumiram.
+   */
+  const [notasAbertas, setNotasAbertas] = useState(() => new Set());
+  const abrirNota = itemId => setNotasAbertas(prev => (prev.has(itemId) ? prev : new Set(prev).add(itemId)));
+  const toggleNota = itemId => setNotasAbertas(prev => {
+    const proximo = new Set(prev);
+    if (proximo.has(itemId)) proximo.delete(itemId); else proximo.add(itemId);
+    return proximo;
+  });
 
-  const setVeredito = (itemId, verdict) => setVereditos(prev => ({
-    ...prev,
-    [itemId]: { verdict, note: prev[itemId]?.note || '' },
-  }));
+  /**
+   * Escolher RESSALVA ou REPROVADO abre a caixa do motivo junto.
+   *
+   * Medido em 08/08/2026: 41 apontamentos e 2 notas. 95% chegavam ao
+   * colaborador como "Com ressalva" e mais nada — um veredito nu, que não diz o
+   * que refazer e só produz ressentimento. O botão de comentário sempre esteve
+   * visível; o que faltava era alguém PEDIR. Aprovado não abre nada: aprovação
+   * sem texto não deixa ninguém sem saber o que fazer.
+   *
+   * Abre SEM roubar o foco de propósito. `autoFocus` num celular sobe o teclado
+   * e come metade da tela a cada toque, e isso numa conferência de 40 itens
+   * viraria motivo para parar de apontar — o oposto do que se quer. A caixa
+   * aberta convida; quem fecha o laço é o aviso na confirmação.
+   */
+  const setVeredito = (itemId, verdict) => {
+    setVereditos(prev => ({
+      ...prev,
+      [itemId]: { verdict, note: prev[itemId]?.note || '' },
+    }));
+    if (verdict !== 'aprovado') abrirNota(itemId);
+  };
   const setVeredictoNota = (itemId, texto) => setVereditos(prev => ({
     ...prev,
     [itemId]: { verdict: prev[itemId]?.verdict || 'ressalva', note: texto },
@@ -4139,7 +4172,30 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
   const pendencias = itens.filter(i => !i.done || i.atrasado || i.faltouFoto);
   const visiveis = soPendencias ? pendencias : itens;
 
-  const commit = async reviewed => {
+  /**
+   * APONTAMENTO = ressalva ou reprovação. É o que vira texto no briefing de uma
+   * pessoa, e é o que precisa de motivo. Aprovação não entra: ela não pede nada
+   * de ninguém.
+   */
+  const apontamentos = itens.filter(i => {
+    const v = vereditos[i.id]?.verdict;
+    return v === 'ressalva' || v === 'reprovado';
+  });
+  const semMotivo = apontamentos.filter(i => !(vereditos[i.id]?.note || '').trim());
+
+  /**
+   * Salvar. Com apontamento sem motivo, pede UMA vez antes.
+   *
+   * Não bloqueia de propósito: a liderança pode ter conversado pessoalmente, ou
+   * o motivo pode estar na observação geral. Um obstáculo intransponível aqui
+   * seria trocado por "aprovado" na primeira pressa, e aí o produto perde o
+   * apontamento inteiro — pior que perder o texto dele.
+   */
+  const commit = async (reviewed, { mesmoSemMotivo = false } = {}) => {
+    if (reviewed && !mesmoSemMotivo && semMotivo.length > 0) {
+      setConfirmandoMudo(true);
+      return;
+    }
     setBusy(true); setErro('');
     const items = Object.entries(vereditos)
       .filter(([, v]) => v?.verdict)
@@ -4147,7 +4203,7 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
     const ok = await onReview(c.id, { items, note: reviewed ? note : null, reviewed });
     setBusy(false);
     if (ok) onClose();
-    else setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.');
+    else { setConfirmandoMudo(false); setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.'); }
   };
 
   const semVeredito = itens.filter(i => !vereditos[i.id]?.verdict).length;
@@ -4303,21 +4359,44 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
                         </button>
                       );
                     })}
-                    <button onClick={() => setNotaAberta(notaAberta === i.id ? null : i.id)}
-                      style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, background: 'none', border: `1px dashed ${C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
-                      {vereditos[i.id]?.note ? 'Editar comentário' : '+ Comentário'}
-                    </button>
+                    {/* O rótulo muda com o que está faltando: num apontamento
+                        ainda mudo ele PEDE o motivo, em vez de oferecer um
+                        comentário opcional. É a mesma caixa; o que muda é de
+                        quem é a iniciativa. */}
+                    {(() => {
+                      const vd = vereditos[i.id]?.verdict;
+                      const eApontamento = vd === 'ressalva' || vd === 'reprovado';
+                      const mudo = eApontamento && !(vereditos[i.id]?.note || '').trim();
+                      const cor = mudo ? C.warning : C.muted;
+                      return (
+                        <button onClick={() => toggleNota(i.id)}
+                          style={{ fontSize: 11, fontWeight: W.semibold, color: cor, background: 'none', border: `1px dashed ${mudo ? cor : C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
+                          {vereditos[i.id]?.note ? 'Editar motivo' : mudo ? 'Dizer o motivo' : '+ Comentário'}
+                        </button>
+                      );
+                    })()}
                   </div>
 
-                  {(notaAberta === i.id || vereditos[i.id]?.note) && (
-                    <textarea
-                      value={vereditos[i.id]?.note || ''}
-                      onChange={e => setVeredictoNota(i.id, e.target.value)}
-                      rows={2} disabled={busy}
-                      aria-label={`Comentário sobre ${i.texto}`}
-                      placeholder="O que o colaborador precisa saber sobre esta tarefa?"
-                      style={{ width: '100%', marginTop: 6, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
-                  )}
+                  {(notasAbertas.has(i.id) || vereditos[i.id]?.note) && (() => {
+                    const vd = vereditos[i.id]?.verdict;
+                    const mudo = (vd === 'ressalva' || vd === 'reprovado') && !(vereditos[i.id]?.note || '').trim();
+                    return (
+                      <textarea
+                        value={vereditos[i.id]?.note || ''}
+                        onChange={e => setVeredictoNota(i.id, e.target.value)}
+                        rows={2} disabled={busy}
+                        aria-label={`Motivo do veredito sobre ${i.texto}`}
+                        // A pergunta muda com o veredito: reprovar pede o que
+                        // refazer, ressalvar pede o que ajustar. Um placeholder
+                        // genérico devolve resposta genérica.
+                        placeholder={vd === 'reprovado'
+                          ? 'O que precisa ser refeito, e como?'
+                          : vd === 'ressalva'
+                            ? 'O que ficou abaixo do padrão?'
+                            : 'O que o colaborador precisa saber sobre esta tarefa?'}
+                        style={{ width: '100%', marginTop: 6, border: `1px solid ${mudo ? C.warning : C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+                    );
+                  })()}
                 </div>
               </div>
             );
@@ -4333,6 +4412,11 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
             {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
             {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
             {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
+            {/* O número que importa para o outro lado: apontamento sem motivo
+                chega como veredito nu. Fica na MESMA linha que "sem veredito"
+                porque são o mesmo tipo de buraco — um o formulário já
+                mostrava, o outro ninguém via. */}
+            {semMotivo.length > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {semMotivo.length} sem motivo</span>}
           </p>
 
           {jaConferido && (
@@ -4350,10 +4434,51 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
 
           {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 10 }}>{erro}</p>}
 
-          <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-            <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
-          </button>
+          {/* O segundo passo, e só quando há o que avisar: nomeia as tarefas que
+              vão chegar sem motivo. Genérico ("faltam motivos") seria ignorado
+              na segunda vez; a lista obriga a olhar para o que se apontou. */}
+          {confirmandoMudo ? (
+            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}55`, borderRadius: R.sm, padding: '12px 14px', marginBottom: 10 }}>
+              <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>
+                {semMotivo.length === 1 ? 'Um apontamento vai sem motivo' : `${semMotivo.length} apontamentos vão sem motivo`}
+              </p>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                Quem executou vai ver o veredito e mais nada — sem saber o que refazer.
+              </p>
+              <ul style={{ margin: '8px 0 0', listStyle: 'none' }}>
+                {semMotivo.slice(0, 4).map(i => (
+                  <li key={i.id} style={{ fontSize: 12, color: C.ink, lineHeight: 1.6 }}>· {i.texto}</li>
+                ))}
+                {semMotivo.length > 4 && (
+                  <li style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>· e mais {semMotivo.length - 4}</li>
+                )}
+              </ul>
+              <div className="flex gap-2" style={{ marginTop: 12 }}>
+                <button
+                  onClick={() => {
+                    // Abre as caixas de todas elas e DESLIGA o filtro: com "Só
+                    // pendências" ligado, uma ressalva numa tarefa entregue no
+                    // prazo está fora da lista, e as caixas abririam invisíveis.
+                    semMotivo.forEach(i => abrirNota(i.id));
+                    setSoPendencias(false);
+                    setConfirmandoMudo(false);
+                  }}
+                  disabled={busy} className="flex-1 py-2.5"
+                  style={{ borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 13.5, border: 'none', cursor: 'pointer' }}>
+                  Escrever os motivos
+                </button>
+                <button onClick={() => commit(true, { mesmoSemMotivo: true })} disabled={busy} className="flex-1 py-2.5"
+                  style={{ borderRadius: 10, background: 'white', color: C.muted, fontWeight: W.semibold, fontSize: 13.5, border: `1px solid ${C.border}`, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+                  {busy ? 'Salvando…' : 'Salvar assim mesmo'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+              <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
+            </button>
+          )}
           {jaConferido && (
             <button onClick={() => commit(false)} disabled={busy} className="w-full py-2"
               style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
@@ -12356,11 +12481,33 @@ function AppInner() {
           return { ...it, review: { verdict: v.verdict, note: v.note || null, byName: currentUser.name } };
         }),
       } : c)));
+      /**
+       * As DUAS métricas de sucesso da conferência — e nenhuma delas é "a fila
+       * esvaziou". Fila zerada com 100% de aprovação é fracasso disfarçado.
+       *
+       *   `sem_motivo / apontamentos` — apontamento que chega ao colaborador
+       *   como veredito nu. Linha de base de 08/08/2026: 39 de 41, ou 95%.
+       *   Meta: abaixo de 20%.
+       *
+       *   `apontamentos / tarefas_julgadas` — a taxa de discordância. Linha de
+       *   base: 3,1% (41 de 1331). Este número é um PISO, não um teto: se cair
+       *   perto de zero depois de qualquer mudança, a mudança piorou o produto,
+       *   por mais confortável que a tela tenha ficado.
+       *
+       * `modo` nasce fixo em 'individual' de propósito: se um dia existir
+       * aprovação em lote, a comparação entre os dois já vai existir desde o
+       * primeiro dia, sem precisar de uma nova coluna nem de backfill.
+       */
+      const reprovadas = items.filter(i => i.verdict === 'reprovado').length;
+      const ressalvas = items.filter(i => i.verdict === 'ressalva').length;
+      const apontamentos = items.filter(i => i.verdict === 'reprovado' || i.verdict === 'ressalva');
       track('completion_reviewed', { source: 'relatorios', metadata: {
         completion_id: completionId, undone: !reviewed, has_note: !!note,
         tarefas_julgadas: items.length,
-        reprovadas: items.filter(i => i.verdict === 'reprovado').length,
-        ressalvas: items.filter(i => i.verdict === 'ressalva').length,
+        reprovadas, ressalvas,
+        apontamentos: apontamentos.length,
+        sem_motivo: apontamentos.filter(i => !(i.note || '').trim()).length,
+        modo: 'individual',
       } });
       return true;
     } catch (e) {
