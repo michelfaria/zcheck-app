@@ -27,7 +27,7 @@ import {
   deactivateTemplate,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
-  reviewCompletion, fetchTaskReviews,
+  reviewCompletion, fetchTaskReviews, fetchCompletionNotes,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission, fetchPushStatus,
@@ -39,7 +39,7 @@ import { useNetworkStatus } from '../../lib/useNetworkStatus';
 import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundKey, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -1088,14 +1088,23 @@ export function generateSimulatedCompletions(templates, users, days = 7) {
  *
  * A fonte da verdade continua sendo a tabela `task_reviews`; isto é projeção.
  */
-function annotateReviews(completions, taskReviews) {
-  if (!taskReviews?.length) return completions || [];
-  const byKey = new Map(taskReviews.map(r => [`${r.completionId}|${r.itemId}`, r]));
+function annotateReviews(completions, taskReviews, completionNotes) {
+  if (!taskReviews?.length && !completionNotes?.length) return completions || [];
+  const byKey = new Map((taskReviews || []).map(r => [`${r.completionId}|${r.itemId}`, r]));
+  // A nota do checklist inteiro volta para o mesmo campo de sempre
+  // (`reviewNote`), só que agora vinda da RPC em vez da coluna pública. Nenhum
+  // consumidor precisou mudar — o ReviewModal e o briefing seguem lendo `c.reviewNote`.
+  const notaDe = new Map((completionNotes || []).map(n => [n.completionId, n]));
   return (completions || []).map(c => ({
     ...c,
+    reviewNote: notaDe.get(c.id)?.note ?? c.reviewNote ?? null,
+    reviewedByName: c.reviewedByName ?? notaDe.get(c.id)?.reviewedByName ?? null,
     items: (c.items || []).map(i => {
       const r = byKey.get(`${c.id}|${i.id}`);
-      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName } } : i;
+      // `executedBy` viaja junto porque é ele que decide DE QUEM é este
+      // feedback. Sem ele, o briefing tinha que perguntar ao checklist quem era
+      // o dono — e o checklist só sabe quem o submeteu.
+      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName, executedBy: r.executedByUserId } } : i;
     }),
   }));
 }
@@ -3283,7 +3292,16 @@ const execPagerBtn = {
   display: 'grid', placeItems: 'center', fontFamily: 'inherit',
 };
 
-export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
+/**
+ * `allUnitsSelected` é o "Todas as lojas" do cabeçalho, e ele PRECISA descer
+ * até aqui. Sem ele, o Relatórios só recebia `unit`, que em `page.js` já vem
+ * colapsado: `ACTIVE_UNITS.find(u => u.id === unitId) || ACTIVE_UNITS[0]`.
+ * Gerência e diretoria (unitId null) caíam na PRIMEIRA loja da empresa e liam o
+ * relatório dela achando que era o da rede — sem nada na tela dizendo o
+ * contrário, e sem caminho de UI para chegar em "todas" (o export já sabia
+ * imprimir 'Todas as lojas', mas o estado nunca chegava lá).
+ */
+export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [reviewing, setReviewing] = useState(null);       // execução aberta para conferência
@@ -3303,14 +3321,16 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   const [customFrom, setCustomFrom] = useState(() => todayStr(reportTz));
   const [customTo, setCustomTo] = useState(() => todayStr(reportTz));
   const [selectedMonth, setSelectedMonth] = useState(() => todayStr(reportTz).slice(0, 7));
-  const [filterUnitId, setFilterUnitId] = useState(unit.id);
+  // `null` = todas as lojas. `filterCompletions`, `openDates` e o export já
+  // tratavam esse caso; o que faltava era alguém conseguir chegar nele.
+  const [filterUnitId, setFilterUnitId] = useState(allUnitsSelected ? null : unit.id);
 
   // Keep filterUnitId in sync when the user switches loja in the header
   useEffect(() => {
-    setFilterUnitId(unit.id);
+    setFilterUnitId(allUnitsSelected ? null : unit.id);
     setFilterUserId('');
     setFilterSector(null);
-  }, [unit.id]);
+  }, [unit.id, allUnitsSelected]);
   const [filterSector, setFilterSector] = useState(null);
   const [filterShift, setFilterShift] = useState(null);
   const [filterUserId, setFilterUserId] = useState('');
@@ -3326,12 +3346,43 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   };
 
   const resolvedSectors = sectorGroupToSectors(filterSector, filterUnitId);
-  const filtered = filterCompletions(completions, {
+  const submissoes = filterCompletions(completions, {
     dates, unitId: filterUnitId,
     sector: resolvedSectors ? null : filterSector, // pass null if we handle it via sectorList
     sectorList: resolvedSectors,
     shift: filterShift, userId: filterUserId || null,
   });
+
+  /**
+   * Uma linha por RODADA (loja + checklist + dia), não por submissão.
+   *
+   * O Relatórios era o último lugar do app que ainda contava submissões:
+   * `collaboratorStats` (861) e `computeProductivity` (989) já desduplicavam,
+   * e o índice da liderança também (`team` em computeLeadershipProfile). Só a
+   * tela ficou para trás — então os StatCards diziam um número, a tabela de
+   * colaboradores dizia outro, e a lista de execuções repetia o mesmo checklist
+   * do mesmo dia.
+   *
+   * O custo disso não era estético: medido em 08/08/2026 na IBR, 148 submissões
+   * para 105 rodadas. A liderança conferiu a mesma rodada duas vezes 43 vezes —
+   * 29% do trabalho dela. E como `reviewable` já contava por rodada, essas 43
+   * conferências nunca contaram para o índice dela.
+   *
+   * Nada some em silêncio: `submissoesPorRodada` alimenta o selo "2 submissões"
+   * na lista e a coluna nos dois exports. A submissão descartada continua no
+   * banco — aqui se escolhe a MAIS RECENTE, que é a que reflete o estado final.
+   */
+  const filtered = latestPerRound(submissoes);
+  // Sem useMemo de propósito: `submissoes` é um array novo a cada render (o
+  // ReportsView inteiro recalcula assim, ver `summary` e `groups`), então um
+  // useMemo aqui nunca acertaria a dependência — só daria a impressão de que
+  // memoiza. Quando este componente ganhar memoização, ela entra na origem.
+  const submissoesPorRodada = new Map();
+  submissoes.forEach(c => {
+    const k = roundKey(c);
+    submissoesPorRodada.set(k, (submissoesPorRodada.get(k) || 0) + 1);
+  });
+  const reexecucoes = filtered.filter(c => (submissoesPorRodada.get(roundKey(c)) || 1) > 1).length;
 
   const summary = summarizeCompletions(filtered);
   const reportFilter = { unitId: filterUnitId, sector: filterSector, shift: filterShift };
@@ -3345,10 +3396,15 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   const numDays = effectiveDates.length;
   const checklistRate = expectedChecklists ? (summary.checklists / expectedChecklists) * 100 : null;
 
-  // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors
+  // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors.
+  // Sem loja selecionada (rede inteira), a lista é a UNIÃO dos setores — senão
+  // o filtro de setor aparecia vazio justamente para quem vê mais coisa.
   const sectorOptions = filterUnitId === 'ibr1'
     ? [{ id: 'salao', label: 'Salão' }, { id: 'cozinha', label: 'Cozinha' }]
-    : (units.find(u => u.id === filterUnitId)?.sectors || []).map(s => ({ id: s, label: s }));
+    : (filterUnitId
+        ? (units.find(u => u.id === filterUnitId)?.sectors || [])
+        : [...new Set(units.flatMap(u => u.sectors || []))]
+      ).map(s => ({ id: s, label: s }));
 
   const collaborators = collaboratorStats(filtered);
   const groups = groupStats(filtered, groupBy, units, activeTypes);
@@ -3357,10 +3413,14 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   // O baseline é sempre a EMPRESA inteira no período (sem filtro de loja/setor),
   // para o score do colaborador/setor/loja ser comparável contra a mesma régua.
   const prod = computeProductivity(filterCompletions(completions, { dates }));
+  // Sem loja selecionada, o recorte é a rede inteira: filtrar por `null` daria
+  // três listas vazias para quem tem o escopo mais largo do app.
   const prodUnits = canSeeAllUnits ? prod.units : prod.units.filter(u => u.key === filterUnitId);
-  const prodSectors = prod.sectors.filter(s => s.key.startsWith(`${filterUnitId}|`));
+  const prodSectors = filterUnitId
+    ? prod.sectors.filter(s => s.key.startsWith(`${filterUnitId}|`))
+    : prod.sectors;
   const prodCollabs = prod.collaborators
-    .filter(cb => cb.unitIds.has(filterUnitId) && (!filterUserId || cb.key === filterUserId))
+    .filter(cb => (!filterUnitId || cb.unitIds.has(filterUnitId)) && (!filterUserId || cb.key === filterUserId))
     .slice(0, 15);
 
   // ── Export helpers ─────────────────────────────────────────────────────────
@@ -3372,7 +3432,10 @@ export function ReportsView({ unit, templates, completions, closures, users, can
 
   const exportCSV = () => {
     const rows = [
-      ['Data', 'Loja', 'Setor', 'Checklist', 'Responsável', 'Concluído às', 'Tarefas feitas', 'Total tarefas', '% Conclusão', 'Críticos pendentes'],
+      ['Data', 'Loja', 'Setor', 'Checklist', 'Responsável', 'Concluído às', 'Tarefas feitas', 'Total tarefas', '% Conclusão', 'Críticos pendentes', 'Submissões'],
+      // Uma linha por rodada, igual à tela. A coluna "Submissões" é o que
+      // impede a desduplicação de virar perda: quem precisa auditar uma
+      // reexecução vê que ela existiu e quantas foram.
       ...filtered.map(c => {
         const done = c.items.filter(i => i.done).length;
         const total = c.items.length;
@@ -3389,6 +3452,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           total,
           rate,
           crit,
+          submissoesPorRodada.get(roundKey(c)) || 1,
         ];
       }),
     ];
@@ -3445,6 +3509,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       .map(c => {
         const done = c.items.filter(i => i.done).length;
         const fotos = c.items.filter(i => i.hasPhoto).length;
+        const subs = submissoesPorRodada.get(roundKey(c)) || 1;
         return `<tr>
           <td style="white-space:nowrap">${new Date(c.completedAt).toLocaleDateString('pt-BR')} ${new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
           <td>${units.find(u => u.id === c.unitId)?.name || c.unitId}</td>
@@ -3452,6 +3517,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           <td>${c.operatorName}</td>
           <td style="text-align:center">${done}/${c.items.length}</td>
           <td style="text-align:center">${fotos > 0 ? fotos : '—'}</td>
+          <td style="text-align:center">${subs > 1 ? subs : '—'}</td>
         </tr>`;
       }).join('');
 
@@ -3573,6 +3639,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       <th>Responsável</th>
       <th style="text-align:center">Tarefas</th>
       <th style="text-align:center">Fotos</th>
+      <th style="text-align:center">Submissões</th>
     </tr></thead>
     <tbody>${execRows}</tbody>
   </table>` : ''}
@@ -3600,6 +3667,16 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   return (
     <div className="zc-view space-y-4 zc-rep">
       <div className="zc-rep-filters space-y-4">
+      {/* O escopo, dito em letras. Quem responde pela rede lia o relatório da
+          primeira loja achando que era o de todas — e nada na tela desmentia. */}
+      <Eyebrow>Escopo</Eyebrow>
+      <p style={{ fontSize: T.caption, color: C.muted }}>
+        {filterUnitId
+          ? <>Somente <strong style={{ color: C.ink, fontWeight: W.semibold }}>{units.find(u => u.id === filterUnitId)?.name || filterUnitId}</strong></>
+          : <><strong style={{ color: C.ink, fontWeight: W.semibold }}>Todas as lojas</strong> ({units.length})</>}
+        {canSeeAllUnits && ' · troque no seletor de loja do cabeçalho'}
+      </p>
+
       <Eyebrow>Período</Eyebrow>
       <div className="flex flex-wrap gap-2">
         {PERIODS.map(p => (
@@ -3660,7 +3737,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       >
         <option value="">Todos</option>
         {users
-          .filter(u => !u.unitId || u.unitId === filterUnitId)
+          .filter(u => !filterUnitId || !u.unitId || u.unitId === filterUnitId)
           .map(u => <option key={u.id} value={u.id}>{truncName(u.name, 30)}</option>)}
       </select>
       </div>
@@ -3846,6 +3923,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           </PillButton>
           <span style={{ fontSize: T.label, color: C.mutedLight }}>
             {filtered.filter(c => !c.reviewedAt).length} sem conferir no período
+            {reexecucoes > 0 && ` · ${reexecucoes} ${reexecucoes === 1 ? 'rodada reexecutada' : 'rodadas reexecutadas'}`}
           </span>
         </div>
       )}
@@ -3882,6 +3960,12 @@ export function ReportsView({ unit, templates, completions, closures, users, can
                           estar visível na mesma linha em que se confere. */}
                       {completionOnTime(c, templates, null, units) === false && (
                         <span style={{ color: C.critical, fontWeight: W.semibold }}> · fora do prazo</span>
+                      )}
+                      {/* A rodada teve mais de uma submissão e a lista mostra só
+                          a última. Dizer isso é o que separa desduplicar de
+                          esconder — sem o selo, o registro some sem aviso. */}
+                      {(submissoesPorRodada.get(roundKey(c)) || 1) > 1 && (
+                        <span> · {submissoesPorRodada.get(roundKey(c))} submissões, exibindo a última</span>
                       )}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-1" style={{ alignItems: 'center' }}>
@@ -3990,6 +4074,8 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
   const [soPendencias, setSoPendencias] = useState(false);
+  // Segundo passo da confirmação, quando há apontamento sem motivo. Ver `commit`.
+  const [confirmandoMudo, setConfirmandoMudo] = useState(false);
   const jaConferido = !!c.reviewedAt;
   const noPrazo = completionOnTime(c, templates, null, units);
 
@@ -4011,12 +4097,43 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
     });
     return inicial;
   });
-  const [notaAberta, setNotaAberta] = useState(null); // itemId com a caixa de observação aberta
+  /**
+   * Itens com a caixa de motivo aberta — um CONJUNTO, não um id só.
+   *
+   * Era um id único, e isso sabotava o pedido de motivo: abrir a caixa da
+   * segunda ressalva fechava a da primeira, que ainda estava vazia. Quem
+   * apontasse três coisas seguidas terminaria com uma caixa aberta e duas que
+   * piscaram e sumiram.
+   */
+  const [notasAbertas, setNotasAbertas] = useState(() => new Set());
+  const abrirNota = itemId => setNotasAbertas(prev => (prev.has(itemId) ? prev : new Set(prev).add(itemId)));
+  const toggleNota = itemId => setNotasAbertas(prev => {
+    const proximo = new Set(prev);
+    if (proximo.has(itemId)) proximo.delete(itemId); else proximo.add(itemId);
+    return proximo;
+  });
 
-  const setVeredito = (itemId, verdict) => setVereditos(prev => ({
-    ...prev,
-    [itemId]: { verdict, note: prev[itemId]?.note || '' },
-  }));
+  /**
+   * Escolher RESSALVA ou REPROVADO abre a caixa do motivo junto.
+   *
+   * Medido em 08/08/2026: 41 apontamentos e 2 notas. 95% chegavam ao
+   * colaborador como "Com ressalva" e mais nada — um veredito nu, que não diz o
+   * que refazer e só produz ressentimento. O botão de comentário sempre esteve
+   * visível; o que faltava era alguém PEDIR. Aprovado não abre nada: aprovação
+   * sem texto não deixa ninguém sem saber o que fazer.
+   *
+   * Abre SEM roubar o foco de propósito. `autoFocus` num celular sobe o teclado
+   * e come metade da tela a cada toque, e isso numa conferência de 40 itens
+   * viraria motivo para parar de apontar — o oposto do que se quer. A caixa
+   * aberta convida; quem fecha o laço é o aviso na confirmação.
+   */
+  const setVeredito = (itemId, verdict) => {
+    setVereditos(prev => ({
+      ...prev,
+      [itemId]: { verdict, note: prev[itemId]?.note || '' },
+    }));
+    if (verdict !== 'aprovado') abrirNota(itemId);
+  };
   const setVeredictoNota = (itemId, texto) => setVereditos(prev => ({
     ...prev,
     [itemId]: { verdict: prev[itemId]?.verdict || 'ressalva', note: texto },
@@ -4064,7 +4181,30 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
   const pendencias = itens.filter(i => !i.done || i.atrasado || i.faltouFoto);
   const visiveis = soPendencias ? pendencias : itens;
 
-  const commit = async reviewed => {
+  /**
+   * APONTAMENTO = ressalva ou reprovação. É o que vira texto no briefing de uma
+   * pessoa, e é o que precisa de motivo. Aprovação não entra: ela não pede nada
+   * de ninguém.
+   */
+  const apontamentos = itens.filter(i => {
+    const v = vereditos[i.id]?.verdict;
+    return v === 'ressalva' || v === 'reprovado';
+  });
+  const semMotivo = apontamentos.filter(i => !(vereditos[i.id]?.note || '').trim());
+
+  /**
+   * Salvar. Com apontamento sem motivo, pede UMA vez antes.
+   *
+   * Não bloqueia de propósito: a liderança pode ter conversado pessoalmente, ou
+   * o motivo pode estar na observação geral. Um obstáculo intransponível aqui
+   * seria trocado por "aprovado" na primeira pressa, e aí o produto perde o
+   * apontamento inteiro — pior que perder o texto dele.
+   */
+  const commit = async (reviewed, { mesmoSemMotivo = false } = {}) => {
+    if (reviewed && !mesmoSemMotivo && semMotivo.length > 0) {
+      setConfirmandoMudo(true);
+      return;
+    }
     setBusy(true); setErro('');
     const items = Object.entries(vereditos)
       .filter(([, v]) => v?.verdict)
@@ -4072,7 +4212,7 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
     const ok = await onReview(c.id, { items, note: reviewed ? note : null, reviewed });
     setBusy(false);
     if (ok) onClose();
-    else setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.');
+    else { setConfirmandoMudo(false); setErro('Não foi possível salvar a conferência. Verifique a conexão e tente de novo.'); }
   };
 
   const semVeredito = itens.filter(i => !vereditos[i.id]?.verdict).length;
@@ -4228,21 +4368,44 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
                         </button>
                       );
                     })}
-                    <button onClick={() => setNotaAberta(notaAberta === i.id ? null : i.id)}
-                      style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, background: 'none', border: `1px dashed ${C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
-                      {vereditos[i.id]?.note ? 'Editar comentário' : '+ Comentário'}
-                    </button>
+                    {/* O rótulo muda com o que está faltando: num apontamento
+                        ainda mudo ele PEDE o motivo, em vez de oferecer um
+                        comentário opcional. É a mesma caixa; o que muda é de
+                        quem é a iniciativa. */}
+                    {(() => {
+                      const vd = vereditos[i.id]?.verdict;
+                      const eApontamento = vd === 'ressalva' || vd === 'reprovado';
+                      const mudo = eApontamento && !(vereditos[i.id]?.note || '').trim();
+                      const cor = mudo ? C.warning : C.muted;
+                      return (
+                        <button onClick={() => toggleNota(i.id)}
+                          style={{ fontSize: 11, fontWeight: W.semibold, color: cor, background: 'none', border: `1px dashed ${mudo ? cor : C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
+                          {vereditos[i.id]?.note ? 'Editar motivo' : mudo ? 'Dizer o motivo' : '+ Comentário'}
+                        </button>
+                      );
+                    })()}
                   </div>
 
-                  {(notaAberta === i.id || vereditos[i.id]?.note) && (
-                    <textarea
-                      value={vereditos[i.id]?.note || ''}
-                      onChange={e => setVeredictoNota(i.id, e.target.value)}
-                      rows={2} disabled={busy}
-                      aria-label={`Comentário sobre ${i.texto}`}
-                      placeholder="O que o colaborador precisa saber sobre esta tarefa?"
-                      style={{ width: '100%', marginTop: 6, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
-                  )}
+                  {(notasAbertas.has(i.id) || vereditos[i.id]?.note) && (() => {
+                    const vd = vereditos[i.id]?.verdict;
+                    const mudo = (vd === 'ressalva' || vd === 'reprovado') && !(vereditos[i.id]?.note || '').trim();
+                    return (
+                      <textarea
+                        value={vereditos[i.id]?.note || ''}
+                        onChange={e => setVeredictoNota(i.id, e.target.value)}
+                        rows={2} disabled={busy}
+                        aria-label={`Motivo do veredito sobre ${i.texto}`}
+                        // A pergunta muda com o veredito: reprovar pede o que
+                        // refazer, ressalvar pede o que ajustar. Um placeholder
+                        // genérico devolve resposta genérica.
+                        placeholder={vd === 'reprovado'
+                          ? 'O que precisa ser refeito, e como?'
+                          : vd === 'ressalva'
+                            ? 'O que ficou abaixo do padrão?'
+                            : 'O que o colaborador precisa saber sobre esta tarefa?'}
+                        style={{ width: '100%', marginTop: 6, border: `1px solid ${mudo ? C.warning : C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+                    );
+                  })()}
                 </div>
               </div>
             );
@@ -4258,6 +4421,11 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
             {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
             {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
             {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
+            {/* O número que importa para o outro lado: apontamento sem motivo
+                chega como veredito nu. Fica na MESMA linha que "sem veredito"
+                porque são o mesmo tipo de buraco — um o formulário já
+                mostrava, o outro ninguém via. */}
+            {semMotivo.length > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {semMotivo.length} sem motivo</span>}
           </p>
 
           {jaConferido && (
@@ -4275,10 +4443,51 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
 
           {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 10 }}>{erro}</p>}
 
-          <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-            <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
-          </button>
+          {/* O segundo passo, e só quando há o que avisar: nomeia as tarefas que
+              vão chegar sem motivo. Genérico ("faltam motivos") seria ignorado
+              na segunda vez; a lista obriga a olhar para o que se apontou. */}
+          {confirmandoMudo ? (
+            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}55`, borderRadius: R.sm, padding: '12px 14px', marginBottom: 10 }}>
+              <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>
+                {semMotivo.length === 1 ? 'Um apontamento vai sem motivo' : `${semMotivo.length} apontamentos vão sem motivo`}
+              </p>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                Quem executou vai ver o veredito e mais nada — sem saber o que refazer.
+              </p>
+              <ul style={{ margin: '8px 0 0', listStyle: 'none' }}>
+                {semMotivo.slice(0, 4).map(i => (
+                  <li key={i.id} style={{ fontSize: 12, color: C.ink, lineHeight: 1.6 }}>· {i.texto}</li>
+                ))}
+                {semMotivo.length > 4 && (
+                  <li style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>· e mais {semMotivo.length - 4}</li>
+                )}
+              </ul>
+              <div className="flex gap-2" style={{ marginTop: 12 }}>
+                <button
+                  onClick={() => {
+                    // Abre as caixas de todas elas e DESLIGA o filtro: com "Só
+                    // pendências" ligado, uma ressalva numa tarefa entregue no
+                    // prazo está fora da lista, e as caixas abririam invisíveis.
+                    semMotivo.forEach(i => abrirNota(i.id));
+                    setSoPendencias(false);
+                    setConfirmandoMudo(false);
+                  }}
+                  disabled={busy} className="flex-1 py-2.5"
+                  style={{ borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 13.5, border: 'none', cursor: 'pointer' }}>
+                  Escrever os motivos
+                </button>
+                <button onClick={() => commit(true, { mesmoSemMotivo: true })} disabled={busy} className="flex-1 py-2.5"
+                  style={{ borderRadius: 10, background: 'white', color: C.muted, fontWeight: W.semibold, fontSize: 13.5, border: `1px solid ${C.border}`, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+                  {busy ? 'Salvando…' : 'Salvar assim mesmo'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+              <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
+            </button>
+          )}
           {jaConferido && (
             <button onClick={() => commit(false)} disabled={busy} className="w-full py-2"
               style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
@@ -10449,14 +10658,37 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
   for (let i = 1; i <= JANELA; i++) dias.push(addDays(today, -i));
 
   for (const dia of dias) {
-    const doDia = (completions || []).filter(c =>
-      c.date === dia && (c.operatorUserId === userId || c.operatorName === userName));
-    if (!doDia.length) continue;
-
-    const conferidos = doDia.filter(c => c.reviewedAt);
+    /**
+     * O DIA DA PESSOA É POR TAREFA, NÃO POR CHECKLIST.
+     *
+     * Antes, o briefing filtrava por `operatorUserId` — quem submeteu. Numa
+     * rodada dividida entre três pessoas, quem apertou "Concluir" recebia o
+     * feedback de todo mundo, e os outros dois abriam o app sem briefing
+     * nenhum, mesmo tendo sido avaliados nominalmente.
+     *
+     * Uma tarefa é minha, em ordem de autoridade:
+     *   1. a liderança endereçou o veredito a mim (`review.executedBy`) — é o
+     *      dado mais forte, porque foi resolvido no servidor a partir do items;
+     *   2. eu a executei (`doneBy`);
+     *   3. ninguém executou (tarefa em branco) E o checklist é meu — tarefa não
+     *      feita não tem executor, então responde quem entregou a rodada.
+     */
+    const conferidos = (completions || []).filter(c => c.date === dia && c.reviewedAt);
     if (!conferidos.length) continue;   // ver escolha (1)
 
-    const itens = conferidos.flatMap(c => (c.items || []).map(i => ({ ...i, _c: c })));
+    const souSubmissor = c => c.operatorUserId === userId || c.operatorName === userName;
+    const minha = (i, c) => {
+      if (i.review?.executedBy) return i.review.executedBy === userId;
+      if (i.doneBy || i.doneByName) return i.doneBy === userId || i.doneByName === userName;
+      return souSubmissor(c);
+    };
+
+    const itens = conferidos.flatMap(c => (c.items || []).filter(i => minha(i, c)).map(i => ({ ...i, _c: c })));
+    if (!itens.length) continue;   // conferiram o dia, mas nada era desta pessoa
+
+    // Os checklists em que ela pôs a mão — não os que ela submetiu.
+    const meusChecklists = new Set(itens.map(i => i._c?.id).filter(Boolean));
+
     const aprovadas = itens.filter(i => i.review?.verdict === 'aprovado');
     const ressalvas = itens.filter(i => i.review?.verdict === 'ressalva');
     const reprovadas = itens.filter(i => i.review?.verdict === 'reprovado');
@@ -10474,15 +10706,17 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
         autor: i.review.byName,
       })),
     ];
-    const gerais = conferidos.filter(c => c.reviewNote)
+    // Só a nota geral dos checklists em que a pessoa trabalhou. Sem o recorte,
+    // ela leria o recado que a liderança escreveu sobre a rodada de um colega.
+    const gerais = conferidos.filter(c => c.reviewNote && meusChecklists.has(c.id))
       .map(c => ({ tarefa: null, verdict: null, texto: c.reviewNote, autor: c.reviewedByName }));
 
     const taxa = julgadas ? Math.round((aprovadas.length / julgadas) * 100) : null;
 
     return {
       date: dia,
-      checklists: doDia.length,
-      conferidos: conferidos.length,
+      checklists: meusChecklists.size,
+      conferidos: meusChecklists.size,
       aprovadas: aprovadas.length,
       ressalvas: ressalvas.length,
       reprovadas: reprovadas.length,
@@ -12132,13 +12366,17 @@ function AppInner() {
       fetchUsers(isIbr ? SEED_USERS : []),
       fetchClosures(),
       fetchTaskReviews(),
-    ]).then(async ([tpl, comp, usr, cls, reviews]) => {
+      // A nota do checklist inteiro vem por RPC desde
+      // 20260808_conferencia_privacidade: `completions.review_note` não é mais
+      // escrito, porque aquela coluna é legível pela empresa inteira.
+      fetchCompletionNotes(),
+    ]).then(async ([tpl, comp, usr, cls, reviews, notes]) => {
       if (cancelled) return;
       setTemplates(tpl);
       // Os vereditos entram grudados nos itens (ver `annotateReviews`): daqui
       // para a frente, tudo que lê `completions` já enxerga o que a liderança
       // julgou, sem precisar receber uma segunda estrutura.
-      setCompletions(annotateReviews(comp, reviews));
+      setCompletions(annotateReviews(comp, reviews, notes));
       setUsers(usr);
       setClosures(cls);
       await seedSupabaseIfEmpty(tpl, usr);
@@ -12278,14 +12516,42 @@ function AppInner() {
         items: (c.items || []).map(it => {
           const v = reviewed ? porItem.get(it.id) : null;
           if (!v) { const { review: _r, ...limpo } = it; return limpo; }
-          return { ...it, review: { verdict: v.verdict, note: v.note || null, byName: currentUser.name } };
+          // `executedBy` espelha a MESMA regra da RPC (doneBy, com fallback no
+          // submissor). Sem ele aqui, o briefing e o índice só passariam a
+          // enxergar o destinatário certo no carregamento seguinte.
+          return { ...it, review: {
+            verdict: v.verdict, note: v.note || null, byName: currentUser.name,
+            executedBy: it.doneBy || c.operatorUserId || null,
+          } };
         }),
       } : c)));
+      /**
+       * As DUAS métricas de sucesso da conferência — e nenhuma delas é "a fila
+       * esvaziou". Fila zerada com 100% de aprovação é fracasso disfarçado.
+       *
+       *   `sem_motivo / apontamentos` — apontamento que chega ao colaborador
+       *   como veredito nu. Linha de base de 08/08/2026: 39 de 41, ou 95%.
+       *   Meta: abaixo de 20%.
+       *
+       *   `apontamentos / tarefas_julgadas` — a taxa de discordância. Linha de
+       *   base: 3,1% (41 de 1331). Este número é um PISO, não um teto: se cair
+       *   perto de zero depois de qualquer mudança, a mudança piorou o produto,
+       *   por mais confortável que a tela tenha ficado.
+       *
+       * `modo` nasce fixo em 'individual' de propósito: se um dia existir
+       * aprovação em lote, a comparação entre os dois já vai existir desde o
+       * primeiro dia, sem precisar de uma nova coluna nem de backfill.
+       */
+      const reprovadas = items.filter(i => i.verdict === 'reprovado').length;
+      const ressalvas = items.filter(i => i.verdict === 'ressalva').length;
+      const apontamentos = items.filter(i => i.verdict === 'reprovado' || i.verdict === 'ressalva');
       track('completion_reviewed', { source: 'relatorios', metadata: {
         completion_id: completionId, undone: !reviewed, has_note: !!note,
         tarefas_julgadas: items.length,
-        reprovadas: items.filter(i => i.verdict === 'reprovado').length,
-        ressalvas: items.filter(i => i.verdict === 'ressalva').length,
+        reprovadas, ressalvas,
+        apontamentos: apontamentos.length,
+        sem_motivo: apontamentos.filter(i => !(i.note || '').trim()).length,
+        modo: 'individual',
       } });
       return true;
     } catch (e) {
@@ -12754,7 +13020,7 @@ function AppInner() {
         )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
+          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} allUnitsSelected={unitId == null} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
