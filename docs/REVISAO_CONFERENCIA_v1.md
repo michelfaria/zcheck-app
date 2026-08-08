@@ -244,85 +244,37 @@ usa subquery correlacionada no `SET`, que enxerga o alvo.
 
 ## Apêndice B — Migration B (privacidade, com ordem de deploy)
 
-Veredito público, nota privada. **Ordem obrigatória:** aplicar o SQL abaixo →
-deployar o JS que lê da view + RPC → **só então** rodar o `revoke` do final.
+**Escrita e testada.** SQL em
+`ibr-checklists-app/supabase/migrations/20260808_conferencia_privacidade.sql`.
 
-O split é limpo porque `taskCounts`
-([page.js:1107](ibr-checklists-app/app/app/page.js:1107)) só olha
-`i.review?.verdict`; a nota nunca entra em cálculo nenhum. O veredito continua
-legível pela empresa porque `computeOperationalProfile` calcula o índice de
-**terceiros** no ranking da Equipe
-([page.js:11316](ibr-checklists-app/app/app/page.js:11316)) — e porque ele já é
-público *de fato*: move a posição de todos no ranking, que todos veem.
+O corte: **veredito público, nota privada.** `verdict` continua legível pela
+empresa porque `computeOperationalProfile` calcula o índice de terceiros no
+cliente, e ele já é público de fato — move a posição de todos no ranking, que
+todos veem. `note` sai para `my_task_notes` / `my_completion_notes` e para a
+tabela `completion_review_notes`. `taskCounts` só olha `review.verdict`, então
+nenhum número muda.
 
-```sql
--- 20260808_conferencia_privacidade.sql
+**Ordem obrigatória:** (1) aplicar o SQL; (2) deployar o código que lê de
+`task_verdicts` + as RPCs; (3) **só então** rodar o `revoke select on
+task_reviews from authenticated`, que o arquivo deixa comentado no rodapé de
+propósito. Invertido, derruba o app de todos os colaboradores.
 
--- A nota do checklist sai de completions.review_note: aquela coluna é legível
--- pela empresa inteira por um grant de TABELA herdado de 20260709, e grant de
--- tabela cobre toda coluna — não dá para fechá-la sem revogar o SELECT da
--- tabela, que o app inteiro usa.
-create table if not exists public.completion_review_notes (
-  completion_id    text primary key,
-  company_id       text        not null,
-  note             text        not null,
-  reviewed_by      text        not null,
-  reviewed_by_name text,
-  reviewed_at      timestamptz not null default now(),
-  operator_user_id text,
-  date             date
-);
-alter table public.completion_review_notes enable row level security;
-revoke all on public.completion_review_notes from anon, authenticated;
+Verificação em PGlite (19 asserções, passando):
 
-insert into public.completion_review_notes (
-  completion_id, company_id, note, reviewed_by, reviewed_by_name,
-  reviewed_at, operator_user_id, date)
-select c.id, c.company_id, c.review_note, coalesce(c.reviewed_by,'?'),
-       c.reviewed_by_name, coalesce(c.reviewed_at, now()), c.operator_user_id, c.date
-  from public.completions c
- where nullif(btrim(coalesce(c.review_note,'')),'') is not null
-on conflict (completion_id) do nothing;
-
-update public.completions set review_note = null
- where nullif(btrim(coalesce(review_note,'')),'') is not null;
-
--- A view bypassa RLS da tabela base: o filtro de tenant TEM que estar aqui.
-drop view if exists public.task_verdicts;
-create view public.task_verdicts as
-  select company_id, completion_id, item_id, verdict, reviewed_at,
-         operator_user_id, executed_by_user_id, date
-    from public.task_reviews
-   where company_id = public.jwt_company_id();
-grant select on public.task_verdicts to authenticated;
-
-create or replace function public.my_task_notes(p_since date default null)
-returns table (
-  completion_id text, item_id text, verdict text, note text,
-  reviewed_by_name text, reviewed_at timestamptz, date date
-)
-language sql security definer set search_path = public as $$
-  select tr.completion_id, tr.item_id, tr.verdict, tr.note,
-         tr.reviewed_by_name, tr.reviewed_at, tr.date
-    from public.task_reviews tr
-   where tr.company_id = public.jwt_company_id()
-     and tr.note is not null
-     and (p_since is null or tr.date >= p_since)
-     and (public.jwt_user_role() in ('lideranca','gerencia','gestao')
-          or tr.executed_by_user_id = public.jwt_user_id()
-          or tr.operator_user_id    = public.jwt_user_id());
-$$;
-revoke all     on function public.my_task_notes(date) from public, anon;
-grant  execute on function public.my_task_notes(date) to authenticated;
-
--- review_completion não tem chamador em JS e escreve review_note direto,
--- contornando tudo acima. Porta lateral, fechada.
-revoke execute on function public.review_completion(text, text, boolean)
-  from authenticated, anon, public;
-
--- ⚠ SÓ DEPOIS DO DEPLOY DO JS NOVO:
--- revoke select on public.task_reviews from authenticated;
+```bash
+cd ibr-checklists-app && node supabase/migrations/20260808_conferencia_privacidade.test.mjs
 ```
+
+Duas coisas que o teste pegou e que valem registro:
+
+- **`my_task_notes` aceitava `operator_user_id = jwt_user_id()`.** Numa execução
+  colaborativa, isso deixava quem apertou "Concluir" ler a nota escrita sobre a
+  tarefa de um colega — o vazamento que a migration existe para fechar. A
+  cláusula também era redundante: item sem `doneBy` já grava o submissor em
+  `executed_by_user_id`. Removida.
+- **A view bypassa o RLS da tabela base.** O filtro de tenant tem que morar
+  dentro de `task_verdicts`; tirá-lo num refactor vaza empresa inteira para
+  empresa inteira, sem erro nenhum. É o teste mais importante do arquivo.
 
 ## Apêndice C — Migration C (contestação)
 

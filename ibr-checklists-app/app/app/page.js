@@ -27,7 +27,7 @@ import {
   deactivateTemplate,
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
-  reviewCompletion, fetchTaskReviews,
+  reviewCompletion, fetchTaskReviews, fetchCompletionNotes,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission, fetchPushStatus,
@@ -1088,14 +1088,23 @@ export function generateSimulatedCompletions(templates, users, days = 7) {
  *
  * A fonte da verdade continua sendo a tabela `task_reviews`; isto é projeção.
  */
-function annotateReviews(completions, taskReviews) {
-  if (!taskReviews?.length) return completions || [];
-  const byKey = new Map(taskReviews.map(r => [`${r.completionId}|${r.itemId}`, r]));
+function annotateReviews(completions, taskReviews, completionNotes) {
+  if (!taskReviews?.length && !completionNotes?.length) return completions || [];
+  const byKey = new Map((taskReviews || []).map(r => [`${r.completionId}|${r.itemId}`, r]));
+  // A nota do checklist inteiro volta para o mesmo campo de sempre
+  // (`reviewNote`), só que agora vinda da RPC em vez da coluna pública. Nenhum
+  // consumidor precisou mudar — o ReviewModal e o briefing seguem lendo `c.reviewNote`.
+  const notaDe = new Map((completionNotes || []).map(n => [n.completionId, n]));
   return (completions || []).map(c => ({
     ...c,
+    reviewNote: notaDe.get(c.id)?.note ?? c.reviewNote ?? null,
+    reviewedByName: c.reviewedByName ?? notaDe.get(c.id)?.reviewedByName ?? null,
     items: (c.items || []).map(i => {
       const r = byKey.get(`${c.id}|${i.id}`);
-      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName } } : i;
+      // `executedBy` viaja junto porque é ele que decide DE QUEM é este
+      // feedback. Sem ele, o briefing tinha que perguntar ao checklist quem era
+      // o dono — e o checklist só sabe quem o submeteu.
+      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName, executedBy: r.executedByUserId } } : i;
     }),
   }));
 }
@@ -10649,14 +10658,37 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
   for (let i = 1; i <= JANELA; i++) dias.push(addDays(today, -i));
 
   for (const dia of dias) {
-    const doDia = (completions || []).filter(c =>
-      c.date === dia && (c.operatorUserId === userId || c.operatorName === userName));
-    if (!doDia.length) continue;
-
-    const conferidos = doDia.filter(c => c.reviewedAt);
+    /**
+     * O DIA DA PESSOA É POR TAREFA, NÃO POR CHECKLIST.
+     *
+     * Antes, o briefing filtrava por `operatorUserId` — quem submeteu. Numa
+     * rodada dividida entre três pessoas, quem apertou "Concluir" recebia o
+     * feedback de todo mundo, e os outros dois abriam o app sem briefing
+     * nenhum, mesmo tendo sido avaliados nominalmente.
+     *
+     * Uma tarefa é minha, em ordem de autoridade:
+     *   1. a liderança endereçou o veredito a mim (`review.executedBy`) — é o
+     *      dado mais forte, porque foi resolvido no servidor a partir do items;
+     *   2. eu a executei (`doneBy`);
+     *   3. ninguém executou (tarefa em branco) E o checklist é meu — tarefa não
+     *      feita não tem executor, então responde quem entregou a rodada.
+     */
+    const conferidos = (completions || []).filter(c => c.date === dia && c.reviewedAt);
     if (!conferidos.length) continue;   // ver escolha (1)
 
-    const itens = conferidos.flatMap(c => (c.items || []).map(i => ({ ...i, _c: c })));
+    const souSubmissor = c => c.operatorUserId === userId || c.operatorName === userName;
+    const minha = (i, c) => {
+      if (i.review?.executedBy) return i.review.executedBy === userId;
+      if (i.doneBy || i.doneByName) return i.doneBy === userId || i.doneByName === userName;
+      return souSubmissor(c);
+    };
+
+    const itens = conferidos.flatMap(c => (c.items || []).filter(i => minha(i, c)).map(i => ({ ...i, _c: c })));
+    if (!itens.length) continue;   // conferiram o dia, mas nada era desta pessoa
+
+    // Os checklists em que ela pôs a mão — não os que ela submetiu.
+    const meusChecklists = new Set(itens.map(i => i._c?.id).filter(Boolean));
+
     const aprovadas = itens.filter(i => i.review?.verdict === 'aprovado');
     const ressalvas = itens.filter(i => i.review?.verdict === 'ressalva');
     const reprovadas = itens.filter(i => i.review?.verdict === 'reprovado');
@@ -10674,15 +10706,17 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
         autor: i.review.byName,
       })),
     ];
-    const gerais = conferidos.filter(c => c.reviewNote)
+    // Só a nota geral dos checklists em que a pessoa trabalhou. Sem o recorte,
+    // ela leria o recado que a liderança escreveu sobre a rodada de um colega.
+    const gerais = conferidos.filter(c => c.reviewNote && meusChecklists.has(c.id))
       .map(c => ({ tarefa: null, verdict: null, texto: c.reviewNote, autor: c.reviewedByName }));
 
     const taxa = julgadas ? Math.round((aprovadas.length / julgadas) * 100) : null;
 
     return {
       date: dia,
-      checklists: doDia.length,
-      conferidos: conferidos.length,
+      checklists: meusChecklists.size,
+      conferidos: meusChecklists.size,
       aprovadas: aprovadas.length,
       ressalvas: ressalvas.length,
       reprovadas: reprovadas.length,
@@ -12332,13 +12366,17 @@ function AppInner() {
       fetchUsers(isIbr ? SEED_USERS : []),
       fetchClosures(),
       fetchTaskReviews(),
-    ]).then(async ([tpl, comp, usr, cls, reviews]) => {
+      // A nota do checklist inteiro vem por RPC desde
+      // 20260808_conferencia_privacidade: `completions.review_note` não é mais
+      // escrito, porque aquela coluna é legível pela empresa inteira.
+      fetchCompletionNotes(),
+    ]).then(async ([tpl, comp, usr, cls, reviews, notes]) => {
       if (cancelled) return;
       setTemplates(tpl);
       // Os vereditos entram grudados nos itens (ver `annotateReviews`): daqui
       // para a frente, tudo que lê `completions` já enxerga o que a liderança
       // julgou, sem precisar receber uma segunda estrutura.
-      setCompletions(annotateReviews(comp, reviews));
+      setCompletions(annotateReviews(comp, reviews, notes));
       setUsers(usr);
       setClosures(cls);
       await seedSupabaseIfEmpty(tpl, usr);
@@ -12478,7 +12516,13 @@ function AppInner() {
         items: (c.items || []).map(it => {
           const v = reviewed ? porItem.get(it.id) : null;
           if (!v) { const { review: _r, ...limpo } = it; return limpo; }
-          return { ...it, review: { verdict: v.verdict, note: v.note || null, byName: currentUser.name } };
+          // `executedBy` espelha a MESMA regra da RPC (doneBy, com fallback no
+          // submissor). Sem ele aqui, o briefing e o índice só passariam a
+          // enxergar o destinatário certo no carregamento seguinte.
+          return { ...it, review: {
+            verdict: v.verdict, note: v.note || null, byName: currentUser.name,
+            executedBy: it.doneBy || c.operatorUserId || null,
+          } };
         }),
       } : c)));
       /**

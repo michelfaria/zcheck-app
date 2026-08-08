@@ -454,32 +454,99 @@ export async function reviewCompletion(completionId, { items = [], note = null, 
  * Vereditos por tarefa dos últimos 90 dias — a mesma janela de
  * `fetchCompletions`, porque é a ela que eles se juntam.
  *
- * Falha em silêncio devolvendo o cache: sem os vereditos o app continua
- * inteiro (as tarefas voltam a valer como marcadas e o briefing não aparece),
- * e derrubar a carga inicial por causa disso seria pior que a degradação.
+ * DUAS FONTES, POR PRIVACIDADE. Esta função lia `task_reviews` direto, e como a
+ * policy escopa por EMPRESA e a anon key vai no bundle, qualquer colaborador
+ * logado baixava 90 dias de tudo que a liderança já escreveu sobre qualquer
+ * colega — sem filtro de usuário e sem limite. Ver
+ * 20260808_conferencia_privacidade.sql.
+ *
+ * O corte que resolve, sem quebrar o ranking:
+ *
+ *   `task_verdicts` (view) — o VEREDITO, da empresa inteira, SEM a nota. Ele
+ *   precisa ser público aqui dentro: `computeOperationalProfile` calcula o
+ *   índice de TERCEIROS no cliente, e é ele quem ordena o ranking da Equipe.
+ *
+ *   `my_task_notes` (RPC) — a NOTA, só a de quem está pedindo. Ela é texto
+ *   endereçado a uma pessoa e não entra em cálculo nenhum (`taskCounts` só olha
+ *   `review.verdict`), então tirá-la do payload geral não muda número nenhum.
+ *
+ * As duas chamadas vão em paralelo e se juntam por (completion_id, item_id).
+ *
+ * Falha em silêncio devolvendo o cache: sem os vereditos o app continua inteiro
+ * (as tarefas voltam a valer como marcadas e o briefing não aparece), e
+ * derrubar a carga inicial por causa disso seria pior que a degradação.
  */
 export async function fetchTaskReviews() {
   try {
-    const { data, error } = await db()
-      .from('task_reviews')
-      .select('completion_id, item_id, verdict, note, reviewed_by_name, reviewed_at, operator_user_id, date')
-      .gte('date', daysAgoStr(90));
-    if (error) throw error;
-    const mapped = (data || []).map(r => ({
-      completionId: r.completion_id,
-      itemId: r.item_id,
-      verdict: r.verdict,
-      note: r.note ?? null,
-      reviewedByName: r.reviewed_by_name ?? null,
-      reviewedAt: r.reviewed_at,
-      operatorUserId: r.operator_user_id ?? null,
-      date: r.date,
-    }));
+    const desde = daysAgoStr(90);
+    const [verdicts, notes] = await Promise.all([
+      db().from('task_verdicts')
+        .select('completion_id, item_id, verdict, reviewed_at, operator_user_id, executed_by_user_id, date')
+        .gte('date', desde),
+      db().rpc('my_task_notes', { p_since: desde }),
+    ]);
+    if (verdicts.error) throw verdicts.error;
+    // A nota é um enfeite do veredito: se a RPC falhar, o app segue sem os
+    // textos em vez de perder a conferência inteira.
+    if (notes.error) console.warn('[Supabase] my_task_notes falhou, seguindo sem as notas:', notes.error.message);
+
+    const porChave = new Map((notes.data || []).map(n => [`${n.completion_id}|${n.item_id}`, n]));
+    const mapped = (verdicts.data || []).map(r => {
+      const n = porChave.get(`${r.completion_id}|${r.item_id}`);
+      return {
+        completionId: r.completion_id,
+        itemId: r.item_id,
+        verdict: r.verdict,
+        note: n?.note ?? null,
+        // `reviewed_by_name` só vem junto da nota: dizer QUEM avaliou é parte
+        // do recado, não do número, e a view não o expõe de propósito.
+        reviewedByName: n?.reviewed_by_name ?? null,
+        reviewedAt: r.reviewed_at,
+        operatorUserId: r.operator_user_id ?? null,
+        // Quem EXECUTOU a tarefa — o destinatário do feedback. Diferente de
+        // `operatorUserId` (quem submeteu o checklist) sempre que a execução
+        // foi colaborativa. Resolvido no servidor pela RPC; ver
+        // 20260808_conferencia_endereco_historico.sql.
+        executedByUserId: r.executed_by_user_id ?? null,
+        date: r.date,
+      };
+    });
     await cache.set('ibr_task_reviews', mapped);
     return mapped;
   } catch (e) {
     console.warn('[Supabase] fetchTaskReviews falhou, usando cache:', e.message);
     return (await cache.get('ibr_task_reviews')) || [];
+  }
+}
+
+/**
+ * A nota que a liderança escreveu sobre o CHECKLIST inteiro, dos últimos 90
+ * dias — só as que quem está pedindo pode ler.
+ *
+ * Existe porque `completions.review_note` deixou de ser escrito: aquela coluna
+ * é legível pela empresa inteira por um grant de TABELA herdado de
+ * 20260709_authenticated_role_grants.sql, e grant de tabela cobre toda coluna,
+ * inclusive as criadas depois. Não havia como fechá-la sem revogar o SELECT de
+ * `completions`, que o app usa em toda tela. A nota mudou de casa.
+ *
+ * Falha em silêncio: a nota geral é um extra do briefing, não a espinha dele.
+ */
+export async function fetchCompletionNotes() {
+  try {
+    const { data, error } = await db().rpc('my_completion_notes', { p_since: daysAgoStr(90) });
+    if (error) throw error;
+    const mapped = (data || []).map(n => ({
+      completionId: n.completion_id,
+      note: n.note ?? null,
+      reviewedByName: n.reviewed_by_name ?? null,
+      reviewedAt: n.reviewed_at,
+      date: n.date,
+    }));
+    await cache.set('ibr_completion_notes', mapped);
+    return mapped;
+  } catch (e) {
+    console.warn('[Supabase] fetchCompletionNotes falhou, usando cache:', e.message);
+    return (await cache.get('ibr_completion_notes')) || [];
   }
 }
 
