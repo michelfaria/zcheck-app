@@ -217,259 +217,30 @@ da v1 (dois líderes dividindo a loja) está mudo — há um líder só.
 
 ## Apêndice A — Migration A (aditiva, sem revokes)
 
-Endereçamento por executor + ledger append-only + RPC sem `delete` cego.
-Nenhum `revoke`: pode ser aplicada sem ordem de deploy crítica.
+**Escrita e testada.** O SQL vive em
+`ibr-checklists-app/supabase/migrations/20260808_conferencia_endereco_historico.sql`
+— não é duplicado aqui de propósito, para não existirem duas versões do mesmo
+arquivo divergindo em silêncio.
 
-```sql
--- ============================================================================
--- 20260808_conferencia_endereco_historico.sql
---
--- Duas mudanças, ambas aditivas:
---   1. `task_reviews` passa a saber QUEM EXECUTOU a tarefa (doneBy), não só
---      quem submeteu o checklist. Numa execução colaborativa de 3 pessoas, o
---      feedback caía todo na conta de uma.
---   2. Ledger append-only: `review_tasks` fazia `delete ... where completion_id`
---      a cada reconferência. Reconferir apagava o que a liderança tinha dito.
---
--- Aplicar em: https://supabase.com/dashboard/project/rjuulamozdhssgqrzfji/sql
--- Idempotente. Pré-requisitos: 20260726_conferencia_lideranca,
--- 20260726_avaliacao_por_tarefa.
--- ============================================================================
+Cobre endereçamento por executor (`executed_by_user_id` resolvido a partir do
+`doneBy` **no servidor**), a ledger append-only `task_review_events` com
+`done_snapshot` e `batch_id`, e a reescrita de `review_tasks` para fazer
+diff + upsert no lugar do `delete from task_reviews where completion_id`.
+Assinatura da RPC inalterada — `lib/sync.js` não muda.
 
-alter table public.task_reviews
-  add column if not exists executed_by_user_id text,
-  add column if not exists executed_by_name    text;
+Totalmente aditiva: nenhum `revoke`, nenhuma ordem de deploy crítica. Pode ser
+aplicada antes do código novo sem quebrar nada do que já roda.
 
-create index if not exists task_reviews_executor_idx
-  on public.task_reviews (company_id, executed_by_user_id, date);
+Verificação em PGlite (21 asserções, passando):
 
--- `seq` como identity e não uuid: a ordem de gravação É a informação.
--- `item_id` nulo = evento do checklist inteiro (nota geral / desfazer).
--- `done_snapshot` guarda o estado do item NO MOMENTO da conferência — sem ele
--- não dá para explicar um "aprovado" numa tarefa que hoje consta como não
--- feita (ver risco 1).
-create table if not exists public.task_review_events (
-  seq                 bigint generated always as identity primary key,
-  company_id          text        not null,
-  completion_id       text        not null,
-  item_id             text,
-  kind                text        not null
-                        check (kind in ('veredito','remocao','nota_geral','desfeito')),
-  verdict             text
-                        check (verdict is null or verdict in ('aprovado','ressalva','reprovado')),
-  note                text,
-  reviewed_by         text        not null,
-  reviewed_by_name    text,
-  reviewed_at         timestamptz not null default now(),
-  operator_user_id    text,
-  executed_by_user_id text,
-  done_snapshot       boolean,
-  date                date,
-  batch_id            uuid        not null
-);
-
-create index if not exists task_review_events_completion_idx
-  on public.task_review_events (completion_id, seq);
-create index if not exists task_review_events_pessoa_idx
-  on public.task_review_events (company_id, executed_by_user_id, date);
-
--- Ledger e notas só se leem por RPC. RLS ligada SEM policy nega tudo, que é
--- exatamente o default desejado.
-alter table public.task_review_events enable row level security;
-revoke all on public.task_review_events from anon, authenticated;
-
--- ── Backfill ────────────────────────────────────────────────────────────────
--- (a) O que já existe vira o primeiro evento de cada item. `where not exists`
---     torna o bloco re-executável.
-insert into public.task_review_events (
-  company_id, completion_id, item_id, kind, verdict, note,
-  reviewed_by, reviewed_by_name, reviewed_at,
-  operator_user_id, executed_by_user_id, date, batch_id)
-select tr.company_id, tr.completion_id, tr.item_id, 'veredito', tr.verdict, tr.note,
-       tr.reviewed_by, tr.reviewed_by_name, tr.reviewed_at,
-       tr.operator_user_id, tr.executed_by_user_id, tr.date,
-       '00000000-0000-0000-0000-000000000001'::uuid   -- lote sintético
-  from public.task_reviews tr
- where not exists (
-   select 1 from public.task_review_events e
-    where e.completion_id = tr.completion_id and e.item_id = tr.item_id);
-
--- (b) Quem executou, lido do items das execuções que já estão no banco.
-update public.task_reviews tr
-   set executed_by_user_id = coalesce(x.done_by, tr.operator_user_id),
-       executed_by_name    = x.done_by_name
-  from public.completions c
-  cross join lateral (
-    select i->>'doneBy' as done_by, i->>'doneByName' as done_by_name
-      from jsonb_array_elements(coalesce(c.items,'[]'::jsonb)) i
-     where i->>'id' = tr.item_id
-     limit 1
-  ) x
- where c.id = tr.completion_id
-   and tr.executed_by_user_id is null;
-
--- ── A RPC ───────────────────────────────────────────────────────────────────
-create or replace function public.review_tasks(
-  p_completion_id text,
-  p_items         jsonb   default '[]'::jsonb,
-  p_note          text    default null,
-  p_reviewed      boolean default true
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_role     text := public.jwt_user_role();
-  v_uid      text := public.jwt_user_id();
-  v_company  text := public.jwt_company_id();
-  v_name     text;
-  v_operator text;
-  v_date     date;
-  v_items    jsonb;
-  v_norm     jsonb;
-  v_batch    uuid := gen_random_uuid();
-begin
-  if v_uid is null or v_company is null then
-    raise exception 'sem sessão válida';
-  end if;
-  if v_role not in ('lideranca','gerencia','gestao') then
-    raise exception 'apenas liderança, gerência ou diretoria podem conferir';
-  end if;
-
-  -- O company_id no where é o que impede conferir execução de outro tenant:
-  -- security definer não aplica RLS aqui dentro.
-  select c.operator_user_id, c.date, coalesce(c.items,'[]'::jsonb)
-    into v_operator, v_date, v_items
-    from public.completions c
-   where c.id = p_completion_id and c.company_id = v_company;
-  if not found then
-    raise exception 'execução não encontrada no escopo da sua empresa';
-  end if;
-
-  select u.name into v_name from public.users u where u.id = v_uid;
-
-  -- Resolve QUEM EXECUTOU no SERVIDOR. O cliente manda item_id e veredito; o
-  -- destinatário sai do items que já está gravado. Confiar no cliente aqui
-  -- seria deixar endereçar feedback para a conta errada — por engano ou não.
-  select coalesce(jsonb_agg(jsonb_build_object(
-           'item_id',  x->>'item_id',
-           'verdict',  x->>'verdict',
-           'note',     nullif(btrim(coalesce(x->>'note','')),''),
-           'exec_id',  coalesce(
-                         (select i->>'doneBy' from jsonb_array_elements(v_items) i
-                           where i->>'id' = x->>'item_id' limit 1), v_operator),
-           'exec_name',(select i->>'doneByName' from jsonb_array_elements(v_items) i
-                         where i->>'id' = x->>'item_id' limit 1),
-           'done',     coalesce(
-                         (select (i->>'done')::boolean from jsonb_array_elements(v_items) i
-                           where i->>'id' = x->>'item_id' limit 1), false)
-         )), '[]'::jsonb)
-    into v_norm
-    from jsonb_array_elements(coalesce(p_items,'[]'::jsonb)) x
-   where x->>'item_id' is not null
-     and x->>'verdict' in ('aprovado','ressalva','reprovado');
-
-  -- (a) LEDGER — remoções. Substitui o `delete` cego: retirar um veredito passa
-  --     a ser um FATO datado, não um buraco.
-  insert into public.task_review_events (
-    company_id, completion_id, item_id, kind, reviewed_by, reviewed_by_name,
-    operator_user_id, executed_by_user_id, date, batch_id)
-  select tr.company_id, tr.completion_id, tr.item_id,
-         case when p_reviewed then 'remocao' else 'desfeito' end,
-         v_uid, coalesce(v_name, v_uid),
-         tr.operator_user_id, tr.executed_by_user_id, tr.date, v_batch
-    from public.task_reviews tr
-   where tr.completion_id = p_completion_id
-     and (not p_reviewed
-          or not exists (select 1 from jsonb_array_elements(v_norm) n
-                          where n->>'item_id' = tr.item_id));
-
-  if p_reviewed then
-    -- (b) LEDGER — vereditos, só o que MUDOU. Reconferir sem alterar nada não
-    --     polui a ledger com N linhas idênticas.
-    insert into public.task_review_events (
-      company_id, completion_id, item_id, kind, verdict, note,
-      reviewed_by, reviewed_by_name, operator_user_id, executed_by_user_id,
-      done_snapshot, date, batch_id)
-    select v_company, p_completion_id, n->>'item_id', 'veredito',
-           n->>'verdict', n->>'note',
-           v_uid, coalesce(v_name, v_uid), v_operator, n->>'exec_id',
-           (n->>'done')::boolean, v_date, v_batch
-      from jsonb_array_elements(v_norm) n
-      left join public.task_reviews tr
-             on tr.completion_id = p_completion_id and tr.item_id = n->>'item_id'
-     where tr.item_id is null
-        or tr.verdict is distinct from n->>'verdict'
-        or tr.note    is distinct from n->>'note';
-
-    -- (c) ESTADO ATUAL — upsert, não delete+insert.
-    insert into public.task_reviews (
-      company_id, completion_id, item_id, verdict, note,
-      reviewed_by, reviewed_by_name, reviewed_at,
-      operator_user_id, executed_by_user_id, executed_by_name, date)
-    select v_company, p_completion_id, n->>'item_id', n->>'verdict', n->>'note',
-           v_uid, coalesce(v_name, v_uid), now(),
-           v_operator, n->>'exec_id', n->>'exec_name', v_date
-      from jsonb_array_elements(v_norm) n
-    on conflict (completion_id, item_id) do update
-       set verdict             = excluded.verdict,
-           note                = excluded.note,
-           reviewed_by         = excluded.reviewed_by,
-           reviewed_by_name    = excluded.reviewed_by_name,
-           reviewed_at         = excluded.reviewed_at,
-           executed_by_user_id = excluded.executed_by_user_id,
-           executed_by_name    = excluded.executed_by_name;
-
-    -- Só o que saiu desta conferência some do estado atual — e já virou evento.
-    delete from public.task_reviews tr
-     where tr.completion_id = p_completion_id
-       and not exists (select 1 from jsonb_array_elements(v_norm) n
-                        where n->>'item_id' = tr.item_id);
-  else
-    delete from public.task_reviews where completion_id = p_completion_id;
-  end if;
-
-  if p_reviewed and nullif(btrim(coalesce(p_note,'')),'') is not null then
-    insert into public.task_review_events (
-      company_id, completion_id, item_id, kind, note, reviewed_by,
-      reviewed_by_name, operator_user_id, date, batch_id)
-    values (v_company, p_completion_id, null, 'nota_geral', btrim(p_note),
-            v_uid, coalesce(v_name, v_uid), v_operator, v_date, v_batch);
-  end if;
-
-  -- A marca no checklist inteiro: dela dependem os 30% de "conferidos" do
-  -- índice da liderança e o selo da lista.
-  update public.completions c
-     set reviewed_by      = case when p_reviewed then v_uid else null end,
-         reviewed_by_name = case when p_reviewed then coalesce(v_name, v_uid) else null end,
-         reviewed_at      = case when p_reviewed then now() else null end,
-         review_note      = case when p_reviewed then nullif(btrim(coalesce(p_note,'')),'') else null end
-   where c.id = p_completion_id and c.company_id = v_company;
-end;
-$$;
-
--- ============================================================================
--- VERIFICAÇÃO
---
--- (a) Reconferir preserva:
---   select public.review_tasks('<id>', '[{"item_id":"x","verdict":"reprovado"}]');
---   select public.review_tasks('<id>', '[{"item_id":"x","verdict":"aprovado"}]');
---   select seq, kind, verdict from public.task_review_events
---    where completion_id = '<id>' order by seq;
---   -- esperado: 'reprovado' e depois 'aprovado' — DUAS linhas, não uma
---
--- (b) O destinatário é quem executou:
---   select item_id, executed_by_user_id from public.task_reviews
---    where completion_id = '<execução colaborativa>';
---   -- esperado: ids DIFERENTES quando o items tem doneBy diferentes
---
--- (c) Backfill cobriu tudo:
---   select count(*) from public.task_reviews where executed_by_user_id is null;
---   -- esperado: 0
--- ============================================================================
+```bash
+cd ibr-checklists-app && npm i --no-save @electric-sql/pglite && node supabase/migrations/20260808_conferencia_endereco_historico.test.mjs
 ```
+
+Uma armadilha que o teste pegou e que vale registrar: num `UPDATE`, a tabela
+alvo não está no `FROM`, então um `LATERAL` ali não consegue referenciá-la
+(*invalid reference to FROM-clause entry*). O backfill de `executed_by_user_id`
+usa subquery correlacionada no `SET`, que enxerga o alvo.
 
 ## Apêndice B — Migration B (privacidade, com ordem de deploy)
 
