@@ -45,7 +45,10 @@ await db.exec(`
 
   grant all on public.completions, public.templates, public.users, public.waitlist
     to anon, authenticated;
-  grant select on public.task_verdicts to anon, authenticated;
+  -- A view leva o pacote inteiro, como no Supabase: "alter default privileges
+  -- ... on tables" cobre view e materialized view. Foi por não cobrir isso que
+  -- a primeira versão da migration deixou 3 concessões para trás.
+  grant all on public.task_verdicts to anon, authenticated;
 
   -- E o default que reproduz a origem do problema: tabela nova nasce aberta.
   alter default privileges in schema public grant all on tables to anon, authenticated;
@@ -77,8 +80,12 @@ for (const t of ['completions', 'templates', 'users', 'waitlist']) {
 
 // O DELETE é o mais fácil de levar junto por engano, e o app depende dele em
 // seis lugares (sync.js:123, 302, 841, 1441, 1446, 1451).
+// Contado nas TABELAS que o app apaga, não em tudo: um `count` solto passaria a
+// medir também as views do fixture e viraria número mágico a cada mudança.
+const APAGA = `('completions','templates','users','waitlist')`;
 const deletes = await conta(`select count(*)::int as n from information_schema.table_privileges
-  where table_schema='public' and grantee='authenticated' and privilege_type='DELETE'`);
+  where table_schema='public' and grantee='authenticated' and privilege_type='DELETE'
+    and table_name in ${APAGA}`);
 check(deletes === 4, 'o DELETE de que o app depende continua em todas as tabelas');
 
 // ── (3) A próxima tabela não nasce aberta ────────────────────────────────────
@@ -90,16 +97,24 @@ const novaSelect = await conta(`select count(*)::int as n from information_schem
   where table_name='zz_nova' and grantee in ('anon','authenticated') and privilege_type='SELECT'`);
 check(novaSelect === 2, 'e continua nascendo com SELECT — a migration mira o excesso, não o padrão');
 
-// ── (4) Views não atrapalham ─────────────────────────────────────────────────
+// ── (4) Views também fecham, e continuam legíveis ────────────────────────────
+// Em view o TRUNCATE é inofensivo, mas o TRIGGER permite INSTEAD OF — ou seja,
+// interceptar o que se lê e escreve através dela. E `task_verdicts` é o caminho
+// pelo qual todo colaborador lê veredito desde a migration de privacidade.
+const viewSuja = await conta(`select count(*)::int as n from information_schema.table_privileges
+  where table_name='task_verdicts' and grantee in ('anon','authenticated')
+    and privilege_type in ('TRUNCATE','TRIGGER','REFERENCES')`);
+check(viewSuja === 0, 'a view task_verdicts também perde TRIGGER — INSTEAD OF interceptaria a leitura');
 const view = await conta(`select count(*)::int as n from information_schema.table_privileges
   where table_name='task_verdicts' and grantee in ('anon','authenticated') and privilege_type='SELECT'`);
-check(view === 2, 'a view task_verdicts continua legível — o loop pula views de propósito');
+check(view === 2, 'e continua legível — sem isso o ranking da equipe quebraria');
 
 // ── (5) Idempotência ─────────────────────────────────────────────────────────
 await db.exec(MIGRATION);
 const final = await conta(`select count(*)::int as n from information_schema.table_privileges
-  where table_schema='public' and grantee='authenticated' and privilege_type='DELETE'`);
-check(final === 5, 'idempotente — 2ª execução não come privilégio nenhum a mais');
+  where table_schema='public' and grantee='authenticated' and privilege_type='DELETE'
+    and table_name in ${APAGA}`);
+check(final === deletes, 'idempotente — 2ª execução não come privilégio nenhum a mais');
 
 console.log(`  ${ok ? '✅ PASSOU' : '❌ FALHOU'}`);
 await db.close();

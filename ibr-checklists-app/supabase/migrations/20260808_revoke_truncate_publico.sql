@@ -40,9 +40,20 @@
 
 
 -- ── (1) O que já existe ─────────────────────────────────────────────────────
--- Dinâmico em vez de 21 linhas escritas à mão: a lista de tabelas muda a cada
--- migration, e uma lista fixa nasceria desatualizada. Views ficam de fora —
--- não se truncam, e o `revoke` nelas só produz ruído.
+-- Dinâmico em vez de 21 linhas escritas à mão: a lista muda a cada migration, e
+-- uma lista fixa nasceria desatualizada.
+--
+-- VIEWS ENTRAM. A primeira versão filtrava `relkind = 'r'` (só tabela comum)
+-- com o raciocínio de que "view não se trunca" — e sobraram 3 concessões. Os
+-- default privileges do Supabase são `on tables`, que no Postgres cobre view e
+-- materialized view: `task_verdicts` nasceu com o pacote inteiro no ACL.
+--
+-- O TRUNCATE ali é inofensivo (não executa em view), mas o TRIGGER não: em
+-- view ele permite criar trigger INSTEAD OF, ou seja, interceptar o que se lê
+-- e escreve através dela. `task_verdicts` é justamente o caminho pelo qual todo
+-- colaborador passa a ler veredito desde 20260808_conferencia_privacidade.
+--
+--   r = tabela · v = view · m = materialized view · p = tabela particionada
 do $$
 declare r record;
 begin
@@ -51,7 +62,7 @@ begin
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public'
-       and c.relkind = 'r'          -- só tabelas comuns
+       and c.relkind in ('r', 'v', 'm', 'p')
   loop
     execute format(
       'revoke truncate, trigger, references on public.%I from anon, authenticated',
@@ -66,18 +77,34 @@ end $$;
 -- objeto: as migrations rodam como `postgres` no SQL Editor, e é dele que os
 -- grants automáticos saem.
 --
--- `supabase_admin` entra junto porque parte do provisionamento da plataforma
--- cria objeto por ele. O bloco tolera o papel não existir — em PGlite e em
--- Postgres puro ele não existe, e a migration não pode morrer por isso.
+-- `supabase_admin` entra na tentativa porque parte do provisionamento da
+-- plataforma cria objeto por ele. Mas `alter default privileges for role X` só
+-- é permitido a quem É aquele papel ou membro dele, e o `postgres` do Supabase
+-- não é membro de `supabase_admin` — a tentativa devolve 42501.
+--
+-- Por isso cada papel vai no seu próprio bloco com exceção tratada: um papel
+-- fora de alcance vira AVISO, não parada. A primeira versão deste arquivo não
+-- fazia isso e o 42501 derrubava a migration inteira, levando junto o revoke
+-- do bloco (1), que é a parte que realmente fecha o buraco.
+--
+-- Perder o `supabase_admin` é aceitável: as tabelas do app nascem das
+-- migrations, que rodam como `postgres`. O que ele cria é objeto de plataforma,
+-- fora do alcance da anon key de qualquer forma.
 do $$
 declare r text;
 begin
   foreach r in array array['postgres', 'supabase_admin'] loop
-    if exists (select 1 from pg_roles where rolname = r) then
+    if not exists (select 1 from pg_roles where rolname = r) then
+      continue;                                  -- PGlite e Postgres puro
+    end if;
+    begin
       execute format(
         'alter default privileges for role %I in schema public revoke truncate, trigger, references on tables from anon, authenticated',
         r);
-    end if;
+    exception
+      when insufficient_privilege then
+        raise notice 'sem permissão sobre os default privileges de %, seguindo sem ele', r;
+    end;
   end loop;
 end $$;
 
