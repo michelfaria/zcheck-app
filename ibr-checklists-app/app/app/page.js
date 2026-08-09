@@ -28,6 +28,7 @@ import {
   uploadRefDoc, getRefDocUrl,
   uploadUserAvatar, saveUserAvatar,
   reviewCompletion, fetchTaskReviews, fetchCompletionNotes,
+  raiseDispute, resolveDispute, fetchDisputes,
   seedSupabaseIfEmpty,
   subscribeToCompletions,
   requestPushPermission, hasPushPermission, fetchPushStatus,
@@ -3301,7 +3302,7 @@ const execPagerBtn = {
  * contrário, e sem caminho de UI para chegar em "todas" (o export já sabia
  * imprimir 'Todas as lojas', mas o estado nunca chegava lá).
  */
-export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function ReportsView({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, disputes = [], onResolveDispute, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   const [viewingPhoto, setViewingPhoto] = useState(null); // evidência com foto (pedido do piloto)
   const [reviewing, setReviewing] = useState(null);       // execução aberta para conferência
@@ -3913,6 +3914,21 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         );
       })()}
 
+      {/* Justificativas abertas — ANTES das execuções de propósito. É a única
+          coisa nesta tela em que outra pessoa está esperando por uma resposta;
+          o resto é a liderança olhando no próprio ritmo. */}
+      {canReview && (disputes || []).some(d => d.status === 'aberta') && (
+        <>
+          <Eyebrow>Justificativas aguardando você</Eyebrow>
+          <div className="space-y-1.5" style={{ marginBottom: 16 }}>
+            {(disputes || []).filter(d => d.status === 'aberta').map(d => (
+              <DisputeCard key={`${d.completionId}|${d.itemId}`} dispute={d} accent={unit.color}
+                completions={completions} onResolve={onResolveDispute} />
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
           precisa ser visível também no Relatórios, não só no Painel do dia). */}
       <Eyebrow>Execuções do período</Eyebrow>
@@ -4067,6 +4083,103 @@ const VERDICTS = [
   { id: 'ressalva',  label: 'Ressalva', curto: 'Ressalva',  cor: C.warning,  Icon: AlertTriangle },
   { id: 'reprovado', label: 'Reprovar', curto: 'Reprovado', cor: C.critical, Icon: X },
 ];
+
+/**
+ * Uma justificativa esperando resposta.
+ *
+ * As duas saídas são deliberadamente simétricas em custo: MANTER pede um
+ * motivo (quem foi avaliado escreveu o dele; receber "mantido" e mais nada é a
+ * mesma mudez que a conferência acabou de deixar de ter), e DAR RAZÃO exige
+ * escolher o veredito novo na mesma ação — a RPC corrige tudo numa transação,
+ * porque "revista, mas continua reprovado" é indefensável para quem justificou.
+ */
+function DisputeCard({ dispute: d, accent, completions, onResolve }) {
+  const [modo, setModo] = useState(null);        // 'mantida' | 'revista'
+  const [nota, setNota] = useState('');
+  const [novoVeredito, setNovoVeredito] = useState('aprovado');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+
+  // O texto da tarefa vive na execução, não na justificativa: guardá-lo lá
+  // duplicaria um dado que já muda de lugar (o item pode ser reescrito no
+  // template). Sem a execução em mãos, mostra o id — feio, nunca invisível.
+  const exec = (completions || []).find(c => c.id === d.completionId);
+  const item = (exec?.items || []).find(i => i.id === d.itemId);
+  const texto = item?.text || `Tarefa ${d.itemId}`;
+  const VERD = { reprovado: 'Reprovada', ressalva: 'Com ressalva' };
+
+  const responder = async () => {
+    if (!nota.trim()) { setErro('Escreva a resposta — quem justificou escreveu a dele.'); return; }
+    setBusy(true); setErro('');
+    const ok = await onResolve(d.completionId, d.itemId, modo, nota.trim(), modo === 'revista' ? novoVeredito : null);
+    setBusy(false);
+    if (!ok) setErro('Não foi possível salvar. Verifique a conexão e tente de novo.');
+  };
+
+  return (
+    <div className="px-3 py-3" style={{ background: 'white', border: `1px solid ${C.warning}55`, borderLeft: `3px solid ${C.warning}`, borderRadius: R.sm }}>
+      <div className="flex items-center justify-between gap-2" style={{ fontSize: 12 }}>
+        <span style={{ fontWeight: W.semibold, color: C.ink }}>{d.raisedByName || d.raisedBy}</span>
+        <span className="font-mono-ibr" style={{ color: C.muted, flexShrink: 0 }}>
+          {new Date(d.raisedAt).toLocaleDateString('pt-BR')}
+        </span>
+      </div>
+      <p style={{ fontSize: 13, color: C.ink, marginTop: 4 }}>{texto}</p>
+      <p style={{ fontSize: 11, color: C.critical, fontWeight: W.semibold, marginTop: 1 }}>
+        {VERD[d.disputedVerdict] || d.disputedVerdict}
+        {exec?.templateName ? ` · ${exec.templateName}` : ''}
+      </p>
+      <p style={{ fontSize: 13, color: C.ink, fontStyle: 'italic', marginTop: 8, lineHeight: 1.5 }}>“{d.reason}”</p>
+
+      {!modo ? (
+        <div className="flex gap-2" style={{ marginTop: 10 }}>
+          <button onClick={() => { setModo('revista'); setErro(''); }} className="flex-1 py-2"
+            style={{ borderRadius: 8, background: `${C.success}12`, color: C.success, fontWeight: W.semibold, fontSize: 12.5, border: `1px solid ${C.success}55`, cursor: 'pointer' }}>
+            Tem razão
+          </button>
+          <button onClick={() => { setModo('mantida'); setErro(''); }} className="flex-1 py-2"
+            style={{ borderRadius: 8, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 12.5, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            Mantenho
+          </button>
+        </div>
+      ) : (
+        <div style={{ marginTop: 10 }}>
+          {modo === 'revista' && (
+            <div className="flex flex-wrap gap-1" style={{ marginBottom: 8 }}>
+              {VERDICTS.map(v => (
+                <button key={v.id} onClick={() => setNovoVeredito(v.id)} aria-pressed={novoVeredito === v.id}
+                  style={{
+                    fontSize: 11, fontWeight: W.semibold,
+                    color: novoVeredito === v.id ? 'white' : v.cor,
+                    background: novoVeredito === v.id ? v.cor : `${v.cor}10`,
+                    border: `1px solid ${novoVeredito === v.id ? v.cor : `${v.cor}55`}`,
+                    borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer',
+                  }}>
+                  {v.curto}
+                </button>
+              ))}
+            </div>
+          )}
+          <textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} disabled={busy}
+            aria-label="Resposta à justificativa"
+            placeholder={modo === 'revista' ? 'O que você reviu, e por quê?' : 'Por que a avaliação se mantém?'}
+            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+          {erro && <p role="alert" style={{ fontSize: 12, color: C.critical, marginTop: 6 }}>{erro}</p>}
+          <div className="flex gap-2" style={{ marginTop: 8 }}>
+            <button onClick={responder} disabled={busy} className="flex-1 py-2"
+              style={{ borderRadius: 8, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 12.5, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+              {busy ? 'Salvando…' : 'Responder'}
+            </button>
+            <button onClick={() => { setModo(null); setErro(''); }} disabled={busy} className="py-2 px-3"
+              style={{ borderRadius: 8, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 12.5, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+              Voltar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOpenPhoto }) {
   const units = useUnits(); // o prazo é o do relógio da loja que executou
@@ -10526,7 +10639,82 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
  * A tela do briefing. Folha inteira, não toast: é para ser LIDA antes do turno,
  * e um aviso que some sozinho não provoca reflexão nenhuma.
  */
-function BriefingScreen({ briefing: b, userName, accent, onClose }) {
+/**
+ * A caixa de justificar — uma folha curta, com o apontamento à vista.
+ *
+ * O enquadramento é JUSTIFICATIVA, não contestação (decisão de 08/08): o
+ * colaborador já teve a chance de executar a tarefa e anotar observações na
+ * hora; isto aqui é a segunda voz dele, depois do veredito — explicar, não
+ * abrir litígio. O mecanismo por baixo é o mesmo (a liderança mantém ou
+ * revisa), só a conversa muda de tom.
+ *
+ * Mostra o que está sendo justificado em cima do campo de propósito:
+ * justificar de memória, um dia depois, é como a conversa vira "eu não fiz
+ * isso" em vez de "a foto é de antes do turno". O texto é obrigatório pelo
+ * mesmo padrão que se passou a cobrar da liderança — não faria sentido exigir
+ * explicação de um lado só.
+ */
+function DisputeSheet({ item, accent, onClose, onSend }) {
+  const [texto, setTexto] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const VERD = { reprovado: 'Reprovada', ressalva: 'Com ressalva' };
+
+  const enviar = async () => {
+    if (!texto.trim()) { setErro('Escreva o que aconteceu — sem isso a liderança não tem o que avaliar.'); return; }
+    setBusy(true); setErro('');
+    const ok = await onSend(texto.trim());
+    setBusy(false);
+    if (ok) onClose();
+    else setErro('Não foi possível enviar. Verifique a conexão e tente de novo.');
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50"
+      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
+      <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
+        role="dialog" aria-modal="true" aria-label="Justificar a avaliação"
+        style={{ maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0', padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))' }}>
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
+          Justificar a avaliação
+        </p>
+        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px', margin: '12px 0' }}>
+          <p style={{ fontSize: 13, color: C.ink, fontWeight: W.semibold }}>{item.texto}</p>
+          <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>
+            {VERD[item.verdict] || item.verdict}
+            {item.checklist ? ` · ${item.checklist}` : ''}
+          </p>
+        </div>
+        <label htmlFor="zc-dispute" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
+          Sua justificativa
+        </label>
+        <textarea id="zc-dispute" value={texto} onChange={e => setTexto(e.target.value)} rows={4} disabled={busy}
+          placeholder="Explique o que aconteceu. Quanto mais concreto, mais fácil de verificar."
+          style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+        <p style={{ fontSize: 11.5, color: C.mutedLight, marginTop: 8, lineHeight: 1.5 }}>
+          Isto vai para quem avaliou a tarefa. Seus colegas não veem.
+        </p>
+        {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginTop: 10 }}>{erro}</p>}
+        <button onClick={enviar} disabled={busy} className="w-full py-3"
+          style={{ marginTop: 14, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+          {busy ? 'Enviando…' : 'Enviar'}
+        </button>
+        <button onClick={onClose} disabled={busy} className="w-full py-2"
+          style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [], onDispute }) {
+  const [contestando, setContestando] = useState(null);
+  // Contestação por tarefa, para a lista saber o que já foi dito.
+  const disputaDe = useMemo(
+    () => new Map((disputes || []).map(d => [`${d.completionId}|${d.itemId}`, d])),
+    [disputes],
+  );
   const corTom = b.tom === 'otimo' ? C.success : b.tom === 'atencao' ? C.critical : b.tom === 'quase' ? C.warning : accent;
   const dataLabel = new Date(`${b.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
 
@@ -10589,17 +10777,41 @@ function BriefingScreen({ briefing: b, userName, accent, onClose }) {
           <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16, marginBottom: 16 }}>
             <Eyebrow>Tarefas que precisam de atenção</Eyebrow>
             <div style={{ marginTop: 8 }}>
-              {b.itensProblema.map((it, n) => (
-                <div key={n} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: n < b.itensProblema.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                  <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: R.pill, background: VERD_LABEL[it.verdict]?.cor || C.muted, flexShrink: 0, marginTop: 6 }} />
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 13.5, color: C.ink }}>{it.texto}</p>
-                    <p style={{ fontSize: 11, color: VERD_LABEL[it.verdict]?.cor || C.muted, fontWeight: W.semibold, marginTop: 1 }}>
-                      {VERD_LABEL[it.verdict]?.texto || it.verdict}{it.checklist ? ` · ${it.checklist}` : ''}
-                    </p>
+              {b.itensProblema.map((it, n) => {
+                // Justificável = apontamento da liderança. Tarefa que a pessoa
+                // não executou aparece na lista, mas não há veredito a
+                // justificar ali — o fato é o fato.
+                const contestavel = onDispute && it.completionId && it.itemId
+                  && (it.verdict === 'reprovado' || it.verdict === 'ressalva');
+                const d = disputaDe.get(`${it.completionId}|${it.itemId}`);
+                return (
+                  <div key={n} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: n < b.itensProblema.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                    <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: R.pill, background: VERD_LABEL[it.verdict]?.cor || C.muted, flexShrink: 0, marginTop: 6 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ fontSize: 13.5, color: C.ink }}>{it.texto}</p>
+                      <p style={{ fontSize: 11, color: VERD_LABEL[it.verdict]?.cor || C.muted, fontWeight: W.semibold, marginTop: 1 }}>
+                        {VERD_LABEL[it.verdict]?.texto || it.verdict}{it.checklist ? ` · ${it.checklist}` : ''}
+                      </p>
+                      {/* O estado da conversa, quando ela existe. Uma
+                          justificativa que some da tela depois de enviada faz a
+                          pessoa achar que não foi. */}
+                      {d ? (
+                        <p style={{ fontSize: 11, color: d.status === 'revista' ? C.success : d.status === 'mantida' ? C.muted : C.warning, fontWeight: W.semibold, marginTop: 3 }}>
+                          {d.status === 'aberta' && 'Justificativa enviada · aguardando resposta'}
+                          {d.status === 'revista' && `Revisto por ${d.resolvedByName || 'liderança'}`}
+                          {d.status === 'mantida' && `Mantido por ${d.resolvedByName || 'liderança'}`}
+                          {d.resolutionNote && <span style={{ fontWeight: 400, color: C.muted }}> — “{d.resolutionNote}”</span>}
+                        </p>
+                      ) : contestavel && (
+                        <button onClick={() => setContestando(it)}
+                          style={{ fontSize: 11, fontWeight: W.semibold, color: accent, background: 'none', border: `1px dashed ${C.border}`, borderRadius: R.pill, padding: '2px 10px', marginTop: 4, cursor: 'pointer' }}>
+                          Deseja justificar?
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -10624,6 +10836,14 @@ function BriefingScreen({ briefing: b, userName, accent, onClose }) {
           Você pode reler este resumo em Meu ID.
         </p>
       </div>
+
+      {contestando && (
+        <DisputeSheet
+          item={contestando} accent={accent}
+          onClose={() => setContestando(null)}
+          onSend={texto => onDispute(contestando.completionId, contestando.itemId, texto)}
+        />
+      )}
     </div>
   );
 }
@@ -10731,6 +10951,10 @@ function buildDailyBriefing({ completions, userId, userName, today }) {
           texto: i.text || `Item ${i.id}`,
           verdict: i.review?.verdict || (i.critical ? 'critico-nao-feito' : 'nao-feito'),
           checklist: i._c?.templateName,
+          // Identificam a tarefa para a contestação. Sem eles a pessoa lê o
+          // apontamento e não tem como responder a ele.
+          completionId: i._c?.id,
+          itemId: i.id,
         })),
       ...buildBriefingText({
         userName, taxa,
@@ -12370,7 +12594,11 @@ function AppInner() {
       // 20260808_conferencia_privacidade: `completions.review_note` não é mais
       // escrito, porque aquela coluna é legível pela empresa inteira.
       fetchCompletionNotes(),
-    ]).then(async ([tpl, comp, usr, cls, reviews, notes]) => {
+      // Contestações: a liderança recebe a fila da empresa, o colaborador só as
+      // dele. Quem decide é a RPC, pelo papel no token.
+      fetchDisputes(),
+    ]).then(async ([tpl, comp, usr, cls, reviews, notes, disp]) => {
+      setDisputes(disp);
       if (cancelled) return;
       setTemplates(tpl);
       // Os vereditos entram grudados nos itens (ver `annotateReviews`): daqui
@@ -12556,6 +12784,60 @@ function AppInner() {
       return true;
     } catch (e) {
       console.error('reviewCompletion', e);
+      return false;
+    }
+  };
+
+  // ── Contestação ────────────────────────────────────────────────────────────
+  //
+  // O contrapeso do resto desta tela: até aqui o produto só tinha caminho para a
+  // liderança julgar. Quem recebe o julgamento passa a ter voz.
+  //
+  // O estado local é atualizado com o resultado ANTES de qualquer refetch, pelo
+  // mesmo motivo da conferência: quem acabou de contestar precisa ver que
+  // contestou. Esperar o próximo carregamento faria a pessoa clicar de novo.
+  const [disputes, setDisputes] = useState([]);
+
+  const contestar = async (completionId, itemId, reason) => {
+    try {
+      await raiseDispute(completionId, itemId, reason);
+      const nova = {
+        completionId, itemId, reason, status: 'aberta',
+        raisedBy: currentUser.id, raisedByName: currentUser.name,
+        raisedAt: new Date().toISOString(),
+        resolvedByName: null, resolvedAt: null, resolutionNote: null,
+      };
+      setDisputes(prev => [nova, ...(prev || []).filter(d => !(d.completionId === completionId && d.itemId === itemId))]);
+      track('dispute_raised', { source: 'briefing', metadata: { completion_id: completionId, item_id: itemId } });
+      return true;
+    } catch (e) {
+      console.error('raiseDispute', e);
+      return false;
+    }
+  };
+
+  const responderContestacao = async (completionId, itemId, status, note, newVerdict) => {
+    try {
+      await resolveDispute(completionId, itemId, status, note, newVerdict);
+      setDisputes(prev => (prev || []).map(d => (d.completionId === completionId && d.itemId === itemId
+        ? { ...d, status, resolvedBy: currentUser.id, resolvedByName: currentUser.name, resolvedAt: new Date().toISOString(), resolutionNote: note || null }
+        : d)));
+      // Dar razão muda o veredito no banco; espelhar aqui evita que o índice do
+      // colaborador e o briefing sigam mostrando a nota antiga até o refetch.
+      if (newVerdict) {
+        setCompletions(prev => (prev || []).map(c => (c.id === completionId ? {
+          ...c,
+          items: (c.items || []).map(it => (it.id === itemId && it.review
+            ? { ...it, review: { ...it.review, verdict: newVerdict } }
+            : it)),
+        } : c)));
+      }
+      track('dispute_resolved', { source: 'relatorios', metadata: {
+        completion_id: completionId, item_id: itemId, status, corrigiu: !!newVerdict,
+      } });
+      return true;
+    } catch (e) {
+      console.error('resolveDispute', e);
       return false;
     }
   };
@@ -12845,6 +13127,7 @@ function AppInner() {
       {/* Briefing do dia — o retorno da conferência da liderança */}
       {showBriefing && briefing && (
         <BriefingScreen briefing={briefing} userName={currentUser.name} accent={unit.color}
+          disputes={disputes} onDispute={contestar}
           onClose={() => setShowBriefing(false)} />
       )}
 
@@ -13020,7 +13303,7 @@ function AppInner() {
         )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} allUnitsSelected={unitId == null} currentUser={currentUser} onReview={reviewCompletionAndSync} activeTypes={ACTIVE_TYPES} />
+          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} allUnitsSelected={unitId == null} currentUser={currentUser} onReview={reviewCompletionAndSync} disputes={disputes} onResolveDispute={responderContestacao} activeTypes={ACTIVE_TYPES} />
         )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
