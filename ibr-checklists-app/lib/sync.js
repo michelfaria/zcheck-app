@@ -550,6 +550,78 @@ export async function fetchCompletionNotes() {
   }
 }
 
+// ── Contestação ───────────────────────────────────────────────────────────────
+//
+// O caminho do colaborador para discordar de uma avaliação, e o da liderança
+// para responder. Ver 20260808_conferencia_contestacao.sql.
+//
+// Nenhuma das duas tem fila offline, pelo mesmo motivo de `reviewCompletion`:
+// são atos deliberados, com destinatário, e uma fila que drena horas depois faz
+// a pessoa achar que falou quando não falou. Sem rede, o botão fica desligado.
+
+/**
+ * Contestar uma avaliação. Quem pode é só quem EXECUTOU a tarefa — a RPC
+ * confere isso contra `task_reviews.executed_by_user_id`, e o cliente não tem
+ * como contornar. Aqui a checagem é só para não oferecer o que seria recusado.
+ */
+export async function raiseDispute(completionId, itemId, reason) {
+  const { error } = await db().rpc('raise_dispute', {
+    p_completion_id: completionId,
+    p_item_id: itemId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Responder a uma contestação. `newVerdict` só quando a liderança dá razão: aí
+ * a correção do veredito sai na MESMA transação da resposta, porque "revista,
+ * mas continua reprovado" é um estado indefensável para quem contestou.
+ */
+export async function resolveDispute(completionId, itemId, status, note = null, newVerdict = null) {
+  const { error } = await db().rpc('resolve_dispute', {
+    p_completion_id: completionId,
+    p_item_id: itemId,
+    p_status: status,
+    p_note: note,
+    p_new_verdict: newVerdict,
+  });
+  if (error) throw error;
+}
+
+/**
+ * As contestações que quem está pedindo pode ver: a liderança vê a fila da
+ * empresa, o colaborador vê as dele. Quem decide é a RPC, pelo papel no token.
+ *
+ * Falha em silêncio devolvendo o cache, como os vereditos: sem a lista o app
+ * continua inteiro, só não mostra o estado da conversa.
+ */
+export async function fetchDisputes() {
+  try {
+    const { data, error } = await db().rpc('list_disputes', { p_since: daysAgoStr(90) });
+    if (error) throw error;
+    const mapped = (data || []).map(d => ({
+      completionId: d.completion_id,
+      itemId: d.item_id,
+      disputedVerdict: d.disputed_verdict,
+      raisedBy: d.raised_by,
+      raisedByName: d.raised_by_name ?? null,
+      raisedAt: d.raised_at,
+      reason: d.reason,
+      status: d.status,
+      resolvedByName: d.resolved_by_name ?? null,
+      resolvedAt: d.resolved_at ?? null,
+      resolutionNote: d.resolution_note ?? null,
+      date: d.date,
+    }));
+    await cache.set('ibr_disputes', mapped);
+    return mapped;
+  } catch (e) {
+    console.warn('[Supabase] fetchDisputes falhou, usando cache:', e.message);
+    return (await cache.get('ibr_disputes')) || [];
+  }
+}
+
 // ── Photos ────────────────────────────────────────────────────────────────────
 //
 // Fotos de REFERÊNCIA (orientação do item) vivem como base64 direto no template

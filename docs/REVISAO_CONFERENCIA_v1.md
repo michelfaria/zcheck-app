@@ -278,30 +278,40 @@ Duas coisas que o teste pegou e que valem registro:
 
 ## Apêndice C — Migration C (contestação)
 
-```sql
--- 20260808_conferencia_contestacao.sql
-create table if not exists public.review_disputes (
-  id             uuid primary key default gen_random_uuid(),
-  company_id     text        not null,
-  completion_id  text        not null,
-  item_id        text        not null,
-  raised_by      text        not null,
-  raised_by_name text,
-  raised_at      timestamptz not null default now(),
-  reason         text        not null,
-  status         text        not null default 'aberta'
-                   check (status in ('aberta','mantida','revista')),
-  resolved_by      text,
-  resolved_by_name text,
-  resolved_at      timestamptz,
-  resolution_note  text,
-  unique (completion_id, item_id)
-);
-alter table public.review_disputes enable row level security;
-revoke all on public.review_disputes from anon, authenticated;
--- Leitura e escrita só por RPC: raise_dispute (o dono da tarefa) e
--- resolve_dispute (liderança). Ambas security definer, papel lido do token.
--- Toda resolução grava um evento em task_review_events.
+**Escrita e testada.** SQL em
+`ibr-checklists-app/supabase/migrations/20260808_conferencia_contestacao.sql`.
+
+Fecha o buraco que o conselho apontou: até aqui o produto protegia a EMPRESA
+contra o dado (ledger, `done_snapshot`, isolamento por tenant) e não protegia
+A PESSOA contra o julgamento.
+
+`review_disputes` é o estado atual — uma contestação viva por tarefa — e a
+conversa inteira entra na MESMA ledger do veredito (`task_review_events` ganhou
+os tipos `contestacao` e `contestacao_resolvida`). Auditar um caso é ler uma
+linha do tempo só:
+
+```
+veredito → contestacao → veredito → contestacao_resolvida
+```
+
+Três regras que ficaram no código, não em configuração:
+
+1. **Só contesta quem executou a tarefa** — critério `executed_by_user_id`, o
+   mesmo que decide quem recebe o feedback. Nem o submissor do checklist, nem a
+   liderança "em nome de".
+2. **Só apontamento se contesta.** Ressalva e reprovação; aprovação não.
+3. **Dar razão corrige o veredito na mesma transação.** `resolve_dispute`
+   aceita `p_new_verdict` porque "revista, mas continua reprovado" é um estado
+   indefensável para quem contestou.
+
+E uma assimetria deliberada de custo na UI: *manter* exige escrever o motivo
+tanto quanto *rever*. Receber "mantido" e mais nada seria a mesma mudez que a
+onda 4 acabou de tirar da conferência.
+
+Verificação em PGlite (18 asserções, passando):
+
+```bash
+cd ibr-checklists-app && node supabase/migrations/20260808_conferencia_contestacao.test.mjs
 ```
 
 ---
