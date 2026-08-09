@@ -1,5 +1,11 @@
 -- ============================================================================
--- 20260808_conferencia_contestacao.sql — o direito de discordar.
+-- 20260808_conferencia_contestacao.sql — a justificativa do colaborador.
+--
+-- VOCABULÁRIO (decisão de 08/08): o produto chama isto de JUSTIFICATIVA, não
+-- contestação — o colaborador já teve a chance de executar e anotar na hora;
+-- isto é a segunda voz dele depois do veredito, explicação e não litígio. Os
+-- nomes internos (review_disputes, raise_dispute, kinds 'contestacao') ficam:
+-- são encanamento, e renomeá-los depois do teste só adicionaria risco.
 --
 -- O que existia até aqui protegia a EMPRESA contra o dado: ledger append-only,
 -- done_snapshot, batch_id, isolamento por tenant, teste de multi-tenant. E não
@@ -118,7 +124,7 @@ begin
   end if;
 
   if nullif(btrim(coalesce(p_reason, '')), '') is null then
-    raise exception 'a contestação precisa de um motivo';
+    raise exception 'a justificativa precisa de um texto';
   end if;
 
   -- O veredito contestado, já no escopo da empresa. Este select é o portão:
@@ -136,12 +142,12 @@ begin
 
   -- Regra 1: quem leva a nota é quem responde.
   if v_dono is distinct from v_uid then
-    raise exception 'só quem executou a tarefa pode contestar a avaliação dela';
+    raise exception 'só quem executou a tarefa pode justificar a avaliação dela';
   end if;
 
   -- Regra 2: contesta-se apontamento, não elogio.
   if v_verdict not in ('ressalva', 'reprovado') then
-    raise exception 'só ressalva e reprovação podem ser contestadas';
+    raise exception 'só ressalva e reprovação podem ser justificadas';
   end if;
 
   select u.name into v_name from public.users u where u.id = v_uid;
@@ -225,7 +231,7 @@ begin
      and d.company_id = v_company;
 
   if not found then
-    raise exception 'contestação não encontrada no escopo da sua empresa';
+    raise exception 'justificativa não encontrada no escopo da sua empresa';
   end if;
 
   select u.name into v_name from public.users u where u.id = v_uid;

@@ -3914,12 +3914,12 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         );
       })()}
 
-      {/* Contestações abertas — ANTES das execuções de propósito. É a única
+      {/* Justificativas abertas — ANTES das execuções de propósito. É a única
           coisa nesta tela em que outra pessoa está esperando por uma resposta;
           o resto é a liderança olhando no próprio ritmo. */}
       {canReview && (disputes || []).some(d => d.status === 'aberta') && (
         <>
-          <Eyebrow>Discordâncias aguardando você</Eyebrow>
+          <Eyebrow>Justificativas aguardando você</Eyebrow>
           <div className="space-y-1.5" style={{ marginBottom: 16 }}>
             {(disputes || []).filter(d => d.status === 'aberta').map(d => (
               <DisputeCard key={`${d.completionId}|${d.itemId}`} dispute={d} accent={unit.color}
@@ -4085,13 +4085,13 @@ const VERDICTS = [
 ];
 
 /**
- * Uma discordância esperando resposta.
+ * Uma justificativa esperando resposta.
  *
- * As duas saídas são deliberadamente assimétricas em custo: MANTER pede um
- * motivo (quem foi avaliado escreveu o dela; receber "mantido" e mais nada é a
+ * As duas saídas são deliberadamente simétricas em custo: MANTER pede um
+ * motivo (quem foi avaliado escreveu o dele; receber "mantido" e mais nada é a
  * mesma mudez que a conferência acabou de deixar de ter), e DAR RAZÃO exige
  * escolher o veredito novo na mesma ação — a RPC corrige tudo numa transação,
- * porque "revista, mas continua reprovado" é indefensável para quem contestou.
+ * porque "revista, mas continua reprovado" é indefensável para quem justificou.
  */
 function DisputeCard({ dispute: d, accent, completions, onResolve }) {
   const [modo, setModo] = useState(null);        // 'mantida' | 'revista'
@@ -4100,7 +4100,7 @@ function DisputeCard({ dispute: d, accent, completions, onResolve }) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
 
-  // O texto da tarefa vive na execução, não na contestação: guardá-lo lá
+  // O texto da tarefa vive na execução, não na justificativa: guardá-lo lá
   // duplicaria um dado que já muda de lugar (o item pode ser reescrito no
   // template). Sem a execução em mãos, mostra o id — feio, nunca invisível.
   const exec = (completions || []).find(c => c.id === d.completionId);
@@ -4109,7 +4109,7 @@ function DisputeCard({ dispute: d, accent, completions, onResolve }) {
   const VERD = { reprovado: 'Reprovada', ressalva: 'Com ressalva' };
 
   const responder = async () => {
-    if (!nota.trim()) { setErro('Escreva a resposta — quem contestou escreveu a dele.'); return; }
+    if (!nota.trim()) { setErro('Escreva a resposta — quem justificou escreveu a dele.'); return; }
     setBusy(true); setErro('');
     const ok = await onResolve(d.completionId, d.itemId, modo, nota.trim(), modo === 'revista' ? novoVeredito : null);
     setBusy(false);
@@ -4161,7 +4161,7 @@ function DisputeCard({ dispute: d, accent, completions, onResolve }) {
             </div>
           )}
           <textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} disabled={busy}
-            aria-label="Resposta à discordância"
+            aria-label="Resposta à justificativa"
             placeholder={modo === 'revista' ? 'O que você reviu, e por quê?' : 'Por que a avaliação se mantém?'}
             style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
           {erro && <p role="alert" style={{ fontSize: 12, color: C.critical, marginTop: 6 }}>{erro}</p>}
@@ -10640,13 +10640,19 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
  * e um aviso que some sozinho não provoca reflexão nenhuma.
  */
 /**
- * A caixa de contestar — uma folha curta, com o apontamento à vista.
+ * A caixa de justificar — uma folha curta, com o apontamento à vista.
  *
- * Mostra o que está sendo contestado em cima do campo de propósito: contestar
- * de memória, um dia depois, é como a conversa vira "eu não fiz isso" em vez de
- * "a foto é de antes do turno". O motivo é obrigatório aqui pelo mesmo padrão
- * que se passou a cobrar da liderança — não faria sentido exigir explicação de
- * um lado só.
+ * O enquadramento é JUSTIFICATIVA, não contestação (decisão de 08/08): o
+ * colaborador já teve a chance de executar a tarefa e anotar observações na
+ * hora; isto aqui é a segunda voz dele, depois do veredito — explicar, não
+ * abrir litígio. O mecanismo por baixo é o mesmo (a liderança mantém ou
+ * revisa), só a conversa muda de tom.
+ *
+ * Mostra o que está sendo justificado em cima do campo de propósito:
+ * justificar de memória, um dia depois, é como a conversa vira "eu não fiz
+ * isso" em vez de "a foto é de antes do turno". O texto é obrigatório pelo
+ * mesmo padrão que se passou a cobrar da liderança — não faria sentido exigir
+ * explicação de um lado só.
  */
 function DisputeSheet({ item, accent, onClose, onSend }) {
   const [texto, setTexto] = useState('');
@@ -10667,10 +10673,10 @@ function DisputeSheet({ item, accent, onClose, onSend }) {
     <div className="fixed inset-0 flex items-end justify-center z-50"
       style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
-        role="dialog" aria-modal="true" aria-label="Discordar da avaliação"
+        role="dialog" aria-modal="true" aria-label="Justificar a avaliação"
         style={{ maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0', padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))' }}>
         <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
-          Discordar da avaliação
+          Justificar a avaliação
         </p>
         <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.sm, padding: '10px 12px', margin: '12px 0' }}>
           <p style={{ fontSize: 13, color: C.ink, fontWeight: W.semibold }}>{item.texto}</p>
@@ -10680,10 +10686,10 @@ function DisputeSheet({ item, accent, onClose, onSend }) {
           </p>
         </div>
         <label htmlFor="zc-dispute" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
-          O que aconteceu
+          Sua justificativa
         </label>
         <textarea id="zc-dispute" value={texto} onChange={e => setTexto(e.target.value)} rows={4} disabled={busy}
-          placeholder="Conte o seu lado. Quanto mais concreto, mais fácil de verificar."
+          placeholder="Explique o que aconteceu. Quanto mais concreto, mais fácil de verificar."
           style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
         <p style={{ fontSize: 11.5, color: C.mutedLight, marginTop: 8, lineHeight: 1.5 }}>
           Isto vai para quem avaliou a tarefa. Seus colegas não veem.
@@ -10772,9 +10778,9 @@ function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [],
             <Eyebrow>Tarefas que precisam de atenção</Eyebrow>
             <div style={{ marginTop: 8 }}>
               {b.itensProblema.map((it, n) => {
-                // Contestável = apontamento da liderança. Tarefa que a pessoa
+                // Justificável = apontamento da liderança. Tarefa que a pessoa
                 // não executou aparece na lista, mas não há veredito a
-                // contestar ali — o fato é o fato.
+                // justificar ali — o fato é o fato.
                 const contestavel = onDispute && it.completionId && it.itemId
                   && (it.verdict === 'reprovado' || it.verdict === 'ressalva');
                 const d = disputaDe.get(`${it.completionId}|${it.itemId}`);
@@ -10787,11 +10793,11 @@ function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [],
                         {VERD_LABEL[it.verdict]?.texto || it.verdict}{it.checklist ? ` · ${it.checklist}` : ''}
                       </p>
                       {/* O estado da conversa, quando ela existe. Uma
-                          contestação que some da tela depois de enviada faz a
+                          justificativa que some da tela depois de enviada faz a
                           pessoa achar que não foi. */}
                       {d ? (
                         <p style={{ fontSize: 11, color: d.status === 'revista' ? C.success : d.status === 'mantida' ? C.muted : C.warning, fontWeight: W.semibold, marginTop: 3 }}>
-                          {d.status === 'aberta' && 'Você discordou · aguardando resposta'}
+                          {d.status === 'aberta' && 'Justificativa enviada · aguardando resposta'}
                           {d.status === 'revista' && `Revisto por ${d.resolvedByName || 'liderança'}`}
                           {d.status === 'mantida' && `Mantido por ${d.resolvedByName || 'liderança'}`}
                           {d.resolutionNote && <span style={{ fontWeight: 400, color: C.muted }}> — “{d.resolutionNote}”</span>}
@@ -10799,7 +10805,7 @@ function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [],
                       ) : contestavel && (
                         <button onClick={() => setContestando(it)}
                           style={{ fontSize: 11, fontWeight: W.semibold, color: accent, background: 'none', border: `1px dashed ${C.border}`, borderRadius: R.pill, padding: '2px 10px', marginTop: 4, cursor: 'pointer' }}>
-                          Não concordo
+                          Deseja justificar?
                         </button>
                       )}
                     </div>

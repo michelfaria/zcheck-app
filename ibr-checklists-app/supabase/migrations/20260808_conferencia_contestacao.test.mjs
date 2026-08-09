@@ -104,8 +104,8 @@ check(/ressalva e reprovação/.test(elogio || ''), 'aprovação não é contest
 // ── Motivo é obrigatório ─────────────────────────────────────────────────────
 await db.exec(comoMaria);
 const mudo = await erroDe(`select public.raise_dispute('c1','i2','   ')`);
-check(/precisa de um motivo/.test(mudo || ''),
-  'contestação sem motivo é recusada — o mesmo padrão que se cobra da liderança');
+check(/precisa de um texto/.test(mudo || ''),
+  'justificativa sem texto é recusada — o mesmo padrão que se cobra da liderança');
 
 // ── Isolamento entre empresas ────────────────────────────────────────────────
 await db.exec(comoOutra);
