@@ -140,44 +140,82 @@ consciente, não um detalhe.
 
 ---
 
-## 5. Pontuação — o redesenho
+## 5. Pontuação — o que está EM PRODUÇÃO
 
-A fórmula da v1 (média ponderada, aprovado 1.0 / ressalva 0.6 / reprovado 0.0,
-peso 0,25) não sobrevive à medição: com 96,9% de aprovação, ela entrega 97-100
-para todo mundo. **Não se pesa em 25% um sinal com 3% de variância** — moveria o
-índice em menos de 1 ponto e deixaria a colocação pendurada em 41 eventos de 90
-dias, onde uma noite ruim vira mudança de posição.
+Os pesos do índice do colaborador, desde 08/08/2026:
 
-Troca do modelo: **penalidade contável, não média.**
+| componente | peso | o que mede |
+|---|---|---|
+| Conclusão de tarefas | 0,35 | do que pegou, quanto fez |
+| **Entregas no prazo** | **0,25** | dos checklists que entregou e tinham prazo, quantos saíram dentro dele |
+| Críticos em dia | 0,20 | risco |
+| Constância | 0,10 | dias com atividade ÷ 30 |
+| Qualidade avaliada | 0,10 | o julgamento da liderança |
+
+### Qualidade — penalidade contável, não média
 
 ```
 qualidade = 100 − (ressalvas × 2 + reprovações × 8)   [piso 0]
 ```
 
-Três vantagens sobre a média:
+A fórmula da v1 (média ponderada, ressalva 0,6, peso 0,25) não sobreviveu à
+medição: com 96,9% de aprovação ela entregaria 97-100 para todo mundo. **Não se
+pesa em 25% um sinal com 3% de variância.** A penalidade contável discrimina
+(5 ressalvas + 2 reprovações = 74, contra 100 de quem não tem nada), é
+explicável em uma linha para quem é medido, e não satura com o denominador.
 
-1. **Discrimina.** Quem tem 5 ressalvas e 2 reprovações no período fica em 74;
-   quem não tem nada fica em 100. A média entregaria 97 e 100.
-2. **É explicável.** "Cada reprovação custa 8 pontos, cada ressalva 2" cabe numa
-   linha do Meu ID. "Ressalva vale 0,6 na média ponderada" não.
-3. **Não satura.** Não depende do denominador — logo não pune quem executa mais.
+As três travas, todas no código (`QUALITY_CUTOFF`, `QUALITY_MIN_JULGADAS`, o
+array `parts`):
 
-Condições de entrada, todas obrigatórias:
+- **Corte em 09/08/2026**, sobre `reviewed_at`. Julgamento dado sob a régua
+  antiga — quando ressalva não custava nada — não passa a custar depois do fato.
+- **Piso de 5 julgadas.** Menos que isso, componente null e o índice se
+  renormaliza. Ninguém é punido por ter líder ausente.
+- **Peso 0,10**, subindo para os 0,25 originalmente planejados só quando
+  `apontamentos_sem_motivo` cair de 95% para menos de 20%.
 
-- **Vale de uma data em diante.** Nada de recálculo retroativo.
-- **`taskCounts` não muda.** A dupla penalidade da reprovação (derruba conclusão
-  *e* qualidade) fica para depois, se ficar — mexer nela recalcula a nota de
-  todo mundo de uma vez.
-- **Peso inicial baixo (0,10)**, subindo só quando `apontamentos_sem_motivo` cair
-  abaixo de 20%. Um apontamento sem motivo **não pontua**: se a liderança não
-  explicou, não tira ponto de ninguém. Isso alinha o incentivo do líder com a
-  métrica de sucesso do §2.
-- **A régua aparece na tela de quem é medido**, ao lado do número.
+E a regra de incentivo: **apontamento sem motivo não pontua.** Para o ranking de
+terceiros funcionar com ela, a view `task_verdicts` expõe `com_motivo` — o
+booleano da explicação, nunca o texto.
 
-Do lado da liderança: `modo: 'lote' | 'individual'` no track (que já manda
-metadata em [page.js:12284](ibr-checklists-app/app/app/page.js:12284)) e a taxa
-de reprovação do líder vs. mediana da empresa, visível e não punitiva. Risco C
-da v1 (dois líderes dividindo a loja) está mudo — há um líder só.
+`taskCounts` NÃO mudou: a dupla penalidade da reprovação (derruba conclusão *e*
+qualidade) fica para depois, se ficar.
+
+### Pontualidade — e por que ela NÃO tem corte de data
+
+Pedido de 08/08: quem entrega no prazo tem que ficar acima de quem entrega
+atrasado. Peso 0,25 é o que torna isso verdade de fato — entre 100% e 60% são
+10 pontos de índice, mais do que qualquer empate nos outros componentes
+costuma produzir.
+
+Três decisões de cálculo, herdadas de regras que o app já aplicava:
+
+1. **Pela primeira entrega da rodada** (`earliestPerRound`). Reenviar às 18h não
+   transforma em atraso uma entrega feita às 9h no prazo. Mesma régua do índice
+   da liderança e do J.I.T.
+2. **Checklist sem prazo fica fora do numerador E do denominador.** Contá-lo
+   como pontual inflaria a nota de quem só executa checklist sem horário.
+3. **É de quem ENTREGOU, não de quem executou dentro.** Numa rodada
+   colaborativa, quem submeteu fora do prazo responde — não o colega que fez
+   duas tarefas nela. É o inverso da qualidade, que segue `executed_by`, e as
+   duas estão certas: entregar e executar são atos diferentes.
+
+**Sem corte de data, e a assimetria com a qualidade é deliberada** (confirmada
+pelo Michel em 08/08): o prazo é uma regra PUBLICADA no próprio checklist,
+sempre foi visível como "fora do prazo" nos Relatórios e no J.I.T., e o dado
+histórico é completo. Passar a contá-la não muda a régua — começa a dar
+consequência a uma régua que já existia. A qualidade precisou de corte porque
+os vereditos antigos foram dados quando ressalva não custava nada; aqui não há
+esse viés.
+
+Consequência assumida: as posições no ranking mudaram retroativamente sobre os
+90 dias de histórico.
+
+### Do lado da liderança
+
+`modo: 'lote' | 'individual'` no track (page.js) e a taxa de reprovação do líder
+vs. mediana da empresa, visível e não punitiva. Risco C da v1 (dois líderes
+dividindo a loja) está mudo — há um líder só.
 
 ---
 
