@@ -1105,7 +1105,10 @@ function annotateReviews(completions, taskReviews, completionNotes) {
       // `executedBy` viaja junto porque é ele que decide DE QUEM é este
       // feedback. Sem ele, o briefing tinha que perguntar ao checklist quem era
       // o dono — e o checklist só sabe quem o submeteu.
-      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName, executedBy: r.executedByUserId } } : i;
+      //
+      // `comMotivo` e `reviewedAt` alimentam a pontuação de qualidade: mudo não
+      // pontua, e a régua só vale para julgamentos feitos a partir do corte.
+      return r ? { ...i, review: { verdict: r.verdict, note: r.note, byName: r.reviewedByName, executedBy: r.executedByUserId, comMotivo: r.comMotivo ?? !!r.note, reviewedAt: r.reviewedAt } } : i;
     }),
   }));
 }
@@ -3311,6 +3314,18 @@ export function ReportsView({ unit, templates, completions, closures, users, can
   // verdade está na RPC `review_completion`, que confere o papel pelo token;
   // isto aqui só evita oferecer o que seria recusado.
   const canReview = !!onReview && MANAGER_ROLES.includes(currentUser?.role);
+  /**
+   * A tela tem dois empregos que não se misturam: CONFERIR (a tarefa de todo
+   * dia — justificativas + execuções) e ANÁLISE (números, produtividade,
+   * exportação — consulta ocasional). Antes eram uma pilha só, e quem confere
+   * atravessava 8 a 12 telas de rolagem de análise para chegar ao trabalho.
+   *
+   * Quem confere cai em Conferir; quem não confere nem vê o seletor. NÃO é a
+   * fila agrupada por checklist do plano (docs/REVISAO_CONFERENCIA_v1.md §2) —
+   * aquela segue esperando observação de uso real; isto é só parar de cobrar
+   * pedágio de rolagem da tarefa diária.
+   */
+  const [vista, setVista] = useState(canReview ? 'conferir' : 'analise');
   const [execPage, setExecPage] = useState(1);
   const [period, setPeriod] = useState('7d');
   // Trocar de filtro estando na página 7 mostraria "nenhuma execução" num
@@ -3744,6 +3759,22 @@ export function ReportsView({ unit, templates, completions, closures, users, can
       </div>
 
       <div className="zc-rep-results space-y-4">
+      {canReview && (() => {
+        const pendentes = filtered.filter(c => !c.reviewedAt).length;
+        const abertas = (disputes || []).filter(d => d.status === 'aberta').length;
+        return (
+          <div className="flex gap-2">
+            <PillButton active={vista === 'conferir'} accent={unit.color} onClick={() => setVista('conferir')}>
+              Conferir{pendentes + abertas > 0 ? ` · ${pendentes + abertas}` : ''}
+            </PillButton>
+            <PillButton active={vista === 'analise'} accent={unit.color} onClick={() => setVista('analise')}>
+              Análise
+            </PillButton>
+          </div>
+        );
+      })()}
+
+      {vista === 'analise' && (<>
       <div className="grid grid-cols-2 gap-2">
         <StatCard
           label="Checklists concluídos" accent={unit.color}
@@ -3913,7 +3944,9 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           </>
         );
       })()}
+      </>)}
 
+      {vista === 'conferir' && (<>
       {/* Justificativas abertas — ANTES das execuções de propósito. É a única
           coisa nesta tela em que outra pessoa está esperando por uma resposta;
           o resto é a liderança olhando no próprio ritmo. */}
@@ -4034,6 +4067,9 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         })()}
       </div>
 
+      </>)}
+
+      {vista === 'analise' && (<>
       <Eyebrow>Exportar</Eyebrow>
       <div className="flex gap-2">
         <button
@@ -4051,6 +4087,7 @@ export function ReportsView({ unit, templates, completions, closures, users, can
           <Printer size={15} aria-hidden /> Exportar PDF
         </button>
       </div>
+      </>)}
 
       {reviewing && (
         <ReviewModal
@@ -10247,6 +10284,24 @@ function longestStreak(days) {
   return best;
 }
 
+/**
+ * Pontuação de qualidade — as três constantes da régua (decisão de 08/08).
+ *
+ * O CORTE é o que impede a mudança de ser retroativa: julgamento feito antes
+ * dele foi dado sob a régua antiga (quando ressalva não custava nada) e não
+ * pode passar a custar depois do fato. Vereditos anteriores continuam valendo
+ * para tudo o mais — só não entram NESTA conta.
+ *
+ * O PISO DE JULGADAS protege quem tem líder ausente: com menos de 5 tarefas
+ * julgadas o componente é null e o índice se renormaliza sem ele (`usable`).
+ *
+ * O PESO nasce baixo (0,10) de propósito: sobe para os 0,25 do plano só quando
+ * a taxa de apontamento sem motivo cair abaixo de 20% — hoje ela é 95%, e um
+ * sinal desses ainda não merece um quarto da nota de ninguém.
+ */
+const QUALITY_CUTOFF = '2026-08-09';
+const QUALITY_MIN_JULGADAS = 5;
+
 // `tz` é o da loja da pessoa: a sequência de dias seguidos tem que virar à
 // meia-noite dela, senão quem trabalha à noite em Manaus perde ou ganha um dia.
 function computeOperationalProfile(completions, userId, userName, tz) {
@@ -10278,17 +10333,38 @@ function computeOperationalProfile(completions, userId, userName, tz) {
   // doneBy creditam ao responsável pelo checklist.
   let tasksDone = 0, criticalDone = 0;
   const participationDays = new Set();
+  // ── Qualidade avaliada (pontuação, decisão de 08/08) ──
+  // Sobre as tarefas que a pessoa EXECUTOU e a liderança JULGOU, a partir do
+  // corte. Penalidade contável, não média: com 96,9% de aprovação medidos, uma
+  // média entregaria 97-100 para todo mundo e não separaria ninguém.
+  let julgadas = 0, ressalvasQ = 0, reprovadasQ = 0;
   rounds.forEach(c => {
     const isSubmitter = c.operatorUserId === userId || c.operatorName === userName;
     (c.items || []).forEach(i => {
+      // O destinatário do julgamento: o executed_by resolvido no servidor
+      // manda; doneBy é o fallback de registro antigo; submissor, o último.
+      const executedByMe = i.review?.executedBy
+        ? i.review.executedBy === userId
+        : i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
+      if (executedByMe && i.review?.verdict
+          && (i.review.reviewedAt || '').slice(0, 10) >= QUALITY_CUTOFF) {
+        julgadas++;
+        // Apontamento SEM MOTIVO não pontua: se a liderança não explicou, não
+        // tira ponto de ninguém. É o que alinha o incentivo do líder com a
+        // métrica da conferência (95% dos apontamentos eram mudos em 08/08).
+        if (i.review.verdict === 'ressalva' && i.review.comMotivo) ressalvasQ++;
+        if (i.review.verdict === 'reprovado' && i.review.comMotivo) reprovadasQ++;
+      }
       if (!taskCounts(i)) return;
-      const executedByMe = i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
       if (!executedByMe) return;
       tasksDone++;
       if (i.critical) criticalDone++;
       if (c.date) participationDays.add(c.date);
     });
   });
+  const qualidade = julgadas >= QUALITY_MIN_JULGADAS
+    ? Math.max(0, 100 - (ressalvasQ * 2 + reprovadasQ * 8))
+    : null;
 
   const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
   const streak = currentStreak(new Set(days), tz);
@@ -10334,10 +10410,13 @@ function computeOperationalProfile(completions, userId, userName, tz) {
    */
   const CONSISTENCY_WINDOW = 30;
   const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
+  // Qualidade entrou com 0,10 e os outros três cederam proporcionalmente
+  // (0.5/0.3/0.2 × 0.9). Quando o peso subir, é AQUI que se mexe — e só aqui.
   const parts = [
-    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.5, value: totalItems ? avgRate : null },
-    { key: 'criticos', label: 'Críticos em dia', weight: 0.3, value: criticalRate },
-    { key: 'constancia', label: 'Constância', weight: 0.2, value: checklists ? consistency : null },
+    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.45, value: totalItems ? avgRate : null },
+    { key: 'criticos', label: 'Críticos em dia', weight: 0.27, value: criticalRate },
+    { key: 'constancia', label: 'Constância', weight: 0.18, value: checklists ? consistency : null },
+    { key: 'qualidade', label: 'Qualidade avaliada', weight: 0.10, value: qualidade },
   ];
   const usable = parts.filter(x => x.value != null);
   const wsum = usable.reduce((a, x) => a + x.weight, 0);
@@ -10349,6 +10428,9 @@ function computeOperationalProfile(completions, userId, userName, tz) {
     streak, bestStreak, activeDays: days.length,
     level, intoLevel, perLevel, weekly, achievements,
     index, parts, consistency, consistencyWindow: CONSISTENCY_WINDOW,
+    // A régua da qualidade, aberta: quem é medido precisa conseguir refazer a
+    // conta. `julgadas` também explica o null (menos de 5 → sem componente).
+    qualidade, julgadas, ressalvasQ, reprovadasQ,
     recent: mine.slice(-8).reverse(),
   };
 }
@@ -11215,6 +11297,15 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
               </div>
               <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 6 }}>
                 Constância = dias com atividade nos últimos {p.consistencyWindow} dias.
+              </p>
+              {/* A régua da qualidade, por extenso. Quem é medido tem que
+                  conseguir refazer a conta de cabeça — "ressalva vale 0,6 numa
+                  média ponderada" não passa nesse teste; "cada reprovação
+                  custa 8 pontos" passa. */}
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                {p.qualidade != null
+                  ? `Qualidade = 100 − (ressalvas × 2 + reprovações × 8), sobre ${p.julgadas} tarefas avaliadas pela liderança. Apontamento sem motivo escrito não desconta.`
+                  : 'Qualidade entra quando a liderança tiver avaliado ao menos 5 das suas tarefas (vale para avaliações a partir de 09/08/2026).'}
               </p>
             </div>
           </div>

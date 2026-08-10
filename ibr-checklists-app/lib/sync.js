@@ -481,7 +481,10 @@ export async function fetchTaskReviews() {
     const desde = daysAgoStr(90);
     const [verdicts, notes] = await Promise.all([
       db().from('task_verdicts')
-        .select('completion_id, item_id, verdict, reviewed_at, operator_user_id, executed_by_user_id, date')
+        // `com_motivo` é o booleano da explicação (nunca o texto): a pontuação
+        // de qualidade precisa saber, PARA TERCEIROS, se um apontamento tem
+        // motivo — apontamento mudo não pontua. Ver 20260808_pontuacao_qualidade.
+        .select('completion_id, item_id, verdict, reviewed_at, operator_user_id, executed_by_user_id, date, com_motivo')
         .gte('date', desde),
       db().rpc('my_task_notes', { p_since: desde }),
     ]);
@@ -508,6 +511,9 @@ export async function fetchTaskReviews() {
         // foi colaborativa. Resolvido no servidor pela RPC; ver
         // 20260808_conferencia_endereco_historico.sql.
         executedByUserId: r.executed_by_user_id ?? null,
+        // `undefined` antes da migration da view rodar → `?? false` degrada
+        // para "sem motivo", que é o lado que NÃO tira ponto de ninguém.
+        comMotivo: r.com_motivo ?? false,
         date: r.date,
       };
     });
