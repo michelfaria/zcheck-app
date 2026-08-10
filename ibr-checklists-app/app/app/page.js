@@ -12234,7 +12234,11 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       }))
       .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
         || b.profile.teamChecklists - a.profile.teamChecklists);
-  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser, periodo, today]);
+  // `today` NÃO entra aqui: ele é declarado dentro do callback, então citá-lo
+  // no array de dependências é um ReferenceError em runtime — que o build não
+  // pega, porque isto é JS puro sem checagem de variável não declarada. Ele
+  // deriva de `units` e `currentUser`, que já estão na lista.
+  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser, periodo]);
 
   // Perfil do colaborador selecionado (visão do líder)
   if (selected) {
