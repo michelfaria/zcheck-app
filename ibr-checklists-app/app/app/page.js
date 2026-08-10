@@ -41,6 +41,7 @@ import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekS
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
 import { latestPerRound, earliestPerRound, roundKey, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { classificarRodada, gravidadeDe, agruparPorChecklist } from '../../lib/conferencia';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -3325,6 +3326,228 @@ function ProdRow({ entry, accent }) {
 // Paginação das execuções no Relatórios. 25 por página: cabe numa tela de
 // desktop sem rolar e ainda é uma leitura razoável no celular.
 const EXEC_PAGE_SIZE = 25;
+
+// Os selos de uma rodada, na ordem de gravidade. Um só é escolhido para a
+// linha: empilhar quatro etiquetas numa lista de conferência vira ruído.
+const SELOS = [
+  ['criticoPendente', 'Crítico não executado', C.critical],
+  ['semFoto', 'Faltou foto', C.warning],
+  ['foraDoPrazo', 'Fora do prazo', C.warning],
+  ['incompleta', 'Incompleta', C.warning],
+  ['notaOperador', 'Tem observação', C.ink],
+];
+const seloDe = f => SELOS.find(([k]) => f[k]);
+
+/**
+ * FILA DE CONFERÊNCIA agrupada por checklist × setor.
+ *
+ * O eixo é o CHECKLIST porque é onde a repetição mora e onde o julgamento é o
+ * mesmo julgamento: o critério de "Fechamento Cozinha bem-feito" não muda entre
+ * segunda e domingo. Agrupar por dia repetiria o eixo do Painel; por loja não
+ * ajuda quem só tem uma.
+ *
+ * DUAS FAIXAS, e a divisão é deliberada: agrupamento é bom para repetição e
+ * ruim para exceção. Um crítico não executado é único — enterrá-lo dentro de um
+ * grupo de 21 rodadas seria usar a ferramenta errada. Por isso as piores
+ * rodadas saem do agrupamento e viram uma lista plana em cima.
+ *
+ * SEM APROVAÇÃO EM LOTE, e isso é decisão de produto, não falta de tempo: a
+ * cobertura da conferência já é 100%. Lote otimizaria a única coisa que já
+ * funciona e transformaria os 30% de "conferidos" do índice da liderança em
+ * velocidade de clique.
+ */
+function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
+  const [verConferidas, setVerConferidas] = useState(false);
+  const [verLimpas, setVerLimpas] = useState(false);
+
+  const { destaques, grupos, conferidas, limpas } = useMemo(() => {
+    const deadlines = deadlineIndex(templates || []);
+    const itensDe = c => ((templates || []).find(t => t.id === c.templateId)?.items) || [];
+    // `foraDoPrazo` é resolvido AQUI e entregue pronto: a régua de prazo é uma
+    // só no app (`completionOnTime`, que usa o fuso da loja), e duplicá-la
+    // dentro da lib criaria a segunda.
+    const analisadas = (completions || []).map(c => ({
+      c,
+      f: classificarRodada(c, itensDe(c), completionOnTime(c, templates || [], deadlines, units) === false),
+    }));
+
+    const pendentes = analisadas.filter(x => !x.c.reviewedAt);
+    const conferidas = analisadas.filter(x => x.c.reviewedAt);
+
+    // Faixa 1 — as rodadas que não podem esperar a fila: crítico não executado.
+    // Teto de 6 porque uma lista de exceções longa deixa de ser exceção.
+    const destaques = pendentes
+      .filter(x => x.f.criticoPendente)
+      .sort((a, b) => (a.c.date || '').localeCompare(b.c.date || ''))
+      .slice(0, 6);
+    const idsDestaque = new Set(destaques.map(x => x.c.id));
+
+    // Faixa 2 — o resto, agrupado por checklist × setor (ver lib/conferencia).
+    const grupos = agruparPorChecklist(
+      pendentes.filter(x => !idsDestaque.has(x.c.id)),
+      c => (templates || []).find(t => t.id === c.templateId)?.deadline || null,
+    );
+
+    const comSinal = grupos.filter(g => g.gravidade > 0);
+    const semSinal = grupos.filter(g => g.gravidade === 0);
+
+    return { destaques, grupos: comSinal, conferidas, limpas: semSinal };
+  }, [completions, templates, units]);
+
+  const totalPendente = destaques.length
+    + grupos.reduce((n, g) => n + g.rodadas.length, 0)
+    + limpas.reduce((n, g) => n + g.rodadas.length, 0);
+
+  if (!totalPendente && !conferidas.length) {
+    return <EmptyState title="Nada para conferir" desc="Nenhuma execução no período com os filtros atuais." />;
+  }
+
+  const Linha = ({ x, mostrarChecklist }) => {
+    const selo = seloDe(x.f);
+    return (
+      <button onClick={() => onOpen(x.c)}
+        aria-label={`Conferir ${x.c.templateName} de ${x.c.date}`}
+        style={{
+          width: '100%', textAlign: 'left', background: 'white', border: `1px solid ${C.border}`,
+          borderRadius: R.sm, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 12.5, color: C.ink, fontWeight: W.semibold }}>
+            {mostrarChecklist ? `${x.c.templateName} · ` : ''}
+            {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+            <span style={{ fontWeight: 400, color: C.muted }}> · {x.c.operatorName}</span>
+          </p>
+          {selo && (
+            <span style={{
+              display: 'inline-block', marginTop: 3, fontSize: 9.5, fontWeight: W.semibold,
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              color: selo[2], background: `${selo[2]}14`, border: `1px solid ${selo[2]}44`,
+              borderRadius: R.pill, padding: '1px 6px',
+            }}>{selo[1]}</span>
+          )}
+        </div>
+        <ChevronRight size={16} color={C.mutedLight} style={{ flexShrink: 0 }} />
+      </button>
+    );
+  };
+
+  const Grupo = ({ g }) => {
+    const [aberto, setAberto] = useState(false);
+    const cor = g.rodadas.some(x => x.f.criticoPendente) ? C.critical
+      : g.gravidade > 0 ? C.warning : accent;
+    return (
+      <div style={{ background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${cor}`, borderRadius: R.sm, marginBottom: 8 }}>
+        <button onClick={() => setAberto(v => !v)} aria-expanded={aberto}
+          style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="font-display" style={{ fontSize: 'calc(15px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
+              {g.titulo}
+            </p>
+            <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+              {g.setor}{g.prazo ? ` · prazo ${g.prazo}` : ' · sem prazo'}
+            </p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+              {g.rodadas.length} {g.rodadas.length === 1 ? 'rodada' : 'rodadas'}
+              {g.limpas > 0 && ` · ${g.limpas} sem sinal de problema`}
+              {g.rodadas.length - g.limpas > 0 && (
+                <span style={{ color: cor, fontWeight: W.semibold }}>
+                  {' · '}{g.rodadas.length - g.limpas} pedindo atenção
+                </span>
+              )}
+            </p>
+            {/* A faixa de dias devolve a leitura temporal que o agrupamento
+                destrói: "falhou quatro sextas seguidas" é invisível numa
+                contagem, e óbvio numa fileira. */}
+            <div style={{ display: 'flex', gap: 3, marginTop: 6, flexWrap: 'wrap' }}>
+              {g.rodadas.slice(0, 21).map(x => (
+                <span key={x.c.id} title={`${x.c.date}${seloDe(x.f) ? ' · ' + seloDe(x.f)[1] : ''}`}
+                  aria-hidden="true"
+                  style={{
+                    width: 8, height: 8, borderRadius: 2,
+                    background: x.f.criticoPendente ? C.critical : x.f.limpa ? C.success : C.warning,
+                  }} />
+              ))}
+            </div>
+          </div>
+          <ChevronRight size={18} color={C.mutedLight}
+            style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+        </button>
+        {aberto && (
+          <div className="space-y-1.5" style={{ padding: '0 12px 12px' }}>
+            {g.rodadas.map(x => <Linha key={x.c.id} x={x} />)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {destaques.length > 0 && (
+        <>
+          <Eyebrow>Precisa de você</Eyebrow>
+          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
+            Rodadas com item crítico não executado — fora do agrupamento de propósito.
+          </p>
+          <div className="space-y-1.5" style={{ marginBottom: 16 }}>
+            {destaques.map(x => <Linha key={x.c.id} x={x} mostrarChecklist />)}
+          </div>
+        </>
+      )}
+
+      {grupos.length > 0 && (
+        <>
+          <Eyebrow>Fila por checklist</Eyebrow>
+          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
+            Ordenada por gravidade, não por quantidade.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            {grupos.map(g => <Grupo key={g.key} g={g} />)}
+          </div>
+        </>
+      )}
+
+      {limpas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setVerLimpas(v => !v)} aria-expanded={verLimpas}
+            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+            {verLimpas ? '▾' : '▸'} Sem sinal de problema ({limpas.reduce((n, g) => n + g.rodadas.length, 0)})
+          </button>
+          {verLimpas && limpas.map(g => <Grupo key={g.key} g={g} />)}
+        </div>
+      )}
+
+      {conferidas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setVerConferidas(v => !v)} aria-expanded={verConferidas}
+            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+            {verConferidas ? '▾' : '▸'} Já conferidas ({conferidas.length})
+          </button>
+          {verConferidas && (
+            <div className="space-y-1.5" style={{ marginTop: 6 }}>
+              {conferidas
+                .sort((a, b) => (b.c.reviewedAt || '').localeCompare(a.c.reviewedAt || ''))
+                .slice(0, 40)
+                .map(x => (
+                  <button key={x.c.id} onClick={() => onOpen(x.c)}
+                    style={{ width: '100%', textAlign: 'left', background: `${C.success}08`, border: `1px solid ${C.success}33`, borderRadius: R.sm, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <p style={{ fontSize: 12, color: C.ink }}>
+                      {x.c.templateName} · {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      <span style={{ color: C.muted }}> · {x.c.operatorName}</span>
+                    </p>
+                    <p style={{ fontSize: T.label, color: C.success, fontWeight: W.semibold, marginTop: 1 }}>
+                      Conferido por {x.c.reviewedByName || '—'}
+                    </p>
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 const execPagerBtn = {
   width: 30, height: 30, borderRadius: R.sm, border: `1px solid ${C.borderStrong}`,
   background: 'white', color: C.ink, fontSize: T.bodyLg, lineHeight: 1,
@@ -3997,8 +4220,20 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         </>
       )}
 
+      {/* A FILA — agrupada por checklist. Substituiu a lista cronológica, que
+          repetia o mesmo checklist dezenas de vezes e obrigava a rolar para
+          descobrir o que pedia atenção. */}
+      <ConferenceQueue
+        completions={filtered} templates={templates} units={units}
+        accent={unit.color} onOpen={c => setReviewing(c)}
+      />
+      </>)}
+
+      {vista === 'analise' && (<>
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
-          precisa ser visível também no Relatórios, não só no Painel do dia). */}
+          precisa ser visível também no Relatórios, não só no Painel do dia).
+          Vive na ANÁLISE: aqui não se trabalha a fila, se procura um registro
+          específico e se olha a prova. */}
       <Eyebrow>Execuções do período</Eyebrow>
       {canReview && (
         <div className="flex gap-2" style={{ margin: '4px 0 8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -4102,9 +4337,6 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         })()}
       </div>
 
-      </>)}
-
-      {vista === 'analise' && (<>
       <Eyebrow>Exportar</Eyebrow>
       <div className="flex gap-2">
         <button
