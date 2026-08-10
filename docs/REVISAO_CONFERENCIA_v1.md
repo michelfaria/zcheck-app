@@ -161,7 +161,8 @@ esforço do dia 28 ainda conta.
 - **Painel** — sempre o mês corrente, sem seletor. É a tela da operação do dia,
   e o colaborador também a vê; dois seletores independentes trariam de volta o
   "qual dos dois vale".
-- **Equipe** (só liderança, por `ROLE_TABS`) — o SELETOR INTEIRO da aba Dados:
+- **Equipe** (só liderança, por `ROLE_TABS`) — o SELETOR INTEIRO da aba Dados,
+  valendo para os DOIS rankings da aba (colaborador e liderança):
   Hoje · 7 dias · 30 dias · Mês (com escolha do mês) · Tudo · Personalizado
   (intervalo de datas). Padrão em Mês. `PERIODS` e `periodDates` são reusados,
   não reimplementados — duas telas oferecendo "Personalizado" com regras de

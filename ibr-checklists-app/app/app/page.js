@@ -10380,10 +10380,15 @@ function rankingPeriod(periodId, tz, completions, opt = {}) {
   const lista = periodDates(periodId, opt.from, opt.to, opt.mes, tz);
 
   if (!lista) {
+    // Intervalo CONTÍNUO da primeira execução até hoje — não só os dias que
+    // tiveram execução. A aderência da liderança conta o PREVISTO iterando
+    // estas datas: um dia em que a loja não entregou nada precisa aparecer no
+    // denominador, senão sumir do trabalho melhoraria a nota de quem responde.
     const datas = [...new Set((completions || []).map(c => c.date).filter(Boolean))].sort();
     const inicio = datas[0] || hoje;
-    const days = Math.max(1, Math.round((new Date(`${hoje}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / 86400000) + 1);
-    return { id: periodId, label: 'todo o período', dates: new Set(datas), days };
+    const todos = [];
+    for (let d = inicio; d <= hoje; d = addDays(d, 1)) todos.push(d);
+    return { id: periodId, label: 'todo o período', dates: new Set(todos), days: Math.max(1, todos.length) };
   }
 
   // Só os dias decorridos contam no denominador. Um período que termina no
@@ -10881,7 +10886,7 @@ function deadlineIndex(templates) {
  * correto para medir esforço individual, mas significa que as duas não podem
  * chegar a 100% ao mesmo tempo.
  */
-function computeLeadershipProfile({ completions, templates, closures, units, leader, days = 30, today }) {
+function computeLeadershipProfile({ completions, templates, closures, units, leader, periodo, today }) {
   // `isUnitClosed` e `countApplicableTemplatesOnDate` assumem array; este cálculo
   // roda num useMemo que dispara antes de templates/closures terminarem de
   // carregar, e um `undefined.some` derrubaria a aba inteira.
@@ -10895,8 +10900,12 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // Líder preso a uma loja mede pelo relógio dela; quem responde pela empresa
   // toda mede pela primeira do escopo — não existe um dia único para a rede.
   const tz = tzOf(scopeUnits[0]);
-  const dates = lastDays(days, null, tz);
-  const dateSet = new Set(dates);
+  // O período vem pronto do seletor da aba Equipe — o MESMO objeto que o
+  // ranking do colaborador usa (`rankingPeriod`). Sem ele, mês corrente.
+  const per = periodo || rankingPeriod(RANKING_PERIOD_DEFAULT, tz, completions);
+  const dateSet = per.dates;
+  const dates = [...dateSet].sort();
+  const days = per.days;
 
   // `teamRaw` guarda as submissões; `team` é uma por rodada. A distinção importa
   // porque as três partes do índice pesam coisas diferentes — ver cada uma abaixo.
@@ -12220,12 +12229,12 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       .map(u => ({
         user: u,
         profile: computeLeadershipProfile({
-          completions, templates, closures, units: unitsInScope, leader: u, today,
+          completions, templates, closures, units: unitsInScope, leader: u, today, periodo,
         }),
       }))
       .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
         || b.profile.teamChecklists - a.profile.teamChecklists);
-  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser]);
+  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser, periodo, today]);
 
   // Perfil do colaborador selecionado (visão do líder)
   if (selected) {
@@ -12259,7 +12268,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       </Eyebrow>
       <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
         {groupBy === 'lideranca'
-          ? 'Índice de liderança: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%). Últimos 30 dias.'
+          ? `Índice de liderança de ${periodo.label}: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%).`
           : `Ordenado pelo índice operacional de ${periodo.label}: ${collabIndexSentence()}.`}
       </p>
 
@@ -12269,10 +12278,11 @@ export function EquipeView({ currentUser, users, completions, templates, closure
         <PillButton active={groupBy === 'lideranca'} accent={accent} onClick={() => setGroupBy('lideranca')}>Liderança</PillButton>
       </div>
 
-      {/* Período — só no ranking do colaborador. O da liderança tem janela
-          própria de 30 dias (`computeLeadershipProfile`), e oferecer um seletor
-          que não muda nada seria mentir sobre o que o controle faz. */}
-      {groupBy !== 'lideranca' && (
+      {/* Período — vale para os DOIS rankings desta aba. Antes só o do
+          colaborador respeitava o seletor e o da liderança ficava preso em 30
+          dias: a mesma tela responderia sobre períodos diferentes conforme a
+          aba interna, que é o defeito que este seletor existe para não ter. */}
+      {(
         <>
           <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 6 }}>
             Período
