@@ -2563,7 +2563,7 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
   // que recomeça no dia 1º é o que faz constância virar objetivo. Escolher
   // período é coisa da aba Equipe, onde se analisa.
   const periodoPainel = useMemo(
-    () => rankingPeriod('mes', tzOf(unit), completions),
+    () => rankingPeriod(RANKING_PERIOD_DEFAULT, tzOf(unit), completions),
     [unit, completions],
   );
   const ranking7 = useMemo(() => {
@@ -10347,37 +10347,63 @@ const QUALITY_MIN_JULGADAS = 5;
  *
  * @returns {{ id, label, dates: Set<string>, days: number }}
  */
-const RANKING_PERIOD_OPTIONS = [
-  { id: 'mes',  label: 'Este mês' },
-  { id: '30d',  label: '30 dias' },
-  { id: '60d',  label: '60 dias' },
-  { id: '90d',  label: '90 dias' },
-  { id: 'tudo', label: 'Tudo' },
-];
-const RANKING_PERIOD_DEFAULT = 'mes';
+const RANKING_PERIOD_DEFAULT = 'month';
 
-function rankingPeriod(id, tz, completions) {
+/**
+ * Envelope do período para o ranking — MESMO seletor da aba Dados.
+ *
+ * `PERIODS` e `periodDates` são reusados de propósito, não reimplementados:
+ * duas telas do mesmo app oferecendo "Personalizado" com regras diferentes de
+ * borda (o dia final entra? intervalo invertido faz o quê?) é o tipo de
+ * divergência que ninguém percebe até dar número diferente para a mesma
+ * pergunta. Quem já sabe escolher período em Dados sabe escolher aqui.
+ *
+ * O que este envelope acrescenta é o que o ranking precisa e o relatório não:
+ *
+ *   `days` — DENOMINADOR DA CONSTÂNCIA. São os dias do período que JÁ
+ *   PASSARAM, não o tamanho dele: no dia 3 do mês ninguém pode aparecer com
+ *   10% de constância porque o mês tem 30 dias. Em "Tudo" é o intervalo real
+ *   desde a primeira execução — dividir por 90 fixo faria toda empresa nova
+ *   parecer inconstante no primeiro mês de uso.
+ *
+ *   `label` — a frase que as telas exibem, para "de quando é este ranking?"
+ *   ter uma resposta só.
+ *
+ * `periodDates` devolve `null` para "Tudo" e para um Personalizado incompleto.
+ * Os dois caem no histórico inteiro, igual à aba Dados: um ranking que esvazia
+ * enquanto a pessoa digita a segunda data pareceria defeito.
+ *
+ * @param {object} opt  { from, to, mes }  — os controles do seletor
+ */
+function rankingPeriod(periodId, tz, completions, opt = {}) {
   const hoje = todayStr(tz);
-  if (id === 'mes') {
-    // Do dia 1º até hoje, no relógio da loja. `slice(8)` é o dia do mês, que é
-    // exatamente quantos dias já decorreram — inclusive hoje.
-    const decorridos = Number(hoje.slice(8, 10));
-    const dates = new Set(Array.from({ length: decorridos }, (_, i) => `${hoje.slice(0, 8)}${String(i + 1).padStart(2, '0')}`));
-    const mes = new Date(`${hoje}T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
-    return { id, label: `${mes} (mês corrente)`, dates, days: decorridos };
-  }
-  if (id === 'tudo') {
-    // Todo o histórico carregado. O denominador é o intervalo real entre a
-    // primeira execução e hoje — dividir por 90 fixo faria toda empresa nova
-    // parecer inconstante no primeiro mês de uso.
+  const lista = periodDates(periodId, opt.from, opt.to, opt.mes, tz);
+
+  if (!lista) {
     const datas = [...new Set((completions || []).map(c => c.date).filter(Boolean))].sort();
-    const dates = new Set(datas);
     const inicio = datas[0] || hoje;
     const days = Math.max(1, Math.round((new Date(`${hoje}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / 86400000) + 1);
-    return { id, label: 'todo o período', dates, days };
+    return { id: periodId, label: 'todo o período', dates: new Set(datas), days };
   }
-  const n = Number(id.replace('d', '')) || 30;
-  return { id, label: `últimos ${n} dias`, dates: new Set(lastDays(n, null, tz)), days: n };
+
+  // Só os dias decorridos contam no denominador. Um período que termina no
+  // futuro não pode diluir a constância de ninguém.
+  const decorridos = lista.filter(d => d <= hoje).length;
+
+  let label;
+  if (periodId === 'custom') {
+    const fmt = d => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    label = `${fmt(opt.from)} a ${fmt(opt.to)}`;
+  } else if (periodId === 'month') {
+    const ym = opt.mes || hoje.slice(0, 7);
+    const nome = new Date(`${ym}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    label = ym === hoje.slice(0, 7) ? `${nome} (em curso)` : nome;
+  } else {
+    const p = PERIODS.find(x => x.id === periodId);
+    label = periodId === 'today' ? 'hoje' : `últimos ${(p?.label || '').toLowerCase()}`;
+  }
+
+  return { id: periodId, label, dates: new Set(lista), days: Math.max(1, decorridos) };
 }
 
 /**
@@ -12101,10 +12127,16 @@ export function EquipeView({ currentUser, users, completions, templates, closure
    * Mensal é o padrão pelo mesmo motivo do Painel: placar que recomeça no dia
    * 1º fomenta constância, janela deslizante dilui o passado sozinha.
    */
+  // Mesmos nomes e mesmos defaults da aba Dados — inclusive o "Mês" como
+  // padrão, que é o pedido: placar que recomeça no dia 1º fomenta constância.
+  const equipeTz = tzOfUnit(units, currentUser?.unitId);
   const [periodId, setPeriodId] = useState(RANKING_PERIOD_DEFAULT);
+  const [selectedMonth, setSelectedMonth] = useState(() => todayStr(equipeTz).slice(0, 7));
+  const [customFrom, setCustomFrom] = useState(() => todayStr(equipeTz));
+  const [customTo, setCustomTo] = useState(() => todayStr(equipeTz));
   const periodo = useMemo(
-    () => rankingPeriod(periodId, tzOfUnit(units, currentUser?.unitId), completions),
-    [periodId, units, currentUser, completions],
+    () => rankingPeriod(periodId, equipeTz, completions, { mes: selectedMonth, from: customFrom, to: customTo }),
+    [periodId, equipeTz, completions, selectedMonth, customFrom, customTo],
   );
 
   /**
@@ -12245,13 +12277,46 @@ export function EquipeView({ currentUser, users, completions, templates, closure
           <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 6 }}>
             Período
           </p>
-          <div className="flex gap-2" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-            {RANKING_PERIOD_OPTIONS.map(op => (
-              <PillButton key={op.id} active={periodId === op.id} accent={accent} onClick={() => setPeriodId(op.id)}>
-                {op.label}
+          {/* O seletor da aba Dados, inteiro: mesmas opções, mesmos controles,
+              mesmos limites de data. Quem já escolhe período lá não aprende
+              nada novo aqui. */}
+          <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
+            {PERIODS.map(p => (
+              <PillButton key={p.id} active={periodId === p.id} accent={accent} onClick={() => setPeriodId(p.id)}>
+                {p.label}
               </PillButton>
             ))}
           </div>
+
+          {periodId === 'month' && (
+            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+              <input
+                type="month" value={selectedMonth} max={todayStr(equipeTz).slice(0, 7)}
+                onChange={e => setSelectedMonth(e.target.value)}
+                aria-label="Mês do ranking"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${accent}`, borderRadius: 8, outline: 'none' }}
+              />
+              {selectedMonth && (
+                <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>{periodo.label}</span>
+              )}
+            </div>
+          )}
+
+          {periodId === 'custom' && (
+            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+              <input
+                type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)}
+                aria-label="Início do período"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+              />
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>até</span>
+              <input
+                type="date" value={customTo} min={customFrom} max={todayStr(equipeTz)} onChange={e => setCustomTo(e.target.value)}
+                aria-label="Fim do período"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+              />
+            </div>
+          )}
         </>
       )}
 
