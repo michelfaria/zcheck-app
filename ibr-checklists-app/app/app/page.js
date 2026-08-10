@@ -1052,7 +1052,14 @@ export function generateSimulatedCompletions(templates, users, days = 7) {
         : (users.find(u => u.unitId === t.unitId && u.role === 'colaborador') || users[0]);
 
       const baseHour = shiftName === 'Manhã' ? 8.5 : shiftName === 'Tarde' ? 17.5 : 14;
-      const startedAt = new Date(d);
+      // `new Date(d)` — `d` nunca existiu, então gerar dados de teste lançava
+      // ReferenceError na primeira iteração. Achado pelo `no-undef` em
+      // 10/08/2026; o build compilava isto sem reclamar desde sempre.
+      //
+      // `T12:00:00` e não só `dateStr`: `new Date('2026-08-10')` é meia-noite
+      // UTC, que no Brasil é dia 9 às 21h — e o setHours abaixo cairia no dia
+      // ERRADO. Meio-dia local mantém a data qualquer que seja o fuso.
+      const startedAt = new Date(`${dateStr}T12:00:00`);
       startedAt.setHours(Math.floor(baseHour), Math.floor(Math.random() * 30), 0, 0);
       const spanMin = 10 + Math.random() * 50; // execução de ~10 a 60 min
 
