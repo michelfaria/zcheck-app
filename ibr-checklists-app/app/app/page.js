@@ -10304,7 +10304,12 @@ const QUALITY_MIN_JULGADAS = 5;
 
 // `tz` é o da loja da pessoa: a sequência de dias seguidos tem que virar à
 // meia-noite dela, senão quem trabalha à noite em Manaus perde ou ganha um dia.
-function computeOperationalProfile(completions, userId, userName, tz) {
+//
+// `templates` e `units` entraram para a PONTUALIDADE: o prazo mora no template
+// e é resolvido no relógio da loja (ver `completionOnTime`). Sem eles o
+// componente vem null e o índice se renormaliza — nenhuma chamada antiga
+// quebra, só deixa de medir prazo.
+function computeOperationalProfile(completions, userId, userName, tz, templates, units) {
   // Uma rodada por checklist/dia, ANTES de qualquer contagem. É o que sustenta o
   // ranking da Equipe e o Meu ID: sem isso, reexecutar um checklist inflava
   // nível, conquistas, evidências e a contagem de tarefas da pessoa — e a mesma
@@ -10366,6 +10371,48 @@ function computeOperationalProfile(completions, userId, userName, tz) {
     ? Math.max(0, 100 - (ressalvasQ * 2 + reprovadasQ * 8))
     : null;
 
+  /**
+   * PONTUALIDADE — dos checklists que a pessoa entregou e tinham prazo,
+   * quantos saíram dentro dele.
+   *
+   * Três decisões que mudam o número, todas herdadas de regras que o app já
+   * aplicava em outros lugares:
+   *
+   * 1. Pela PRIMEIRA entrega da rodada (`earliestPerRound`), não pela última.
+   *    Reabrir uma tarefa e reenviar às 18h não transforma em atraso uma
+   *    entrega feita às 9h dentro do prazo. É a mesma régua do índice da
+   *    liderança e do J.I.T. — três lugares medindo pontualidade de jeitos
+   *    diferentes seria pior que não medir.
+   *
+   * 2. Checklist SEM prazo fica fora do numerador E do denominador
+   *    (`completionOnTime` devolve null). Sem horário a cumprir não há como
+   *    ser pontual nem atrasado, e contá-lo como pontual inflaria a nota de
+   *    quem só executa checklist sem prazo.
+   *
+   * 3. A pontualidade é de quem ENTREGOU, não de quem executou as tarefas.
+   *    Entregar é o ato de apertar "Concluir": numa rodada colaborativa, quem
+   *    submeteu fora do prazo responde por isso — não o colega que fez duas
+   *    tarefas dentro dela. É por isso que este bloco filtra por submissor,
+   *    diferente da qualidade logo acima, que segue o `executed_by`.
+   *
+   * Sem corte de data, ao contrário da qualidade: o prazo é uma regra
+   * PUBLICADA no próprio checklist e sempre foi visível como "fora do prazo"
+   * nos Relatórios e no J.I.T. Passar a contá-la não muda a régua, começa a
+   * dar consequência a uma régua que já existia — e o dado histórico é
+   * completo, sem o viés que obrigou o corte da qualidade.
+   */
+  const deadlines = deadlineIndex(templates || []);
+  let prazoTotal = 0, prazoOk = 0;
+  earliestPerRound(completions)
+    .filter(c => c.operatorUserId === userId || c.operatorName === userName)
+    .forEach(c => {
+      const ok = completionOnTime(c, templates || [], deadlines, units);
+      if (ok === null) return;
+      prazoTotal++;
+      if (ok) prazoOk++;
+    });
+  const punctuality = prazoTotal ? Math.round((prazoOk / prazoTotal) * 100) : null;
+
   const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
   const streak = currentStreak(new Set(days), tz);
   const bestStreak = longestStreak(days);
@@ -10410,12 +10457,22 @@ function computeOperationalProfile(completions, userId, userName, tz) {
    */
   const CONSISTENCY_WINDOW = 30;
   const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
-  // Qualidade entrou com 0,10 e os outros três cederam proporcionalmente
-  // (0.5/0.3/0.2 × 0.9). Quando o peso subir, é AQUI que se mexe — e só aqui.
+  /**
+   * Os pesos, num lugar só. Quem entrega no prazo tem que terminar acima de
+   * quem entrega atrasado, e 0,25 é o que torna isso verdade de fato: entre
+   * 100% e 60% de pontualidade há 10 pontos de índice, mais do que qualquer
+   * empate nos outros componentes costuma produzir.
+   *
+   * A pontualidade entrou tirando peso de CONSTÂNCIA (0.18 → 0.10) mais do que
+   * dos outros de propósito: constância é `dias ativos ÷ 30`, e isso mede
+   * ESCALA antes de mérito — quem trabalha três dias por semana tem teto de
+   * ~43% por decisão da gerência, não por desempenho. Já tinha peso demais.
+   */
   const parts = [
-    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.45, value: totalItems ? avgRate : null },
-    { key: 'criticos', label: 'Críticos em dia', weight: 0.27, value: criticalRate },
-    { key: 'constancia', label: 'Constância', weight: 0.18, value: checklists ? consistency : null },
+    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.35, value: totalItems ? avgRate : null },
+    { key: 'prazo', label: 'Entregas no prazo', weight: 0.25, value: punctuality },
+    { key: 'criticos', label: 'Críticos em dia', weight: 0.20, value: criticalRate },
+    { key: 'constancia', label: 'Constância', weight: 0.10, value: checklists ? consistency : null },
     { key: 'qualidade', label: 'Qualidade avaliada', weight: 0.10, value: qualidade },
   ];
   const usable = parts.filter(x => x.value != null);
@@ -10431,6 +10488,9 @@ function computeOperationalProfile(completions, userId, userName, tz) {
     // A régua da qualidade, aberta: quem é medido precisa conseguir refazer a
     // conta. `julgadas` também explica o null (menos de 5 → sem componente).
     qualidade, julgadas, ressalvasQ, reprovadasQ,
+    // Pontualidade com os dois brutos: "87%" sozinho não deixa ninguém conferir
+    // se são 13 de 15 ou 87 de 100 — e a diferença muda o quanto um atraso pesa.
+    punctuality, prazoOk, prazoTotal,
     recent: mine.slice(-8).reverse(),
   };
 }
@@ -11095,7 +11155,7 @@ function buildBriefingText({ userName, taxa, aprovadas, ressalvas, reprovadas, n
   return { titulo, tom, resumo, sugestoes: sugestoes.slice(0, 3) };
 }
 
-export function OperationalIdView({ targetUser, viewer, completions, accent, onRecognize, onChangePhoto, briefing, onOpenBriefing }) {
+export function OperationalIdView({ targetUser, viewer, completions, templates, accent, onRecognize, onChangePhoto, briefing, onOpenBriefing }) {
   const isSelf = !viewer || viewer.id === targetUser.id;
   // A tela é o perfil da pessoa, mas mostrava só nome e papel. Sem a loja, quem
   // abre o ID de um colaborador em empresa com várias unidades não sabe de onde
@@ -11106,8 +11166,8 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
     ? ((idUnits || []).find(u => u.id === targetUser.unitId)?.name || null)
     : (MANAGER_ROLES.includes(targetUser.role) ? 'Todas as lojas' : null);
   const p = useMemo(
-    () => computeOperationalProfile(completions, targetUser.id, targetUser.name, tzOfUnit(idUnits, targetUser.unitId)),
-    [completions, targetUser.id, targetUser.name, idUnits],
+    () => computeOperationalProfile(completions, targetUser.id, targetUser.name, tzOfUnit(idUnits, targetUser.unitId), templates, idUnits),
+    [completions, targetUser.id, targetUser.name, idUnits, templates],
   );
   // Score de produtividade da pessoa vs média da empresa (mesma régua do Relatórios)
   const prodScore = useMemo(() => {
@@ -11295,8 +11355,30 @@ export function OperationalIdView({ targetUser, viewer, completions, accent, onR
                   </div>
                 ))}
               </div>
+              {/* A pontualidade ganha linha própria, e não só a do
+                  detalhamento: é o número que a pessoa consegue mudar amanhã de
+                  manhã, e o único cuja conta cabe inteira numa frase. Os dois
+                  brutos vão junto porque "87%" não deixa ninguém conferir se
+                  são 13 de 15 ou 87 de 100 — e a diferença muda o quanto um
+                  atraso pesa. */}
+              {p.punctuality != null && (
+                <p style={{ fontSize: T.caption, color: C.ink, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Clock size={13} color={p.punctuality >= 90 ? C.success : p.punctuality >= 70 ? C.warning : C.critical} aria-hidden />
+                  <span>
+                    <strong style={{ fontWeight: W.semibold, color: p.punctuality >= 90 ? C.success : p.punctuality >= 70 ? C.warning : C.critical }}>
+                      {p.punctuality}% no prazo
+                    </strong>
+                    <span style={{ color: C.mutedLight }}> · {p.prazoOk} de {p.prazoTotal} entregas com prazo</span>
+                  </span>
+                </p>
+              )}
               <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 6 }}>
                 Constância = dias com atividade nos últimos {p.consistencyWindow} dias.
+              </p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                {p.punctuality != null
+                  ? 'Entregas no prazo = checklists que você entregou dentro do horário do próprio checklist. Checklist sem prazo definido não entra na conta.'
+                  : 'Entregas no prazo aparece quando você entregar um checklist que tenha horário definido.'}
               </p>
               {/* A régua da qualidade, por extenso. Quem é medido tem que
                   conseguir refazer a conta de cabeça — "ressalva vale 0,6 numa
@@ -11862,7 +11944,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
    * quadro nenhum: listar ali quem nunca trabalhou naquele setor seria ruído.
    */
   const rank = (scopeCompletions, candidates, onlyActive) => candidates
-    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name, tzOfUnit(units, u.unitId)) }))
+    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name, tzOfUnit(units, u.unitId), templates, units) }))
     .filter(x => !onlyActive || x.profile.checklists > 0 || x.profile.tasksDone > 0)
     .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
       || b.profile.tasksDone - a.profile.tasksDone
@@ -11936,7 +12018,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       <div>
         <BackBar onBack={() => setSelected(null)} label="Voltar para a equipe" accent={accent} />
         <OperationalIdView
-          targetUser={selected} viewer={currentUser} completions={completions} accent={accent}
+          targetUser={selected} viewer={currentUser} completions={completions} templates={templates} accent={accent}
           onRecognize={profile => setRecognizeFor({ user: selected, profile })}
         />
         {recognizeFor && (
@@ -13384,7 +13466,7 @@ function AppInner() {
             </div>
           )
         )}
-        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
+        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} templates={templates || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
         {activeTab === 'unidades' && (
           <UnidadesView
             units={ACTIVE_UNITS} templates={templates} completions={completions || []}
