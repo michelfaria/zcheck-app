@@ -152,7 +152,19 @@ Os pesos do índice do colaborador, desde 08/08/2026:
 | Constância | 0,10 | dias com atividade ÷ 30 |
 | Qualidade avaliada | 0,10 | o julgamento da liderança |
 
-Fonte única em `COLLAB_INDEX_PARTS` (page.js). A frase que explica o ranking
+**Janela: últimos 30 dias**, no relógio da loja da pessoa — TODOS os
+componentes. Antes cada um media um período diferente (conclusão, prazo e
+críticos varriam os 90 dias carregados; constância dividia por 30, então quem
+tivesse mais de 30 dias ativos saturava em 100% para sempre). Um índice que
+soma pedaços de janelas distintas não significa nada, e não respondia "esse
+ranking é de quando?".
+
+Ficam FORA da janela, de propósito: nível, conquistas, evidências, total de
+tarefas, sequência de dias e a evolução semanal. Esses são história da pessoa,
+não desempenho recente — zerar a conquista de alguém porque tirou férias seria
+punir o calendário.
+
+Fonte única em `COLLAB_INDEX_PARTS` (page.js), janela em `RANKING_WINDOW_DAYS`. A frase que explica o ranking
 na aba Equipe e no Painel é GERADA dali — mexer num peso corrige as duas
 descrições junto. Pesos definidos pelo Michel em 10/08/2026.
 

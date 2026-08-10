@@ -2961,12 +2961,12 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
 
           {/* Ranking da equipe — penúltimo. Mesmo índice da aba Equipe: ver o
               comentário em `ranking7`. */}
-          <Eyebrow>Ranking da equipe · índice operacional</Eyebrow>
+          <Eyebrow>Ranking da equipe · {RANKING_WINDOW_LABEL}</Eyebrow>
           {/* A MESMA frase da aba Equipe, da mesma fonte. Duas telas mostrando
               o mesmo ranking precisam explicá-lo com as mesmas palavras — se
               divergirem, volta a parecer que são duas réguas. */}
           <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
-            Ordenado pelo índice operacional: {collabIndexSentence()}.
+            Ordenado pelo índice operacional dos {RANKING_WINDOW_LABEL}: {collabIndexSentence()}.
           </p>
           {ranking7.length === 0 ? (
             <Ticket accent={C.border}>
@@ -10324,6 +10324,19 @@ const QUALITY_CUTOFF = '2026-08-09';
 const QUALITY_MIN_JULGADAS = 5;
 
 /**
+ * A janela do índice do colaborador: ÚLTIMOS 30 DIAS, no relógio da loja dele.
+ *
+ * Trinta porque é o ciclo que a operação já usa — mesma janela do índice da
+ * liderança e do ID da loja. Um ranking precisa responder "de quando?" com uma
+ * frase só, e precisa que TODOS os componentes respondam a mesma coisa.
+ *
+ * Se mudar aqui, muda no cálculo e nos rótulos das três telas juntos: a frase
+ * exibida sai de `RANKING_WINDOW_LABEL`.
+ */
+const RANKING_WINDOW_DAYS = 30;
+const RANKING_WINDOW_LABEL = `últimos ${RANKING_WINDOW_DAYS} dias`;
+
+/**
  * Os pesos do índice do colaborador — FONTE ÚNICA.
  *
  * Ficavam só dentro de `computeOperationalProfile`, e a frase que explica o
@@ -10378,20 +10391,48 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
   // tarefa era creditada duas vezes, porque a segunda submissão carrega os itens
   // da primeira (com o `doneBy` original).
   const rounds = latestPerRound(completions);
-  const mine = rounds
+  const mineAll = rounds
     .filter(c => c.operatorUserId === userId || c.operatorName === userName)
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
+  /**
+   * A JANELA DO ÍNDICE — e por que ela existe.
+   *
+   * Antes cada componente media um período diferente: conclusão, prazo e
+   * críticos varriam tudo que estivesse carregado (90 dias), enquanto
+   * constância dividia por 30. Quem tivesse mais de 30 dias ativos saturava em
+   * 100% de constância para sempre, e o índice somava pedaços de janelas
+   * distintas — um número composto assim não significa coisa nenhuma, e não
+   * havia como responder "esse ranking é de quando?".
+   *
+   * Agora TODO componente do índice olha os mesmos últimos 30 dias, no relógio
+   * da loja da pessoa. Trinta porque é o ciclo que a operação já usa: é a
+   * janela do índice da liderança (`computeLeadershipProfile`) e do ID da loja.
+   *
+   * O que fica FORA da janela, de propósito: nível, conquistas, evidências,
+   * total de tarefas, sequência de dias e a evolução semanal. Esses são
+   * história da pessoa, não desempenho recente — zerar a conquista de alguém
+   * porque ela tirou férias seria punir o calendário. Por isso `mineAll`
+   * (tudo) e `mine` (janela) andam separados daqui para baixo.
+   */
+  const janela = new Set(lastDays(RANKING_WINDOW_DAYS, null, tz));
+  const mine = mineAll.filter(c => janela.has(c.date));
+  const roundsJanela = rounds.filter(c => janela.has(c.date));
+
   // `taskCounts` no lugar de `i.done`: tarefa reprovada pela liderança volta a
   // valer como não executada, aqui e em todo lugar que mede execução.
-  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0, evidences = 0;
+  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0;
   mine.forEach(c => (c.items || []).forEach(i => {
     totalItems++; if (taskCounts(i)) doneItems++;
     if (i.critical) { critTotal++; if (taskCounts(i)) critDone++; }
-    if (i.hasPhoto) evidences++;
   }));
 
-  const checklists = mine.length;
+  // Evidências e total de checklists são CONTADORES de história — vêm de tudo.
+  let evidences = 0;
+  mineAll.forEach(c => (c.items || []).forEach(i => { if (i.hasPhoto) evidences++; }));
+
+  const checklists = mineAll.length;
+  const checklistsJanela = mine.length;
   const avgRate = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
   const criticalRate = critTotal ? Math.round((critDone / critTotal) * 100) : null;
 
@@ -10399,7 +10440,8 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
   // colega submeteu (execução colaborativa, item.doneBy). Registros antigos sem
   // doneBy creditam ao responsável pelo checklist.
   let tasksDone = 0, criticalDone = 0;
-  const participationDays = new Set();
+  const participationDays = new Set();     // história (sequência de dias)
+  const participationJanela = new Set();   // janela (constância)
   // ── Qualidade avaliada (pontuação, decisão de 08/08) ──
   // Sobre as tarefas que a pessoa EXECUTOU e a liderança JULGOU, a partir do
   // corte. Penalidade contável, não média: com 96,9% de aprovação medidos, uma
@@ -10413,7 +10455,9 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
       const executedByMe = i.review?.executedBy
         ? i.review.executedBy === userId
         : i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
-      if (executedByMe && i.review?.verdict
+      // Qualidade é COMPONENTE DO ÍNDICE: só conta dentro da janela, e só
+      // depois do corte que impede a régua nova de valer para trás.
+      if (executedByMe && i.review?.verdict && janela.has(c.date)
           && (i.review.reviewedAt || '').slice(0, 10) >= QUALITY_CUTOFF) {
         julgadas++;
         // Apontamento SEM MOTIVO não pontua: se a liderança não explicou, não
@@ -10426,7 +10470,10 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
       if (!executedByMe) return;
       tasksDone++;
       if (i.critical) criticalDone++;
-      if (c.date) participationDays.add(c.date);
+      if (c.date) {
+        participationDays.add(c.date);
+        if (janela.has(c.date)) participationJanela.add(c.date);
+      }
     });
   });
   const qualidade = julgadas >= QUALITY_MIN_JULGADAS
@@ -10461,12 +10508,14 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
    * PUBLICADA no próprio checklist e sempre foi visível como "fora do prazo"
    * nos Relatórios e no J.I.T. Passar a contá-la não muda a régua, começa a
    * dar consequência a uma régua que já existia — e o dado histórico é
-   * completo, sem o viés que obrigou o corte da qualidade.
+   * completo, sem o viés que obrigou o corte da qualidade. O que a limita é a
+   * janela do índice, como todo componente.
    */
   const deadlines = deadlineIndex(templates || []);
   let prazoTotal = 0, prazoOk = 0;
   earliestPerRound(completions)
-    .filter(c => c.operatorUserId === userId || c.operatorName === userName)
+    .filter(c => janela.has(c.date)
+      && (c.operatorUserId === userId || c.operatorName === userName))
     .forEach(c => {
       const ok = completionOnTime(c, templates || [], deadlines, units);
       if (ok === null) return;
@@ -10475,13 +10524,19 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
     });
   const punctuality = prazoTotal ? Math.round((prazoOk / prazoTotal) * 100) : null;
 
-  const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
+  // Sequência de dias é HISTÓRIA: sai de tudo, não da janela.
+  const days = [...new Set([...mineAll.map(c => c.date), ...participationDays])];
   const streak = currentStreak(new Set(days), tz);
   const bestStreak = longestStreak(days);
+  // Constância é ÍNDICE: dias ativos DENTRO da janela ÷ tamanho da janela.
+  // Antes o numerador vinha de todo o histórico e o denominador era 30 fixo —
+  // qualquer pessoa com mais de 30 dias ativos batia 100% e ficava lá.
+  const activeDaysJanela = [...new Set([...mine.map(c => c.date), ...participationJanela])];
 
   // Evolução: taxa de conclusão por semana (últimas 6 semanas com atividade).
+  // História, não janela: o gráfico existe para mostrar tendência.
   const wkMap = new Map();
-  mine.forEach(c => {
+  mineAll.forEach(c => {
     const wk = weekStartStr(c.date);
     if (!wkMap.has(wk)) wkMap.set(wk, { week: wk, total: 0, done: 0, checklists: 0 });
     const s = wkMap.get(wk); s.checklists++;
@@ -10516,9 +10571,10 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
    * que ela executou e a CONSTÂNCIA com que apareceu.
    *
    * Pesos explícitos, como no ID da unidade — um lugar só para mudar.
+   *
+   * TUDO aqui é dos últimos `RANKING_WINDOW_DAYS` dias. Ver `janela`.
    */
-  const CONSISTENCY_WINDOW = 30;
-  const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
+  const consistency = Math.min(100, Math.round((activeDaysJanela.length / RANKING_WINDOW_DAYS) * 100));
   /**
    * Os pesos vêm de `COLLAB_INDEX_PARTS` — aqui só se liga cada um ao valor.
    * Para mudar quanto cada coisa vale, é lá; nada aqui precisa saber disso.
@@ -10527,7 +10583,9 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
     conclusao: totalItems ? avgRate : null,
     prazo: punctuality,
     criticos: criticalRate,
-    constancia: checklists ? consistency : null,
+    // Sem nada na janela, constância é `null` e o índice se renormaliza —
+    // melhor que exibir 0% para quem simplesmente não trabalhou no período.
+    constancia: checklistsJanela || activeDaysJanela.length ? consistency : null,
     qualidade: qualidade,
   };
   const parts = COLLAB_INDEX_PARTS.map(p => ({ ...p, value: valorDe[p.key] }));
@@ -10540,7 +10598,10 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
     tasksDone, criticalDone,
     streak, bestStreak, activeDays: days.length,
     level, intoLevel, perLevel, weekly, achievements,
-    index, parts, consistency, consistencyWindow: CONSISTENCY_WINDOW,
+    // `checklists` é história; `checklistsJanela` é o que sustenta o índice. A
+    // tela mostra os dois em lugares diferentes e não pode confundi-los.
+    checklistsJanela, windowDays: RANKING_WINDOW_DAYS,
+    index, parts, consistency, consistencyWindow: RANKING_WINDOW_DAYS,
     // A régua da qualidade, aberta: quem é medido precisa conseguir refazer a
     // conta. `julgadas` também explica o null (menos de 5 → sem componente).
     qualidade, julgadas, ressalvasQ, reprovadasQ,
@@ -11397,8 +11458,14 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <IndexRing value={p.index} accent={accent} size={72} />
             <div style={{ flex: 1, minWidth: 200 }}>
+              {/* A janela no cabeçalho, não numa nota de rodapé: sem ela, os
+                  cinco percentuais abaixo não respondem "de quando?" — e a
+                  pessoa não sabe se um mês ruim ainda a persegue. */}
               <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
-                Índice operacional
+                Índice operacional · {RANKING_WINDOW_LABEL}
+              </p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                {p.checklistsJanela} checklist{p.checklistsJanela === 1 ? '' : 's'} no período · nível e conquistas contam a história toda
               </p>
               <div style={{ marginTop: 8 }}>
                 {p.parts.map(part => (
@@ -11424,7 +11491,7 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                     <strong style={{ fontWeight: W.semibold, color: p.punctuality >= 90 ? C.success : p.punctuality >= 70 ? C.warning : C.critical }}>
                       {p.punctuality}% no prazo
                     </strong>
-                    <span style={{ color: C.mutedLight }}> · {p.prazoOk} de {p.prazoTotal} entregas com prazo</span>
+                    <span style={{ color: C.mutedLight }}> · {p.prazoOk} de {p.prazoTotal} entregas com prazo nos {RANKING_WINDOW_LABEL}</span>
                   </span>
                 </p>
               )}
@@ -11442,8 +11509,8 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                   custa 8 pontos" passa. */}
               <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
                 {p.qualidade != null
-                  ? `Qualidade = 100 − (ressalvas × 2 + reprovações × 8), sobre ${p.julgadas} tarefas avaliadas pela liderança. Apontamento sem motivo escrito não desconta.`
-                  : 'Qualidade entra quando a liderança tiver avaliado ao menos 5 das suas tarefas (vale para avaliações a partir de 09/08/2026).'}
+                  ? `Qualidade = 100 − (ressalvas × 2 + reprovações × 8), sobre ${p.julgadas} tarefas avaliadas pela liderança no período. Apontamento sem motivo escrito não desconta.`
+                  : `Qualidade entra quando a liderança tiver avaliado ao menos ${QUALITY_MIN_JULGADAS} das suas tarefas nos ${RANKING_WINDOW_LABEL} (vale para avaliações a partir de 09/08/2026).`}
               </p>
             </div>
           </div>
@@ -12101,7 +12168,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
         {groupBy === 'lideranca'
           ? 'Índice de liderança: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%). Últimos 30 dias.'
-          : `Ordenado pelo índice operacional: ${collabIndexSentence()}.`}
+          : `Ordenado pelo índice operacional dos ${RANKING_WINDOW_LABEL}: ${collabIndexSentence()}.`}
       </p>
 
       <div className="flex gap-2" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
@@ -12222,7 +12289,15 @@ export function EquipeView({ currentUser, users, completions, templates, closure
                 <ChevronRight size={18} color={C.mutedLight} style={{ flexShrink: 0 }} />
               </div>
 
-              <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+              {/* A linha de cima são CONTADORES DE HISTÓRIA (nível, total de
+                  checklists, sequência). Daqui para baixo é a JANELA do índice.
+                  Sem esta divisória escrita, "21 checklists" ao lado de
+                  "Conclusão 100%" faz parecer que os dois falam do mesmo
+                  período — e não falam. */}
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginTop: 10 }}>
+                Índice · {RANKING_WINDOW_LABEL} · {profile.checklistsJanela} checklist{profile.checklistsJanela === 1 ? '' : 's'}
+              </p>
+              <div style={{ display: 'flex', gap: 14, marginTop: 6, paddingTop: 8, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
                 {/* Os mesmos componentes do índice, na mesma ordem de peso —
                     quem lê o card tem que conseguir ligar o número grande da
                     direita às partes que o formaram. `No prazo` leva os brutos
