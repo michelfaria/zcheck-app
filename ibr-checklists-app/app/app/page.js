@@ -37,10 +37,29 @@ import {
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
-import { todayStr, yesterdayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, instantAt, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
+import { todayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, dateStrOf, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
-import { latestPerRound, earliestPerRound, roundKey, roundProgress, roundIsComplete, statusFromProgress, templateExistedOn, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { latestPerRound, earliestPerRound, roundKey, roundProgress, statusFromProgress, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+// Domínio do checklist (o que vale num dia, e se chegou no prazo) e agregação
+// das execuções. Saíram daqui na Fase 1a da consolidação de abas: as três views
+// de análise dependiam deles, e nenhuma podia sair de page.js enquanto eles
+// vivessem no escopo de módulo daqui. Ver docs/PLANO_CONSOLIDACAO_ABAS.md.
+import {
+  CHECKLIST_TYPE_ORDER, matchesShift, isItemApplicable, applicableItems,
+  templateAtiva, completeRoundChecker, completionOnTime, deadlineIndex,
+} from '../../lib/checklists';
+import {
+  PERIODS, PUNCTUALITY_PERIODS, PUNCTUALITY_GROUPS, periodDates, filterCompletions,
+  countApplicableTemplatesOnDate, summarizeCompletions, collaboratorStats,
+  groupStats, punctualityStats, computeProductivity,
+} from '../../lib/stats';
+// Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
+import {
+  ROLE_LABELS, MANAGER_ROLES, STATUS_CFG, Eyebrow, Ticket, StarRating, Avatar,
+  RatingLabel, StatusBadge, EmptyState, PillButton, StatCard, RateBar, RankBadge,
+  PhotoModal,
+} from '../../components/painel/shared';
 
 // Thin local storage adapter still used for the version-check key
 import { storageGet, storageSet } from '../../lib/storage';
@@ -120,12 +139,6 @@ function sectorLabelFor(sectorId, sectorRows) {
   return (sectorRows || []).find(s => s.id === sectorId)?.name || '';
 }
 
-const ROLE_LABELS = {
-  colaborador: 'Colaborador',
-  lideranca: 'Liderança',
-  gerencia: 'Gerência',
-  gestao: 'Diretoria',
-};
 
 const ROLE_DESCRIPTIONS = {
   colaborador: 'Executa os checklists da sua loja',
@@ -156,8 +169,6 @@ const ROLE_TABS = {
   gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'id', 'equipe'],
 };
 
-// Papéis de gestão que recebem o J.I.T. (H1 — ver docs/REVISAO_MVP_v1.3.md §7).
-const MANAGER_ROLES = ['lideranca', 'gerencia', 'gestao'];
 
 // Papéis que aparecem no ranking da equipe: quem tem loja fixa e executa
 // checklist nela. Gerência e diretoria ficam de fora (unitId null).
@@ -726,8 +737,8 @@ const SEED_TEMPLATES = generateSeedTemplates();
 
 const truncName = (name, max = 22) => name && name.length > max ? name.slice(0, max).trim() + '…' : name;
 
-// A template's shift can be a single shift or an array (e.g. Intermediário runs in both).
-const matchesShift = (t, shift) => Array.isArray(t.shift) ? t.shift.includes(shift) : t.shift === shift;
+// `matchesShift`, `isItemApplicable` e `applicableItems` moraram aqui até a
+// Fase 1a; agora vêm de lib/checklists.js (ver o import no topo).
 const shiftLabel = t => Array.isArray(t.shift) ? t.shift.join(' e ') : t.shift;
 
 // Returns true if the given unit is marked as closed on the given date.
@@ -736,302 +747,6 @@ const isUnitClosed = (closures, unitId, dateStr) =>
 
 // Recurrence: undefined/null/empty = every day. Otherwise an array of weekday numbers (0=Dom ... 6=Sáb).
 const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const isItemApplicable = (item, dateStr, templateType) => {
-  // If item has explicit appearsIn, check it matches the template type
-  if (item.appearsIn && item.appearsIn.length > 0) {
-    if (templateType && !item.appearsIn.includes(templateType)) return false;
-  }
-  // Check recurrence
-  if (!item.recurrence || item.recurrence.length === 0) return true;
-  return item.recurrence.includes(weekdayOf(dateStr));
-};
-const applicableItems = (template, dateStr) => {
-  // Detect template type from name
-  const n = (template.name || '').toLowerCase();
-  const templateType = n.includes('abertura') ? 'abertura' : n.includes('fechamento') ? 'fechamento' : n.includes('intermedi') ? 'intermediario' : null;
-  return template.items.filter(i => isItemApplicable(i, dateStr, templateType));
-};
-
-/* ------------------------------ report helpers ----------------------------- */
-
-const PERIODS = [
-  { id: 'today', label: 'Hoje', days: 1 },
-  { id: '7d', label: '7 dias', days: 7 },
-  { id: '30d', label: '30 dias', days: 30 },
-  { id: 'month', label: 'Mês', days: null },
-  { id: 'all', label: 'Tudo', days: null },
-  { id: 'custom', label: 'Personalizado', days: null },
-];
-
-// Returns the list of YYYY-MM-DD strings covered by a period (null for "all" / incomplete "custom").
-function periodDates(periodId, from, to, selectedMonth, tz) {
-  if (periodId === 'custom') {
-    if (!from || !to || from > to) return null;
-    const out = [];
-    for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
-    return out;
-  }
-  if (periodId === 'month') {
-    const today = todayStr(tz);
-    const [y, m] = (selectedMonth || today.slice(0, 7)).split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const out = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-      const d = `${y}-${String(m).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
-      if (d <= today) out.push(d);
-    }
-    return out.length > 0 ? out : null;
-  }
-  const period = PERIODS.find(p => p.id === periodId);
-  if (!period || period.days == null) return null;
-  return lastDays(period.days, null, tz);
-}
-
-function filterCompletions(completions, f) {
-  return completions.filter(c => {
-    if (f.dates && !f.dates.includes(c.date)) return false;
-    if (f.unitId && c.unitId !== f.unitId) return false;
-    if (f.sectorList && !f.sectorList.includes(c.sector)) return false;
-    else if (f.sector && c.sector !== f.sector) return false;
-    if (f.shift && !(c.shift || '').includes(f.shift)) return false;
-    if (f.userId && c.operatorUserId !== f.userId && c.operatorName !== f.userId) return false;
-    return true;
-  });
-}
-
-// Number of checklists expected on a given date, considering each template's item-level recurrence:
-// a template counts as "expected" that day if at least one of its items applies to that weekday.
-// Checklist que a OPERAÇÃO vê. Desativado continua carregado (o histórico
-// depende dele), mas não aparece para executar nem para gerenciar.
-const templateAtiva = t => t.active !== false;
-
-/**
- * Fábrica do teste "esta rodada foi entregue completa?" para a aderência.
- *
- * Resolve o checklist e os itens previstos para o dia — com cache por
- * (checklist, data), porque a aderência varre 30 dias × todas as execuções e sem
- * o cache seria um `find` + `applicableItems` por linha, a cada render.
- */
-function completeRoundChecker(templates) {
-  const byId = new Map((templates || []).map(t => [t.id, t]));
-  const cache = new Map();
-  return c => {
-    const k = `${c.templateId}|${c.date}`;
-    if (!cache.has(k)) {
-      const t = byId.get(c.templateId);
-      cache.set(k, t ? applicableItems(t, c.date).map(i => i.id) : null);
-    }
-    return roundIsComplete(c, cache.get(k));
-  };
-}
-
-function countApplicableTemplatesOnDate(templates, f, dateStr) {
-  return templates.filter(t => {
-    if (f.unitId && t.unitId !== f.unitId) return false;
-    if (f.sector && t.sector !== f.sector) return false;
-    if (f.shift && !matchesShift(t, f.shift)) return false;
-    if (!templateExistedOn(t, dateStr)) return false;
-    return t.items.some(i => isItemApplicable(i, dateStr));
-  }).length;
-}
-
-function summarizeCompletions(filtered) {
-  let totalItems = 0, doneItems = 0, criticalPending = 0, photos = 0;
-  filtered.forEach(c => {
-    totalItems += c.items.length;
-    c.items.forEach(i => {
-      if (i.done) doneItems += 1;
-      if (i.critical && !i.done) criticalPending += 1;
-      if (i.hasPhoto) photos += 1;
-    });
-  });
-  return {
-    checklists: filtered.length,
-    totalItems, doneItems,
-    rate: totalItems ? (doneItems / totalItems) * 100 : 0,
-    criticalPending, photos,
-  };
-}
-
-// "Nível de realização das tarefas" por colaborador.
-// A contagem é por TAREFA executada (item.doneBy — execução colaborativa), não
-// só por checklist submetido: quem divide um checklist com um colega recebe
-// crédito pelas tarefas que fez. Registros antigos (sem doneBy) creditam as
-// tarefas a quem submeteu o checklist.
-function collaboratorStats(entrada) {
-  const filtered = latestPerRound(entrada);
-  const map = new Map();
-  const ensure = (key, name, at) => {
-    if (!map.has(key)) map.set(key, { key, name: name || 'Sem responsável', checklists: 0, totalItems: 0, doneItems: 0, tasksDone: 0, criticalDone: 0, criticalPending: 0, photos: 0, last: at });
-    return map.get(key);
-  };
-  filtered.forEach(c => {
-    const subKey = c.operatorUserId || c.operatorName || '—';
-    const s = ensure(subKey, c.operatorName, c.completedAt);
-    s.checklists += 1;
-    s.totalItems += c.items.length;
-    if (c.completedAt > s.last) s.last = c.completedAt;
-    c.items.forEach(i => {
-      if (i.critical && !i.done) s.criticalPending += 1;
-      if (i.hasPhoto) s.photos += 1;
-      if (!i.done) return;
-      s.doneItems += 1; // realização do checklist que a pessoa submeteu
-      const ex = i.doneBy && i.doneBy !== subKey
-        ? ensure(i.doneBy, i.doneByName, i.doneAt || c.completedAt)
-        : s;
-      ex.tasksDone += 1;
-      if (i.critical) ex.criticalDone += 1;
-      const at = i.doneAt || c.completedAt;
-      if (at > ex.last) ex.last = at;
-    });
-  });
-  return [...map.values()]
-    .map(s => ({ ...s, rate: s.totalItems ? (s.doneItems / s.totalItems) * 100 : null }))
-    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1) || b.tasksDone - a.tasksDone);
-}
-
-// Agrupa por loja, setor ou turno.
-// `units` vem do chamador (as unidades da empresa logada). O default UNITS
-// preserva o IBR; sem o parâmetro, toda empresa resolvia nomes de loja pela
-// tabela do IBR e caía no fallback do id cru.
-// `types` idem: os tipos de checklist da empresa (ACTIVE_TYPES); o default
-// preserva o IBR, mas tipos personalizados só agrupam certo com o parâmetro.
-function groupStats(filtered, groupBy, units = UNITS, types = CHECKLIST_TYPE_ORDER) {
-  const map = new Map();
-  filtered.forEach(c => {
-    let key;
-    if (groupBy === 'loja') key = units.find(u => u.id === c.unitId)?.name || c.unitId;
-    else if (groupBy === 'setor') key = c.sector;
-    else if (groupBy === 'tipo') {
-      const ct = types.find(ct => ct.match({ name: c.templateName }));
-      key = ct ? ct.label : c.templateName;
-    }
-    else key = c.shift || '—';
-    if (!map.has(key)) map.set(key, { key, checklists: 0, totalItems: 0, doneItems: 0, criticalPending: 0 });
-    const s = map.get(key);
-    s.checklists += 1;
-    s.totalItems += c.items.length;
-    c.items.forEach(i => {
-      if (i.done) s.doneItems += 1;
-      if (i.critical && !i.done) s.criticalPending += 1;
-    });
-  });
-  return [...map.values()]
-    .map(s => ({ ...s, rate: s.totalItems ? (s.doneItems / s.totalItems) * 100 : 0 }))
-    .sort((a, b) => b.checklists - a.checklists);
-}
-
-/**
- * Pontualidade — quantos checklists foram entregues DENTRO do prazo do próprio
- * checklist e quantos passaram do horário, com o mesmo recorte por loja e por
- * setor que o resto do J.I.T.
- *
- * A regra de "no prazo" é uma só em todo o app: `completionOnTime`. Ela devolve
- * `null` para checklist SEM prazo (o "Intermediário", por exemplo) — sem
- * horário a cumprir, ele não pode ser nem pontual nem atrasado. Esses ficam
- * fora do numerador E do denominador, e voltam separados em `noDeadline`: o
- * gestor precisa saber que a conta não cobre a operação inteira, senão lê "15
- * checklists" onde rodaram 40.
- *
- * A ordenação é do PIOR para o melhor (menor % no prazo primeiro). O J.I.T. é
- * uma tela de decisão: o que precisa de atenção vem antes do que já vai bem.
- */
-const PUNCTUALITY_PERIODS = [{ id: 'today', label: 'Hoje' }, { id: 'last7', label: '7 dias' }];
-const PUNCTUALITY_GROUPS = [{ id: 'loja', label: 'Loja' }, { id: 'setor', label: 'Setor' }];
-
-function punctualityStats(filtered, templates, units) {
-  let onTime = 0, late = 0, noDeadline = 0;
-  const deadlines = deadlineIndex(templates);
-  const byUnit = new Map(), bySector = new Map();
-  const bump = (map, key, name, ok) => {
-    if (!map.has(key)) map.set(key, { key, name, onTime: 0, late: 0 });
-    const g = map.get(key);
-    if (ok) g.onTime += 1; else g.late += 1;
-  };
-  (filtered || []).forEach(c => {
-    const ok = completionOnTime(c, templates, deadlines, units);
-    if (ok === null) { noDeadline += 1; return; }
-    if (ok) onTime += 1; else late += 1;
-    const uName = (units || []).find(u => u.id === c.unitId)?.name || c.unitId || 'Sem loja';
-    bump(byUnit, c.unitId || '—', uName, ok);
-    bump(bySector, c.sector || '—', c.sector || 'Sem setor', ok);
-  });
-  const finish = map => [...map.values()]
-    .map(g => ({ ...g, total: g.onTime + g.late, rate: Math.round((g.onTime / (g.onTime + g.late)) * 100) }))
-    .sort((a, b) => a.rate - b.rate || b.total - a.total);
-  const total = onTime + late;
-  return {
-    onTime, late, total, noDeadline,
-    rate: total ? Math.round((onTime / total) * 100) : null,
-    byUnit: finish(byUnit),
-    bySector: finish(bySector),
-  };
-}
-
-/* ------------------------------ produtividade ------------------------------ */
-//
-// Fórmula (transparente para a gestão):
-//   Pontos      tarefa comum concluída = 1 · tarefa CRÍTICA = 2 ·
-//               checklist 100% completo = +3 pts distribuídos entre os
-//               executores na proporção das tarefas que cada um fez.
-//   Tempo ativo por checklist e por executor: intervalo entre a primeira e a
-//               última tarefa que a pessoa marcou (mínimo 1 min). Registros
-//               antigos sem horário por tarefa não entram no ritmo.
-//   Ritmo       pontos por hora ativa (pts/h).
-//   Score       ritmo ÷ ritmo médio da EMPRESA no período × 100.
-//               100 = na média da empresa · >100 acima · <100 abaixo.
-// O mesmo cálculo agrega colaborador, setor, loja e empresa — comparáveis entre si.
-function computeProductivity(completions) {
-  const mkAgg = (key, name) => ({ key, name, points: 0, timedPoints: 0, minutes: 0, tasks: 0, criticals: 0, fullChecklists: 0, unitIds: new Set() });
-  const collabs = new Map(), units = new Map(), sectors = new Map();
-  const company = mkAgg('empresa', 'Empresa');
-  const ensure = (map, key, name) => { if (!map.has(key)) map.set(key, mkAgg(key, name)); return map.get(key); };
-
-  // Uma rodada por checklist/dia/loja: reexecução não multiplica pontos.
-  latestPerRound(completions).forEach(c => {
-    const items = c.items || [];
-    const doneItems = items.filter(i => i.done);
-    if (doneItems.length === 0) return;
-    const isFull = doneItems.length === items.length;
-    const subKey = c.operatorUserId || c.operatorName || '—';
-
-    // Agrupa as tarefas concluídas por quem executou (colaborativo ou não)
-    const byExec = new Map();
-    doneItems.forEach(i => {
-      const key = i.doneBy || subKey;
-      if (!byExec.has(key)) byExec.set(key, { key, name: i.doneByName || c.operatorName || 'Sem responsável', pts: 0, tasks: 0, criticals: 0, times: [] });
-      const e = byExec.get(key);
-      e.pts += i.critical ? 2 : 1;
-      e.tasks += 1;
-      if (i.critical) e.criticals += 1;
-      if (i.doneAt) e.times.push(new Date(i.doneAt).getTime());
-    });
-
-    byExec.forEach(e => {
-      const pts = e.pts + (isFull ? 3 * (e.tasks / doneItems.length) : 0);
-      const minutes = e.times.length ? Math.max(1, (Math.max(...e.times) - Math.min(...e.times)) / 60000) : null;
-      const apply = agg => {
-        agg.points += pts; agg.tasks += e.tasks; agg.criticals += e.criticals;
-        if (isFull) agg.fullChecklists += e.tasks / doneItems.length; // participação proporcional
-        agg.unitIds.add(c.unitId);
-        if (minutes != null) { agg.timedPoints += pts; agg.minutes += minutes; }
-      };
-      apply(ensure(collabs, e.key, e.name));
-      apply(ensure(units, c.unitId || '—', c.unitId || '—'));
-      apply(ensure(sectors, `${c.unitId}|${c.sector || '—'}`, c.sector || '—'));
-      apply(company);
-    });
-  });
-
-  const finish = agg => ({ ...agg, rate: agg.minutes > 0 ? agg.timedPoints / (agg.minutes / 60) : null });
-  const companyF = finish(company);
-  const withScore = agg => {
-    const f = finish(agg);
-    return { ...f, score: f.rate != null && companyF.rate ? Math.round((f.rate / companyF.rate) * 100) : null };
-  };
-  const toList = map => [...map.values()].map(withScore).sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.points - a.points);
-  return { company: companyF, collaborators: toList(collabs), units: toList(units), sectors: toList(sectors) };
-}
 
 // Generates ~7 days of realistic-looking completion history (for testing the Relatórios tab).
 export function generateSimulatedCompletions(templates, users, days = 7) {
@@ -1173,35 +888,10 @@ function templateProgress(t, completions, today) {
   );
 }
 
-const STATUS_CFG = {
-  done: { label: 'Concluído', color: C.success },
-  // Âmbar, não verde nem vermelho: foi entregue (não é falha) mas não está
-  // completo (não é sucesso). Contraste medido contra C.bg — ver lib/tokens.js.
-  partial: { label: 'Parcial', color: C.warning },
-  overdue: { label: 'Atrasado', color: C.critical },
-  pending: { label: 'Pendente', color: C.pending },
-};
 
 /* ------------------------------ small atoms ------------------------------ */
 
-function Eyebrow({ children }) {
-  return (
-    <p style={{ fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted }}>
-      {children}
-    </p>
-  );
-}
 
-function Ticket({ accent, children, style, ...rest }) {
-  // Barra lateral sólida e fina, igual à dos cards do J.I.T.
-  // (a versão anterior tinha 10px com círculos perfurados — pedido de 18/07).
-  return (
-    <div {...rest} style={{ display: 'flex', background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden', ...style }}>
-      <div style={{ width: 4, flexShrink: 0, background: accent }} />
-      <div style={{ flex: 1, padding: 12, minWidth: 0 }}>{children}</div>
-    </div>
-  );
-}
 
 /* Toast global de confirmação — visível de qualquer scroll/tela, ao contrário
    das mensagens inline que ficavam fora da área visível. Qualquer fluxo chama
@@ -1233,52 +923,7 @@ function ToastHost() {
   );
 }
 
-/**
- * Nota em estrelas. `Star` do lucide preenchida/vazia no lugar do caractere ★,
- * que herdava a fonte do sistema e variava de largura entre plataformas.
- * O valor vai no `aria-label` do grupo — cinco <span> não dizem "3 de 5".
- */
-function StarRating({ stars, size = 12, color = C.warning, emptyColor = C.mutedLight }) {
-  return (
-    <span role="img" aria-label={`${stars} de 5 estrelas`} style={{ display: 'inline-flex', gap: 2, flexShrink: 0 }}>
-      {[1, 2, 3, 4, 5].map(s => (
-        <Star key={s} size={size} aria-hidden
-          color={s <= stars ? color : emptyColor}
-          fill={s <= stars ? color : 'none'}
-          strokeWidth={1.5} />
-      ))}
-    </span>
-  );
-}
 
-/**
- * Ícone de perfil. Mostra a foto que a pessoa enviou; sem foto (ou se a URL
- * quebrar) volta para a inicial do nome, que era o comportamento antigo em
- * todas as telas.
- *
- * O fallback por `onError` não é zelo excessivo: a URL vive em `users`, que o
- * app serve do cache offline — um arquivo removido no bucket deixaria um ícone
- * quebrado em toda lista até a próxima sincronização.
- */
-function Avatar({ user, size = 36, bg, fg, style }) {
-  const [broken, setBroken] = useState(false);
-  const src = user?.avatarUrl;
-  const initial = (user?.name || '?').trim().charAt(0).toUpperCase() || '?';
-  const base = {
-    width: size, height: size, borderRadius: R.pill, flexShrink: 0,
-    display: 'grid', placeItems: 'center', overflow: 'hidden',
-    background: bg || `${C.muted}1A`, color: fg || C.ink,
-    fontSize: Math.max(11, Math.round(size * 0.42)), fontWeight: W.semibold,
-    ...style,
-  };
-  if (src && !broken) {
-    return (
-      <img src={src} alt="" aria-hidden="true" onError={() => setBroken(true)}
-        style={{ ...base, objectFit: 'cover' }} />
-    );
-  }
-  return <div aria-hidden="true" style={base}>{initial}</div>;
-}
 
 /**
  * Marcador de seção: o traço curto na cor do acento que o J.I.T. já usava no
@@ -1312,30 +957,7 @@ function FeedbackThumbs({ onRate, size = 15 }) {
   );
 }
 
-/** Rótulo de faixa de desempenho (ícone + texto) devolvido por `getRating`. */
-function RatingLabel({ rating, size = 12, style }) {
-  if (!rating) return null;
-  const { Icon } = rating;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, ...style }}>
-      <Icon size={size} aria-hidden style={{ flexShrink: 0 }} /> {rating.label}
-    </span>
-  );
-}
 
-function StatusBadge({ status }) {
-  const cfg = STATUS_CFG[status];
-  return (
-    <span
-      style={{
-        fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em',
-        padding: '4px 10px', borderRadius: R.pill, background: `${cfg.color}1A`, color: cfg.color, whiteSpace: 'nowrap',
-      }}
-    >
-      {cfg.label}
-    </span>
-  );
-}
 
 function BackBar({ onBack, label, accent, motiv }) {
   return (
@@ -1365,29 +987,7 @@ function BackBar({ onBack, label, accent, motiv }) {
   );
 }
 
-function EmptyState({ title, desc }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '32px 16px', border: `1px dashed ${C.border}`, borderRadius: R.md }}>
-      <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>{title}</p>
-      <p style={{ fontSize: T.bodySm, color: C.muted, marginTop: 4 }}>{desc}</p>
-    </div>
-  );
-}
 
-function PillButton({ active, accent, onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      className="px-3 py-1.5"
-      style={{
-        borderRadius: R.sm, fontSize: T.bodySm, fontWeight: W.semibold, border: `1.5px solid ${active ? accent : C.border}`,
-        background: active ? accent : 'white', color: active ? C.bg : C.muted,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
 
 /* ------------------------------ item row ---------------------------------- */
 
@@ -2253,12 +1853,6 @@ function visibleSectors(unit, sectorId, sectorRows) {
   return filtered.length ? filtered : unit.sectors;
 }
 
-export const CHECKLIST_TYPE_ORDER = [
-  { key: 'abertura',     label: 'Abertura',      match: t => t.name.toLowerCase().includes('abertura') },
-  { key: 'intermediario',label: 'Intermediário', match: t => t.name.toLowerCase().includes('intermedi') },
-  { key: 'fechamento',   label: 'Fechamento',    match: t => t.name.toLowerCase().includes('fechamento') },
-];
-
 export function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
@@ -2426,41 +2020,6 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
 
 /* ------------------------------- painel view -------------------------------- */
 
-function PhotoModal({ recordId, item, onClose }) {
-  const [src, setSrc] = useState(null);
-  const [status, setStatus] = useState('loading');
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const url = await getPhotoUrl(recordId, item.id);
-        if (url) {
-          setSrc(url);
-          setStatus('ok');
-        } else {
-          setStatus('error');
-        }
-      } catch (e) {
-        setStatus('error');
-      }
-    })();
-  }, []);
-
-  return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.6)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16 }}>
-        <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>{item.text}</p>
-        {status === 'loading' && <p style={{ fontSize: 13, color: C.muted }}>Carregando foto…</p>}
-        {status === 'error' && <p style={{ fontSize: 13, color: C.critical }}>Não foi possível carregar a foto.</p>}
-        {status === 'ok' && <img src={src} alt={item.text} style={{ width: '100%', borderRadius: 8 }} />}
-        {item.note && <p style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Obs: {item.note}</p>}
-        <button onClick={onClose} className="w-full mt-3 py-2" style={{ borderRadius: 6, border: `1px solid ${C.border}`, fontWeight: W.semibold, color: C.ink, background: 'white' }}>
-          Fechar
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function PainelView({ unit, templates, completions, closures, canSeeAllUnits, currentUser, users, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
@@ -3257,23 +2816,7 @@ function NotificationHistory({ templates, units, last7, unit }) {
 
 /* ------------------------------ reports view ------------------------------- */
 
-function StatCard({ label, value, sub, accent }) {
-  return (
-    <Ticket accent={accent}>
-      <Eyebrow>{label}</Eyebrow>
-      <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, marginTop: 4 }}>{value}</p>
-      {sub && <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>{sub}</p>}
-    </Ticket>
-  );
-}
 
-function RateBar({ rate, accent }) {
-  return (
-    <div style={{ width: '100%', height: 6, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 6 }}>
-      <div style={{ height: '100%', width: `${Math.min(100, rate)}%`, background: rate >= 80 ? C.success : rate >= 50 ? accent : C.critical }} />
-    </div>
-  );
-}
 
 const formatDateTime = iso => {
   const d = new Date(iso);
@@ -10670,42 +10213,6 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
 }
 
 /**
- * Uma execução chegou no prazo?
- *
- * `true` / `false` / `null` — e o `null` importa: checklist cujo tipo não tem
- * `deadline` (o "Intermediário", por exemplo) não tem prazo para cumprir, e
- * contá-lo como atrasado puniria a liderança por uma regra que não existe. Fora
- * do numerador E do denominador.
- *
- * "Fechamento até as 18:00" são 18:00 NO RELÓGIO DA LOJA — por isso o prazo é
- * resolvido com o fuso dela, e não com o de quem abriu o painel. Sem `units`
- * (chamadas antigas) cai no default de lib/dates.js, que é o que o parque
- * inteiro usava antes de existir fuso por loja.
- *
- * Antes daqui usar `instantAt`, a comparação era `new Date('...T18:00')`, hora
- * local do navegador: um fechamento pontual em Manaus aparecia atrasado para o
- * gestor em São Paulo, e a diferença crescia com o tamanho da rede.
- */
-function completionOnTime(c, templates, index, units) {
-  const deadline = index
-    ? index.get(c.templateId)
-    : (templates || []).find(t => t.id === c.templateId)?.deadline;
-  if (!deadline || !c.date || !c.completedAt) return null;
-  const limite = instantAt(c.date, deadline, tzOfUnit(units, c.unitId));
-  return limite ? new Date(c.completedAt) <= limite : null;
-}
-
-/**
- * Índice templateId → prazo, para quem classifica MUITAS execuções de uma vez.
- * Sem ele, `completionOnTime` faz um `find` linear por execução, e o J.I.T.
- * refaz a conta a cada evento de realtime: numa rede com 50 lojas isso vira
- * milhões de comparações por checklist salvo por qualquer pessoa.
- */
-function deadlineIndex(templates) {
-  return new Map((templates || []).map(t => [t.id, t.deadline]));
-}
-
-/**
  * ID Operacional da LIDERANÇA — a terceira régua, ao lado da pessoa
  * (`computeOperationalProfile`) e da loja (`computeUnitProfile`).
  *
@@ -11668,22 +11175,6 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
 
 /* --------------------------- Unidades: ranking + ID ------------------------ */
 
-// Medalha de posição sem emoji: emoji como DADO em painel de gestão custa mais
-// credibilidade que qualquer erro de layout (ver docs/REVISAO_DESKTOP_v1.md §8).
-// `size` porque o Painel também passou a usar esta medalha (antes 🥇🥈🥉) em
-// listas mais densas que o ranking de unidades, onde 28px não cabem.
-function RankBadge({ pos, size = 28 }) {
-  const tone = pos === 1 ? C.ink : pos === 2 ? C.muted : C.mutedLight;
-  return (
-    <span className="font-display" aria-hidden="true" style={{
-      width: size, height: size, borderRadius: R.pill, flexShrink: 0,
-      display: 'grid', placeItems: 'center',
-      background: pos <= 3 ? `${tone}14` : 'transparent',
-      border: `1px solid ${pos <= 3 ? `${tone}40` : C.border}`,
-      color: tone, fontSize: size <= 20 ? T.label : T.caption, fontWeight: W.bold,
-    }}>{pos}</span>
-  );
-}
 
 function IndexRing({ value, accent, size = 84 }) {
   const v = Math.max(0, Math.min(100, value ?? 0));
