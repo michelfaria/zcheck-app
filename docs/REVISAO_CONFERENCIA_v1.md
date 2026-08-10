@@ -161,8 +161,12 @@ esforço do dia 28 ainda conta.
 - **Painel** — sempre o mês corrente, sem seletor. É a tela da operação do dia,
   e o colaborador também a vê; dois seletores independentes trariam de volta o
   "qual dos dois vale".
-- **Equipe** (só liderança, por `ROLE_TABS`) — mês corrente por padrão, com
-  seletor: este mês · 30 · 60 · 90 dias · tudo. É onde se analisa.
+- **Equipe** (só liderança, por `ROLE_TABS`) — o SELETOR INTEIRO da aba Dados:
+  Hoje · 7 dias · 30 dias · Mês (com escolha do mês) · Tudo · Personalizado
+  (intervalo de datas). Padrão em Mês. `PERIODS` e `periodDates` são reusados,
+  não reimplementados — duas telas oferecendo "Personalizado" com regras de
+  borda diferentes é divergência que ninguém percebe até dar número diferente
+  para a mesma pergunta.
 
 TODOS os componentes olham o mesmo período. Antes cada um media coisa diferente
 (conclusão, prazo e críticos varriam os 90 dias carregados; constância dividia
