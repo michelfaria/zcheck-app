@@ -146,11 +146,46 @@ Os pesos do índice do colaborador, desde 08/08/2026:
 
 | componente | peso | o que mede |
 |---|---|---|
-| Conclusão de tarefas | 0,35 | do que pegou, quanto fez |
-| **Entregas no prazo** | **0,25** | dos checklists que entregou e tinham prazo, quantos saíram dentro dele |
+| Conclusão de tarefas | 0,40 | do que pegou, quanto fez |
+| **Entregas no prazo** | **0,20** | dos checklists que entregou e tinham prazo, quantos saíram dentro dele |
 | Críticos em dia | 0,20 | risco |
 | Constância | 0,10 | dias com atividade ÷ 30 |
 | Qualidade avaliada | 0,10 | o julgamento da liderança |
+
+**Período: MÊS CORRENTE por padrão.** Não é uma janela deslizante de 30 dias, e
+a diferença é de incentivo: na janela deslizante o passado some sozinho todo
+dia, e um mês ruim se dilui sem ninguém fazer nada. No mês fechado existe um
+placar que começa limpo no dia 1º — dá para recuperar um começo ruim, e o
+esforço do dia 28 ainda conta.
+
+- **Painel** — sempre o mês corrente, sem seletor. É a tela da operação do dia,
+  e o colaborador também a vê; dois seletores independentes trariam de volta o
+  "qual dos dois vale".
+- **Equipe** (só liderança, por `ROLE_TABS`) — o SELETOR INTEIRO da aba Dados,
+  valendo para os DOIS rankings da aba (colaborador e liderança):
+  Hoje · 7 dias · 30 dias · Mês (com escolha do mês) · Tudo · Personalizado
+  (intervalo de datas). Padrão em Mês. `PERIODS` e `periodDates` são reusados,
+  não reimplementados — duas telas oferecendo "Personalizado" com regras de
+  borda diferentes é divergência que ninguém percebe até dar número diferente
+  para a mesma pergunta.
+
+TODOS os componentes olham o mesmo período. Antes cada um media coisa diferente
+(conclusão, prazo e críticos varriam os 90 dias carregados; constância dividia
+por 30, então quem tivesse mais de 30 dias ativos saturava em 100% para
+sempre) — um índice que soma pedaços de janelas distintas não significa nada.
+
+O denominador da constância são os dias **decorridos** do período, não o tamanho
+dele: no dia 3 do mês ninguém pode aparecer com 10% porque o mês tem 30 dias.
+
+Ficam FORA do período, de propósito: nível, conquistas, evidências, total de
+tarefas, sequência de dias e a evolução semanal. Esses são história da pessoa,
+não desempenho recente — zerar a conquista de alguém porque tirou férias seria
+punir o calendário.
+
+Fonte única dos pesos em `COLLAB_INDEX_PARTS`; períodos em `rankingPeriod` /
+`RANKING_PERIOD_OPTIONS` (page.js). A frase que explica o ranking
+na aba Equipe e no Painel é GERADA dali — mexer num peso corrige as duas
+descrições junto. Pesos definidos pelo Michel em 10/08/2026.
 
 ### Qualidade — penalidade contável, não média
 
@@ -184,9 +219,9 @@ qualidade) fica para depois, se ficar.
 ### Pontualidade — e por que ela NÃO tem corte de data
 
 Pedido de 08/08: quem entrega no prazo tem que ficar acima de quem entrega
-atrasado. Peso 0,25 é o que torna isso verdade de fato — entre 100% e 60% são
-10 pontos de índice, mais do que qualquer empate nos outros componentes
-costuma produzir.
+atrasado. Peso 0,20: entre 100% e 60% de pontualidade são 8 pontos de índice, o
+bastante para reordenar o ranking entre pessoas de desempenho parecido no
+resto.
 
 Três decisões de cálculo, herdadas de regras que o app já aplicava:
 

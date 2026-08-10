@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "verify": "eslint . --quiet && next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",
@@ -28,8 +30,12 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@next/eslint-plugin-next": "^16.3.0",
     "@playwright/test": "^1.62.0",
     "autoprefixer": "^10.4.20",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.9.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.1"
   }

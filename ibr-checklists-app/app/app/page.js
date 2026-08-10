@@ -41,6 +41,7 @@ import { todayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, dateS
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
 import { latestPerRound, earliestPerRound, roundKey, roundProgress, statusFromProgress, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
+import { classificarRodada, gravidadeDe, agruparPorChecklist } from '../../lib/conferencia';
 // Domínio do checklist (o que vale num dia, e se chegou no prazo) e agregação
 // das execuções. Saíram daqui na Fase 1a da consolidação de abas: as três views
 // de análise dependiam deles, e nenhuma podia sair de page.js enquanto eles
@@ -767,7 +768,14 @@ export function generateSimulatedCompletions(templates, users, days = 7) {
         : (users.find(u => u.unitId === t.unitId && u.role === 'colaborador') || users[0]);
 
       const baseHour = shiftName === 'Manhã' ? 8.5 : shiftName === 'Tarde' ? 17.5 : 14;
-      const startedAt = new Date(d);
+      // `new Date(d)` — `d` nunca existiu, então gerar dados de teste lançava
+      // ReferenceError na primeira iteração. Achado pelo `no-undef` em
+      // 10/08/2026; o build compilava isto sem reclamar desde sempre.
+      //
+      // `T12:00:00` e não só `dateStr`: `new Date('2026-08-10')` é meia-noite
+      // UTC, que no Brasil é dia 9 às 21h — e o setHours abaixo cairia no dia
+      // ERRADO. Meio-dia local mantém a data qualquer que seja o fuso.
+      const startedAt = new Date(`${dateStr}T12:00:00`);
       startedAt.setHours(Math.floor(baseHour), Math.floor(Math.random() * 30), 0, 0);
       const spanMin = 10 + Math.random() * 50; // execução de ~10 a 60 min
 
@@ -2118,16 +2126,23 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
    * chamava, e função morta que calcula ranking é a pior espécie de código
    * morto — a próxima pessoa acha que existem duas réguas de propósito.
    */
+  // O Painel é MENSAL e ponto: quem abre aqui é a operação do dia, e um placar
+  // que recomeça no dia 1º é o que faz constância virar objetivo. Escolher
+  // período é coisa da aba Equipe, onde se analisa.
+  const periodoPainel = useMemo(
+    () => rankingPeriod(RANKING_PERIOD_DEFAULT, tzOf(unit), completions),
+    [unit, completions],
+  );
   const ranking7 = useMemo(() => {
     const ofUnit = (completions || []).filter(c => c.unitId === unit.id);
     return (users || [])
       .filter(u => RANKED_ROLES.includes(u.role) && !u.suspended && (!u.unitId || u.unitId === unit.id))
-      .map(u => ({ user: u, profile: computeOperationalProfile(ofUnit, u.id, u.name, tzOf(unit), templates, units) }))
+      .map(u => ({ user: u, profile: computeOperationalProfile(ofUnit, u.id, u.name, tzOf(unit), templates, units, periodoPainel) }))
       .filter(x => x.profile.checklists > 0 || x.profile.tasksDone > 0)
       .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
         || b.profile.tasksDone - a.profile.tasksDone
         || b.profile.checklists - a.profile.checklists);
-  }, [completions, users, unit, templates, units]);
+  }, [completions, users, unit, templates, units, periodoPainel]);
 
   // ── Gamification: score & label ──────────────────────────────────────────
   const getRating = (rate) => {
@@ -2520,12 +2535,12 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
 
           {/* Ranking da equipe — penúltimo. Mesmo índice da aba Equipe: ver o
               comentário em `ranking7`. */}
-          <Eyebrow>Ranking da equipe · índice operacional</Eyebrow>
+          <Eyebrow>Ranking da equipe · {periodoPainel.label}</Eyebrow>
           {/* A MESMA frase da aba Equipe, da mesma fonte. Duas telas mostrando
               o mesmo ranking precisam explicá-lo com as mesmas palavras — se
               divergirem, volta a parecer que são duas réguas. */}
           <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
-            Ordenado pelo índice operacional: {collabIndexSentence()}.
+            Ordenado pelo índice operacional de {periodoPainel.label}: {collabIndexSentence()}.
           </p>
           {ranking7.length === 0 ? (
             <Ticket accent={C.border}>
@@ -2854,6 +2869,228 @@ function ProdRow({ entry, accent }) {
 // Paginação das execuções no Relatórios. 25 por página: cabe numa tela de
 // desktop sem rolar e ainda é uma leitura razoável no celular.
 const EXEC_PAGE_SIZE = 25;
+
+// Os selos de uma rodada, na ordem de gravidade. Um só é escolhido para a
+// linha: empilhar quatro etiquetas numa lista de conferência vira ruído.
+const SELOS = [
+  ['criticoPendente', 'Crítico não executado', C.critical],
+  ['semFoto', 'Faltou foto', C.warning],
+  ['foraDoPrazo', 'Fora do prazo', C.warning],
+  ['incompleta', 'Incompleta', C.warning],
+  ['notaOperador', 'Tem observação', C.ink],
+];
+const seloDe = f => SELOS.find(([k]) => f[k]);
+
+/**
+ * FILA DE CONFERÊNCIA agrupada por checklist × setor.
+ *
+ * O eixo é o CHECKLIST porque é onde a repetição mora e onde o julgamento é o
+ * mesmo julgamento: o critério de "Fechamento Cozinha bem-feito" não muda entre
+ * segunda e domingo. Agrupar por dia repetiria o eixo do Painel; por loja não
+ * ajuda quem só tem uma.
+ *
+ * DUAS FAIXAS, e a divisão é deliberada: agrupamento é bom para repetição e
+ * ruim para exceção. Um crítico não executado é único — enterrá-lo dentro de um
+ * grupo de 21 rodadas seria usar a ferramenta errada. Por isso as piores
+ * rodadas saem do agrupamento e viram uma lista plana em cima.
+ *
+ * SEM APROVAÇÃO EM LOTE, e isso é decisão de produto, não falta de tempo: a
+ * cobertura da conferência já é 100%. Lote otimizaria a única coisa que já
+ * funciona e transformaria os 30% de "conferidos" do índice da liderança em
+ * velocidade de clique.
+ */
+function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
+  const [verConferidas, setVerConferidas] = useState(false);
+  const [verLimpas, setVerLimpas] = useState(false);
+
+  const { destaques, grupos, conferidas, limpas } = useMemo(() => {
+    const deadlines = deadlineIndex(templates || []);
+    const itensDe = c => ((templates || []).find(t => t.id === c.templateId)?.items) || [];
+    // `foraDoPrazo` é resolvido AQUI e entregue pronto: a régua de prazo é uma
+    // só no app (`completionOnTime`, que usa o fuso da loja), e duplicá-la
+    // dentro da lib criaria a segunda.
+    const analisadas = (completions || []).map(c => ({
+      c,
+      f: classificarRodada(c, itensDe(c), completionOnTime(c, templates || [], deadlines, units) === false),
+    }));
+
+    const pendentes = analisadas.filter(x => !x.c.reviewedAt);
+    const conferidas = analisadas.filter(x => x.c.reviewedAt);
+
+    // Faixa 1 — as rodadas que não podem esperar a fila: crítico não executado.
+    // Teto de 6 porque uma lista de exceções longa deixa de ser exceção.
+    const destaques = pendentes
+      .filter(x => x.f.criticoPendente)
+      .sort((a, b) => (a.c.date || '').localeCompare(b.c.date || ''))
+      .slice(0, 6);
+    const idsDestaque = new Set(destaques.map(x => x.c.id));
+
+    // Faixa 2 — o resto, agrupado por checklist × setor (ver lib/conferencia).
+    const grupos = agruparPorChecklist(
+      pendentes.filter(x => !idsDestaque.has(x.c.id)),
+      c => (templates || []).find(t => t.id === c.templateId)?.deadline || null,
+    );
+
+    const comSinal = grupos.filter(g => g.gravidade > 0);
+    const semSinal = grupos.filter(g => g.gravidade === 0);
+
+    return { destaques, grupos: comSinal, conferidas, limpas: semSinal };
+  }, [completions, templates, units]);
+
+  const totalPendente = destaques.length
+    + grupos.reduce((n, g) => n + g.rodadas.length, 0)
+    + limpas.reduce((n, g) => n + g.rodadas.length, 0);
+
+  if (!totalPendente && !conferidas.length) {
+    return <EmptyState title="Nada para conferir" desc="Nenhuma execução no período com os filtros atuais." />;
+  }
+
+  const Linha = ({ x, mostrarChecklist }) => {
+    const selo = seloDe(x.f);
+    return (
+      <button onClick={() => onOpen(x.c)}
+        aria-label={`Conferir ${x.c.templateName} de ${x.c.date}`}
+        style={{
+          width: '100%', textAlign: 'left', background: 'white', border: `1px solid ${C.border}`,
+          borderRadius: R.sm, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 12.5, color: C.ink, fontWeight: W.semibold }}>
+            {mostrarChecklist ? `${x.c.templateName} · ` : ''}
+            {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+            <span style={{ fontWeight: 400, color: C.muted }}> · {x.c.operatorName}</span>
+          </p>
+          {selo && (
+            <span style={{
+              display: 'inline-block', marginTop: 3, fontSize: 9.5, fontWeight: W.semibold,
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              color: selo[2], background: `${selo[2]}14`, border: `1px solid ${selo[2]}44`,
+              borderRadius: R.pill, padding: '1px 6px',
+            }}>{selo[1]}</span>
+          )}
+        </div>
+        <ChevronRight size={16} color={C.mutedLight} style={{ flexShrink: 0 }} />
+      </button>
+    );
+  };
+
+  const Grupo = ({ g }) => {
+    const [aberto, setAberto] = useState(false);
+    const cor = g.rodadas.some(x => x.f.criticoPendente) ? C.critical
+      : g.gravidade > 0 ? C.warning : accent;
+    return (
+      <div style={{ background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${cor}`, borderRadius: R.sm, marginBottom: 8 }}>
+        <button onClick={() => setAberto(v => !v)} aria-expanded={aberto}
+          style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="font-display" style={{ fontSize: 'calc(15px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
+              {g.titulo}
+            </p>
+            <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+              {g.setor}{g.prazo ? ` · prazo ${g.prazo}` : ' · sem prazo'}
+            </p>
+            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+              {g.rodadas.length} {g.rodadas.length === 1 ? 'rodada' : 'rodadas'}
+              {g.limpas > 0 && ` · ${g.limpas} sem sinal de problema`}
+              {g.rodadas.length - g.limpas > 0 && (
+                <span style={{ color: cor, fontWeight: W.semibold }}>
+                  {' · '}{g.rodadas.length - g.limpas} pedindo atenção
+                </span>
+              )}
+            </p>
+            {/* A faixa de dias devolve a leitura temporal que o agrupamento
+                destrói: "falhou quatro sextas seguidas" é invisível numa
+                contagem, e óbvio numa fileira. */}
+            <div style={{ display: 'flex', gap: 3, marginTop: 6, flexWrap: 'wrap' }}>
+              {g.rodadas.slice(0, 21).map(x => (
+                <span key={x.c.id} title={`${x.c.date}${seloDe(x.f) ? ' · ' + seloDe(x.f)[1] : ''}`}
+                  aria-hidden="true"
+                  style={{
+                    width: 8, height: 8, borderRadius: 2,
+                    background: x.f.criticoPendente ? C.critical : x.f.limpa ? C.success : C.warning,
+                  }} />
+              ))}
+            </div>
+          </div>
+          <ChevronRight size={18} color={C.mutedLight}
+            style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+        </button>
+        {aberto && (
+          <div className="space-y-1.5" style={{ padding: '0 12px 12px' }}>
+            {g.rodadas.map(x => <Linha key={x.c.id} x={x} />)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {destaques.length > 0 && (
+        <>
+          <Eyebrow>Precisa de você</Eyebrow>
+          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
+            Rodadas com item crítico não executado — fora do agrupamento de propósito.
+          </p>
+          <div className="space-y-1.5" style={{ marginBottom: 16 }}>
+            {destaques.map(x => <Linha key={x.c.id} x={x} mostrarChecklist />)}
+          </div>
+        </>
+      )}
+
+      {grupos.length > 0 && (
+        <>
+          <Eyebrow>Fila por checklist</Eyebrow>
+          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
+            Ordenada por gravidade, não por quantidade.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            {grupos.map(g => <Grupo key={g.key} g={g} />)}
+          </div>
+        </>
+      )}
+
+      {limpas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setVerLimpas(v => !v)} aria-expanded={verLimpas}
+            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+            {verLimpas ? '▾' : '▸'} Sem sinal de problema ({limpas.reduce((n, g) => n + g.rodadas.length, 0)})
+          </button>
+          {verLimpas && limpas.map(g => <Grupo key={g.key} g={g} />)}
+        </div>
+      )}
+
+      {conferidas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setVerConferidas(v => !v)} aria-expanded={verConferidas}
+            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+            {verConferidas ? '▾' : '▸'} Já conferidas ({conferidas.length})
+          </button>
+          {verConferidas && (
+            <div className="space-y-1.5" style={{ marginTop: 6 }}>
+              {conferidas
+                .sort((a, b) => (b.c.reviewedAt || '').localeCompare(a.c.reviewedAt || ''))
+                .slice(0, 40)
+                .map(x => (
+                  <button key={x.c.id} onClick={() => onOpen(x.c)}
+                    style={{ width: '100%', textAlign: 'left', background: `${C.success}08`, border: `1px solid ${C.success}33`, borderRadius: R.sm, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <p style={{ fontSize: 12, color: C.ink }}>
+                      {x.c.templateName} · {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      <span style={{ color: C.muted }}> · {x.c.operatorName}</span>
+                    </p>
+                    <p style={{ fontSize: T.label, color: C.success, fontWeight: W.semibold, marginTop: 1 }}>
+                      Conferido por {x.c.reviewedByName || '—'}
+                    </p>
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 const execPagerBtn = {
   width: 30, height: 30, borderRadius: R.sm, border: `1px solid ${C.borderStrong}`,
   background: 'white', color: C.ink, fontSize: T.bodyLg, lineHeight: 1,
@@ -3526,8 +3763,20 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         </>
       )}
 
+      {/* A FILA — agrupada por checklist. Substituiu a lista cronológica, que
+          repetia o mesmo checklist dezenas de vezes e obrigava a rolar para
+          descobrir o que pedia atenção. */}
+      <ConferenceQueue
+        completions={filtered} templates={templates} units={units}
+        accent={unit.color} onOpen={c => setReviewing(c)}
+      />
+      </>)}
+
+      {vista === 'analise' && (<>
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
-          precisa ser visível também no Relatórios, não só no Painel do dia). */}
+          precisa ser visível também no Relatórios, não só no Painel do dia).
+          Vive na ANÁLISE: aqui não se trabalha a fila, se procura um registro
+          específico e se olha a prova. */}
       <Eyebrow>Execuções do período</Eyebrow>
       {canReview && (
         <div className="flex gap-2" style={{ margin: '4px 0 8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -3631,9 +3880,6 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         })()}
       </div>
 
-      </>)}
-
-      {vista === 'analise' && (<>
       <Eyebrow>Exportar</Eyebrow>
       <div className="flex gap-2">
         <button
@@ -9867,6 +10113,87 @@ const QUALITY_CUTOFF = '2026-08-09';
 const QUALITY_MIN_JULGADAS = 5;
 
 /**
+ * O PERÍODO do índice do colaborador.
+ *
+ * O padrão é o MÊS CORRENTE, não uma janela deslizante de 30 dias — decisão de
+ * 10/08, para fomentar constância. A diferença não é cosmética: numa janela
+ * deslizante o passado some sozinho todo dia, e um mês ruim vai se diluindo sem
+ * que ninguém precise fazer nada. No mês fechado existe um placar que começa
+ * limpo no dia 1º e vale até o fim — dá para recuperar um começo ruim, e o
+ * esforço do dia 28 ainda conta.
+ *
+ * `days` é o DENOMINADOR DA CONSTÂNCIA, e por isso é dias DECORRIDOS, não o
+ * tamanho do período: no dia 3 do mês ninguém pode aparecer com 10% de
+ * constância porque o mês tem 30 dias. Constância é "dos dias que já passaram,
+ * em quantos você trabalhou".
+ *
+ * @returns {{ id, label, dates: Set<string>, days: number }}
+ */
+const RANKING_PERIOD_DEFAULT = 'month';
+
+/**
+ * Envelope do período para o ranking — MESMO seletor da aba Dados.
+ *
+ * `PERIODS` e `periodDates` são reusados de propósito, não reimplementados:
+ * duas telas do mesmo app oferecendo "Personalizado" com regras diferentes de
+ * borda (o dia final entra? intervalo invertido faz o quê?) é o tipo de
+ * divergência que ninguém percebe até dar número diferente para a mesma
+ * pergunta. Quem já sabe escolher período em Dados sabe escolher aqui.
+ *
+ * O que este envelope acrescenta é o que o ranking precisa e o relatório não:
+ *
+ *   `days` — DENOMINADOR DA CONSTÂNCIA. São os dias do período que JÁ
+ *   PASSARAM, não o tamanho dele: no dia 3 do mês ninguém pode aparecer com
+ *   10% de constância porque o mês tem 30 dias. Em "Tudo" é o intervalo real
+ *   desde a primeira execução — dividir por 90 fixo faria toda empresa nova
+ *   parecer inconstante no primeiro mês de uso.
+ *
+ *   `label` — a frase que as telas exibem, para "de quando é este ranking?"
+ *   ter uma resposta só.
+ *
+ * `periodDates` devolve `null` para "Tudo" e para um Personalizado incompleto.
+ * Os dois caem no histórico inteiro, igual à aba Dados: um ranking que esvazia
+ * enquanto a pessoa digita a segunda data pareceria defeito.
+ *
+ * @param {object} opt  { from, to, mes }  — os controles do seletor
+ */
+function rankingPeriod(periodId, tz, completions, opt = {}) {
+  const hoje = todayStr(tz);
+  const lista = periodDates(periodId, opt.from, opt.to, opt.mes, tz);
+
+  if (!lista) {
+    // Intervalo CONTÍNUO da primeira execução até hoje — não só os dias que
+    // tiveram execução. A aderência da liderança conta o PREVISTO iterando
+    // estas datas: um dia em que a loja não entregou nada precisa aparecer no
+    // denominador, senão sumir do trabalho melhoraria a nota de quem responde.
+    const datas = [...new Set((completions || []).map(c => c.date).filter(Boolean))].sort();
+    const inicio = datas[0] || hoje;
+    const todos = [];
+    for (let d = inicio; d <= hoje; d = addDays(d, 1)) todos.push(d);
+    return { id: periodId, label: 'todo o período', dates: new Set(todos), days: Math.max(1, todos.length) };
+  }
+
+  // Só os dias decorridos contam no denominador. Um período que termina no
+  // futuro não pode diluir a constância de ninguém.
+  const decorridos = lista.filter(d => d <= hoje).length;
+
+  let label;
+  if (periodId === 'custom') {
+    const fmt = d => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    label = `${fmt(opt.from)} a ${fmt(opt.to)}`;
+  } else if (periodId === 'month') {
+    const ym = opt.mes || hoje.slice(0, 7);
+    const nome = new Date(`${ym}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    label = ym === hoje.slice(0, 7) ? `${nome} (em curso)` : nome;
+  } else {
+    const p = PERIODS.find(x => x.id === periodId);
+    label = periodId === 'today' ? 'hoje' : `últimos ${(p?.label || '').toLowerCase()}`;
+  }
+
+  return { id: periodId, label, dates: new Set(lista), days: Math.max(1, decorridos) };
+}
+
+/**
  * Os pesos do índice do colaborador — FONTE ÚNICA.
  *
  * Ficavam só dentro de `computeOperationalProfile`, e a frase que explica o
@@ -9876,10 +10203,25 @@ const QUALITY_MIN_JULGADAS = 5;
  * mexer num peso corrige a explicação junto, sem ninguém lembrar de nada.
  *
  * Ordem = ordem de exibição, do que mais pesa para o que menos pesa.
+ *
+ * Pesos definidos pelo Michel em 10/08/2026. O que cada escolha significa na
+ * prática, para quem for mexer:
+ *
+ *   Entregar no prazo separa de verdade — entre 100% e 60% de pontualidade são
+ *   8 pontos de índice, o bastante para reordenar o ranking entre pessoas de
+ *   desempenho parecido no resto.
+ *
+ *   CONSTÂNCIA é a que pesa menos de propósito: ela é `dias ativos ÷ 30`, e
+ *   isso mede ESCALA antes de mérito — quem trabalha três dias por semana tem
+ *   teto de ~43% por decisão da gerência, não por desempenho próprio.
+ *
+ *   QUALIDADE começa baixa e sobe quando os apontamentos deixarem de chegar
+ *   mudos (ver §2 de docs/REVISAO_CONFERENCIA_v1.md): pesar muito um sinal que
+ *   hoje tem 3% de variância seria pendurar a colocação em ruído.
  */
 const COLLAB_INDEX_PARTS = [
-  { key: 'conclusao',  label: 'Conclusão de tarefas', weight: 0.35 },
-  { key: 'prazo',      label: 'Entregas no prazo',    weight: 0.25 },
+  { key: 'conclusao',  label: 'Conclusão de tarefas', weight: 0.40 },
+  { key: 'prazo',      label: 'Entregas no prazo',    weight: 0.20 },
   { key: 'criticos',   label: 'Críticos em dia',      weight: 0.20 },
   { key: 'constancia', label: 'Constância',           weight: 0.10 },
   { key: 'qualidade',  label: 'Qualidade avaliada',   weight: 0.10 },
@@ -9899,27 +10241,55 @@ const collabIndexSentence = () => {
 // e é resolvido no relógio da loja (ver `completionOnTime`). Sem eles o
 // componente vem null e o índice se renormaliza — nenhuma chamada antiga
 // quebra, só deixa de medir prazo.
-function computeOperationalProfile(completions, userId, userName, tz, templates, units) {
+function computeOperationalProfile(completions, userId, userName, tz, templates, units, periodo) {
   // Uma rodada por checklist/dia, ANTES de qualquer contagem. É o que sustenta o
   // ranking da Equipe e o Meu ID: sem isso, reexecutar um checklist inflava
   // nível, conquistas, evidências e a contagem de tarefas da pessoa — e a mesma
   // tarefa era creditada duas vezes, porque a segunda submissão carrega os itens
   // da primeira (com o `doneBy` original).
   const rounds = latestPerRound(completions);
-  const mine = rounds
+  const mineAll = rounds
     .filter(c => c.operatorUserId === userId || c.operatorName === userName)
     .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
 
+  /**
+   * A JANELA DO ÍNDICE — e por que ela existe.
+   *
+   * Antes cada componente media um período diferente: conclusão, prazo e
+   * críticos varriam tudo que estivesse carregado (90 dias), enquanto
+   * constância dividia por 30. Quem tivesse mais de 30 dias ativos saturava em
+   * 100% de constância para sempre, e o índice somava pedaços de janelas
+   * distintas — um número composto assim não significa coisa nenhuma, e não
+   * havia como responder "esse ranking é de quando?".
+   *
+   * Agora TODO componente do índice olha o MESMO período — por padrão o mês
+   * corrente (ver `rankingPeriod`), e na aba Equipe o que a liderança escolher.
+   *
+   * O que fica FORA do período, de propósito: nível, conquistas, evidências,
+   * total de tarefas, sequência de dias e a evolução semanal. Esses são
+   * história da pessoa, não desempenho recente — zerar a conquista de alguém
+   * porque ela tirou férias seria punir o calendário. Por isso `mineAll`
+   * (tudo) e `mine` (período) andam separados daqui para baixo.
+   */
+  const per = periodo || rankingPeriod(RANKING_PERIOD_DEFAULT, tz, completions);
+  const janela = per.dates;
+  const mine = mineAll.filter(c => janela.has(c.date));
+  const roundsJanela = rounds.filter(c => janela.has(c.date));
+
   // `taskCounts` no lugar de `i.done`: tarefa reprovada pela liderança volta a
   // valer como não executada, aqui e em todo lugar que mede execução.
-  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0, evidences = 0;
+  let totalItems = 0, doneItems = 0, critTotal = 0, critDone = 0;
   mine.forEach(c => (c.items || []).forEach(i => {
     totalItems++; if (taskCounts(i)) doneItems++;
     if (i.critical) { critTotal++; if (taskCounts(i)) critDone++; }
-    if (i.hasPhoto) evidences++;
   }));
 
-  const checklists = mine.length;
+  // Evidências e total de checklists são CONTADORES de história — vêm de tudo.
+  let evidences = 0;
+  mineAll.forEach(c => (c.items || []).forEach(i => { if (i.hasPhoto) evidences++; }));
+
+  const checklists = mineAll.length;
+  const checklistsJanela = mine.length;
   const avgRate = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
   const criticalRate = critTotal ? Math.round((critDone / critTotal) * 100) : null;
 
@@ -9927,7 +10297,8 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
   // colega submeteu (execução colaborativa, item.doneBy). Registros antigos sem
   // doneBy creditam ao responsável pelo checklist.
   let tasksDone = 0, criticalDone = 0;
-  const participationDays = new Set();
+  const participationDays = new Set();     // história (sequência de dias)
+  const participationJanela = new Set();   // janela (constância)
   // ── Qualidade avaliada (pontuação, decisão de 08/08) ──
   // Sobre as tarefas que a pessoa EXECUTOU e a liderança JULGOU, a partir do
   // corte. Penalidade contável, não média: com 96,9% de aprovação medidos, uma
@@ -9941,7 +10312,9 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
       const executedByMe = i.review?.executedBy
         ? i.review.executedBy === userId
         : i.doneBy ? (i.doneBy === userId || i.doneByName === userName) : isSubmitter;
-      if (executedByMe && i.review?.verdict
+      // Qualidade é COMPONENTE DO ÍNDICE: só conta dentro da janela, e só
+      // depois do corte que impede a régua nova de valer para trás.
+      if (executedByMe && i.review?.verdict && janela.has(c.date)
           && (i.review.reviewedAt || '').slice(0, 10) >= QUALITY_CUTOFF) {
         julgadas++;
         // Apontamento SEM MOTIVO não pontua: se a liderança não explicou, não
@@ -9954,7 +10327,10 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
       if (!executedByMe) return;
       tasksDone++;
       if (i.critical) criticalDone++;
-      if (c.date) participationDays.add(c.date);
+      if (c.date) {
+        participationDays.add(c.date);
+        if (janela.has(c.date)) participationJanela.add(c.date);
+      }
     });
   });
   const qualidade = julgadas >= QUALITY_MIN_JULGADAS
@@ -9989,12 +10365,14 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
    * PUBLICADA no próprio checklist e sempre foi visível como "fora do prazo"
    * nos Relatórios e no J.I.T. Passar a contá-la não muda a régua, começa a
    * dar consequência a uma régua que já existia — e o dado histórico é
-   * completo, sem o viés que obrigou o corte da qualidade.
+   * completo, sem o viés que obrigou o corte da qualidade. O que a limita é a
+   * janela do índice, como todo componente.
    */
   const deadlines = deadlineIndex(templates || []);
   let prazoTotal = 0, prazoOk = 0;
   earliestPerRound(completions)
-    .filter(c => c.operatorUserId === userId || c.operatorName === userName)
+    .filter(c => janela.has(c.date)
+      && (c.operatorUserId === userId || c.operatorName === userName))
     .forEach(c => {
       const ok = completionOnTime(c, templates || [], deadlines, units);
       if (ok === null) return;
@@ -10003,13 +10381,19 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
     });
   const punctuality = prazoTotal ? Math.round((prazoOk / prazoTotal) * 100) : null;
 
-  const days = [...new Set([...mine.map(c => c.date), ...participationDays])];
+  // Sequência de dias é HISTÓRIA: sai de tudo, não da janela.
+  const days = [...new Set([...mineAll.map(c => c.date), ...participationDays])];
   const streak = currentStreak(new Set(days), tz);
   const bestStreak = longestStreak(days);
+  // Constância é ÍNDICE: dias ativos DENTRO da janela ÷ tamanho da janela.
+  // Antes o numerador vinha de todo o histórico e o denominador era 30 fixo —
+  // qualquer pessoa com mais de 30 dias ativos batia 100% e ficava lá.
+  const activeDaysJanela = [...new Set([...mine.map(c => c.date), ...participationJanela])];
 
   // Evolução: taxa de conclusão por semana (últimas 6 semanas com atividade).
+  // História, não janela: o gráfico existe para mostrar tendência.
   const wkMap = new Map();
-  mine.forEach(c => {
+  mineAll.forEach(c => {
     const wk = weekStartStr(c.date);
     if (!wkMap.has(wk)) wkMap.set(wk, { week: wk, total: 0, done: 0, checklists: 0 });
     const s = wkMap.get(wk); s.checklists++;
@@ -10044,27 +10428,23 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
    * que ela executou e a CONSTÂNCIA com que apareceu.
    *
    * Pesos explícitos, como no ID da unidade — um lugar só para mudar.
+   *
+   * TUDO aqui é do período escolhido. Ver `per` / `rankingPeriod`.
    */
-  const CONSISTENCY_WINDOW = 30;
-  const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
+  // Denominador = dias DECORRIDOS do período, não o tamanho dele: no dia 3 do
+  // mês ninguém pode aparecer com 10% porque o mês tem 30 dias.
+  const consistency = Math.min(100, Math.round((activeDaysJanela.length / Math.max(1, per.days)) * 100));
   /**
    * Os pesos vêm de `COLLAB_INDEX_PARTS` — aqui só se liga cada um ao valor.
-   *
-   * Quem entrega no prazo tem que terminar acima de quem entrega atrasado, e
-   * 0,25 é o que torna isso verdade de fato: entre 100% e 60% de pontualidade
-   * há 10 pontos de índice, mais do que qualquer empate nos outros componentes
-   * costuma produzir.
-   *
-   * A pontualidade entrou tirando peso de CONSTÂNCIA (0.18 → 0.10) mais do que
-   * dos outros de propósito: constância é `dias ativos ÷ 30`, e isso mede
-   * ESCALA antes de mérito — quem trabalha três dias por semana tem teto de
-   * ~43% por decisão da gerência, não por desempenho. Já tinha peso demais.
+   * Para mudar quanto cada coisa vale, é lá; nada aqui precisa saber disso.
    */
   const valorDe = {
     conclusao: totalItems ? avgRate : null,
     prazo: punctuality,
     criticos: criticalRate,
-    constancia: checklists ? consistency : null,
+    // Sem nada na janela, constância é `null` e o índice se renormaliza —
+    // melhor que exibir 0% para quem simplesmente não trabalhou no período.
+    constancia: checklistsJanela || activeDaysJanela.length ? consistency : null,
     qualidade: qualidade,
   };
   const parts = COLLAB_INDEX_PARTS.map(p => ({ ...p, value: valorDe[p.key] }));
@@ -10077,7 +10457,10 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
     tasksDone, criticalDone,
     streak, bestStreak, activeDays: days.length,
     level, intoLevel, perLevel, weekly, achievements,
-    index, parts, consistency, consistencyWindow: CONSISTENCY_WINDOW,
+    // `checklists` é história; `checklistsJanela` é o que sustenta o índice. A
+    // tela mostra os dois em lugares diferentes e não pode confundi-los.
+    checklistsJanela, windowDays: per.days, periodLabel: per.label, periodId: per.id,
+    index, parts, consistency, consistencyWindow: per.days,
     // A régua da qualidade, aberta: quem é medido precisa conseguir refazer a
     // conta. `julgadas` também explica o null (menos de 5 → sem componente).
     qualidade, julgadas, ressalvasQ, reprovadasQ,
@@ -10249,7 +10632,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
  * correto para medir esforço individual, mas significa que as duas não podem
  * chegar a 100% ao mesmo tempo.
  */
-function computeLeadershipProfile({ completions, templates, closures, units, leader, days = 30, today }) {
+function computeLeadershipProfile({ completions, templates, closures, units, leader, periodo, today }) {
   // `isUnitClosed` e `countApplicableTemplatesOnDate` assumem array; este cálculo
   // roda num useMemo que dispara antes de templates/closures terminarem de
   // carregar, e um `undefined.some` derrubaria a aba inteira.
@@ -10263,8 +10646,12 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // Líder preso a uma loja mede pelo relógio dela; quem responde pela empresa
   // toda mede pela primeira do escopo — não existe um dia único para a rede.
   const tz = tzOf(scopeUnits[0]);
-  const dates = lastDays(days, null, tz);
-  const dateSet = new Set(dates);
+  // O período vem pronto do seletor da aba Equipe — o MESMO objeto que o
+  // ranking do colaborador usa (`rankingPeriod`). Sem ele, mês corrente.
+  const per = periodo || rankingPeriod(RANKING_PERIOD_DEFAULT, tz, completions);
+  const dateSet = per.dates;
+  const dates = [...dateSet].sort();
+  const days = per.days;
 
   // `teamRaw` guarda as submissões; `team` é uma por rodada. A distinção importa
   // porque as três partes do índice pesam coisas diferentes — ver cada uma abaixo.
@@ -10898,8 +11285,14 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <IndexRing value={p.index} accent={accent} size={72} />
             <div style={{ flex: 1, minWidth: 200 }}>
+              {/* A janela no cabeçalho, não numa nota de rodapé: sem ela, os
+                  cinco percentuais abaixo não respondem "de quando?" — e a
+                  pessoa não sabe se um mês ruim ainda a persegue. */}
               <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted }}>
-                Índice operacional
+                Índice operacional · {p.periodLabel}
+              </p>
+              <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
+                {p.checklistsJanela} checklist{p.checklistsJanela === 1 ? '' : 's'} no período · nível e conquistas contam a história toda
               </p>
               <div style={{ marginTop: 8 }}>
                 {p.parts.map(part => (
@@ -10925,7 +11318,7 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                     <strong style={{ fontWeight: W.semibold, color: p.punctuality >= 90 ? C.success : p.punctuality >= 70 ? C.warning : C.critical }}>
                       {p.punctuality}% no prazo
                     </strong>
-                    <span style={{ color: C.mutedLight }}> · {p.prazoOk} de {p.prazoTotal} entregas com prazo</span>
+                    <span style={{ color: C.mutedLight }}> · {p.prazoOk} de {p.prazoTotal} entregas com prazo no período</span>
                   </span>
                 </p>
               )}
@@ -10943,8 +11336,8 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                   custa 8 pontos" passa. */}
               <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
                 {p.qualidade != null
-                  ? `Qualidade = 100 − (ressalvas × 2 + reprovações × 8), sobre ${p.julgadas} tarefas avaliadas pela liderança. Apontamento sem motivo escrito não desconta.`
-                  : 'Qualidade entra quando a liderança tiver avaliado ao menos 5 das suas tarefas (vale para avaliações a partir de 09/08/2026).'}
+                  ? `Qualidade = 100 − (ressalvas × 2 + reprovações × 8), sobre ${p.julgadas} tarefas avaliadas pela liderança no período. Apontamento sem motivo escrito não desconta.`
+                  : `Qualidade entra quando a liderança tiver avaliado ao menos ${QUALITY_MIN_JULGADAS} das suas tarefas no período (vale para avaliações a partir de 09/08/2026).`}
               </p>
             </div>
           </div>
@@ -11464,6 +11857,26 @@ export function EquipeView({ currentUser, users, completions, templates, closure
 
   const units = useUnits();
   const [groupBy, setGroupBy] = useState('unidade'); // 'unidade' | 'setor' | 'lideranca'
+  /**
+   * O período do ranking. Só existe aqui, e é de propósito: a aba Equipe é
+   * visível apenas para liderança (ROLE_TABS) e é onde se ANALISA. O Painel,
+   * que o colaborador também vê, fica fixo no mês — dois lugares com seletores
+   * independentes gerariam de novo o problema de "qual dos dois vale".
+   *
+   * Mensal é o padrão pelo mesmo motivo do Painel: placar que recomeça no dia
+   * 1º fomenta constância, janela deslizante dilui o passado sozinha.
+   */
+  // Mesmos nomes e mesmos defaults da aba Dados — inclusive o "Mês" como
+  // padrão, que é o pedido: placar que recomeça no dia 1º fomenta constância.
+  const equipeTz = tzOfUnit(units, currentUser?.unitId);
+  const [periodId, setPeriodId] = useState(RANKING_PERIOD_DEFAULT);
+  const [selectedMonth, setSelectedMonth] = useState(() => todayStr(equipeTz).slice(0, 7));
+  const [customFrom, setCustomFrom] = useState(() => todayStr(equipeTz));
+  const [customTo, setCustomTo] = useState(() => todayStr(equipeTz));
+  const periodo = useMemo(
+    () => rankingPeriod(periodId, equipeTz, completions, { mes: selectedMonth, from: customFrom, to: customTo }),
+    [periodId, equipeTz, completions, selectedMonth, customFrom, customTo],
+  );
 
   /**
    * Liderança entra no ranking junto com o colaborador: quem lidera a loja
@@ -11485,7 +11898,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
    * quadro nenhum: listar ali quem nunca trabalhou naquele setor seria ruído.
    */
   const rank = (scopeCompletions, candidates, onlyActive) => candidates
-    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name, tzOfUnit(units, u.unitId), templates, units) }))
+    .map(u => ({ user: u, profile: computeOperationalProfile(scopeCompletions, u.id, u.name, tzOfUnit(units, u.unitId), templates, units, periodo) }))
     .filter(x => !onlyActive || x.profile.checklists > 0 || x.profile.tasksDone > 0)
     .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
       || b.profile.tasksDone - a.profile.tasksDone
@@ -11517,7 +11930,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       });
     });
     return out;
-  }, [units, people, completions, groupBy, canSeeAllUnits, currentUser]);
+  }, [units, people, completions, groupBy, canSeeAllUnits, currentUser, periodo, templates]);
 
   /**
    * Ranking da LIDERANÇA — régua diferente da do colaborador, porque o trabalho
@@ -11546,12 +11959,16 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       .map(u => ({
         user: u,
         profile: computeLeadershipProfile({
-          completions, templates, closures, units: unitsInScope, leader: u, today,
+          completions, templates, closures, units: unitsInScope, leader: u, today, periodo,
         }),
       }))
       .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
         || b.profile.teamChecklists - a.profile.teamChecklists);
-  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser]);
+  // `today` NÃO entra aqui: ele é declarado dentro do callback, então citá-lo
+  // no array de dependências é um ReferenceError em runtime — que o build não
+  // pega, porque isto é JS puro sem checagem de variável não declarada. Ele
+  // deriva de `units` e `currentUser`, que já estão na lista.
+  }, [groupBy, users, completions, templates, closures, units, canSeeAllUnits, currentUser, periodo]);
 
   // Perfil do colaborador selecionado (visão do líder)
   if (selected) {
@@ -11585,8 +12002,8 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       </Eyebrow>
       <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
         {groupBy === 'lideranca'
-          ? 'Índice de liderança: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%). Últimos 30 dias.'
-          : `Ordenado pelo índice operacional: ${collabIndexSentence()}.`}
+          ? `Índice de liderança de ${periodo.label}: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%).`
+          : `Ordenado pelo índice operacional de ${periodo.label}: ${collabIndexSentence()}.`}
       </p>
 
       <div className="flex gap-2" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
@@ -11594,6 +12011,58 @@ export function EquipeView({ currentUser, users, completions, templates, closure
         <PillButton active={groupBy === 'setor'} accent={accent} onClick={() => setGroupBy('setor')}>Por setor</PillButton>
         <PillButton active={groupBy === 'lideranca'} accent={accent} onClick={() => setGroupBy('lideranca')}>Liderança</PillButton>
       </div>
+
+      {/* Período — vale para os DOIS rankings desta aba. Antes só o do
+          colaborador respeitava o seletor e o da liderança ficava preso em 30
+          dias: a mesma tela responderia sobre períodos diferentes conforme a
+          aba interna, que é o defeito que este seletor existe para não ter. */}
+      {(
+        <>
+          <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 6 }}>
+            Período
+          </p>
+          {/* O seletor da aba Dados, inteiro: mesmas opções, mesmos controles,
+              mesmos limites de data. Quem já escolhe período lá não aprende
+              nada novo aqui. */}
+          <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
+            {PERIODS.map(p => (
+              <PillButton key={p.id} active={periodId === p.id} accent={accent} onClick={() => setPeriodId(p.id)}>
+                {p.label}
+              </PillButton>
+            ))}
+          </div>
+
+          {periodId === 'month' && (
+            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+              <input
+                type="month" value={selectedMonth} max={todayStr(equipeTz).slice(0, 7)}
+                onChange={e => setSelectedMonth(e.target.value)}
+                aria-label="Mês do ranking"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${accent}`, borderRadius: 8, outline: 'none' }}
+              />
+              {selectedMonth && (
+                <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>{periodo.label}</span>
+              )}
+            </div>
+          )}
+
+          {periodId === 'custom' && (
+            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+              <input
+                type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)}
+                aria-label="Início do período"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+              />
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: W.semibold }}>até</span>
+              <input
+                type="date" value={customTo} min={customFrom} max={todayStr(equipeTz)} onChange={e => setCustomTo(e.target.value)}
+                aria-label="Fim do período"
+                style={{ flex: 1, fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 8px', border: `1.5px solid ${C.border}`, borderRadius: 8, outline: 'none' }}
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {groupBy === 'lideranca' && (
         leaders.length === 0 ? (
@@ -11707,7 +12176,15 @@ export function EquipeView({ currentUser, users, completions, templates, closure
                 <ChevronRight size={18} color={C.mutedLight} style={{ flexShrink: 0 }} />
               </div>
 
-              <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+              {/* A linha de cima são CONTADORES DE HISTÓRIA (nível, total de
+                  checklists, sequência). Daqui para baixo é a JANELA do índice.
+                  Sem esta divisória escrita, "21 checklists" ao lado de
+                  "Conclusão 100%" faz parecer que os dois falam do mesmo
+                  período — e não falam. */}
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginTop: 10 }}>
+                Índice · {profile.periodLabel} · {profile.checklistsJanela} checklist{profile.checklistsJanela === 1 ? '' : 's'}
+              </p>
+              <div style={{ display: 'flex', gap: 14, marginTop: 6, paddingTop: 8, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
                 {/* Os mesmos componentes do índice, na mesma ordem de peso —
                     quem lê o card tem que conseguir ligar o número grande da
                     direita às partes que o formaram. `No prazo` leva os brutos

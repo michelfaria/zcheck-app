@@ -80,3 +80,16 @@ const EMPRESAS = {
 - Não mexer em `borderRadius` globalmente — quebra o layout dos cards
 - Deploy: `cd ibr-checklists-app && npx vercel --prod`
 - `ibr-checklists-app-codex-update/` é uma cópia paralela — o projeto ativo é `ibr-checklists-app/`
+
+## Antes de publicar
+
+```bash
+cd ibr-checklists-app && npm run verify   # eslint --quiet && next build
+```
+
+`npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
+Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
+variável inexistente no array de dependências: build limpo, app inteiro fora do
+ar por ReferenceError. `verify` roda o lint antes do build; `no-undef` é erro e
+bloqueia. Aviso (`no-unused-vars`, `exhaustive-deps`) não bloqueia — veja
+`ibr-checklists-app/eslint.config.mjs` para o porquê de cada escolha.
