@@ -146,11 +146,15 @@ Os pesos do índice do colaborador, desde 08/08/2026:
 
 | componente | peso | o que mede |
 |---|---|---|
-| Conclusão de tarefas | 0,35 | do que pegou, quanto fez |
-| **Entregas no prazo** | **0,25** | dos checklists que entregou e tinham prazo, quantos saíram dentro dele |
+| Conclusão de tarefas | 0,40 | do que pegou, quanto fez |
+| **Entregas no prazo** | **0,20** | dos checklists que entregou e tinham prazo, quantos saíram dentro dele |
 | Críticos em dia | 0,20 | risco |
 | Constância | 0,10 | dias com atividade ÷ 30 |
 | Qualidade avaliada | 0,10 | o julgamento da liderança |
+
+Fonte única em `COLLAB_INDEX_PARTS` (page.js). A frase que explica o ranking
+na aba Equipe e no Painel é GERADA dali — mexer num peso corrige as duas
+descrições junto. Pesos definidos pelo Michel em 10/08/2026.
 
 ### Qualidade — penalidade contável, não média
 
@@ -184,9 +188,9 @@ qualidade) fica para depois, se ficar.
 ### Pontualidade — e por que ela NÃO tem corte de data
 
 Pedido de 08/08: quem entrega no prazo tem que ficar acima de quem entrega
-atrasado. Peso 0,25 é o que torna isso verdade de fato — entre 100% e 60% são
-10 pontos de índice, mais do que qualquer empate nos outros componentes
-costuma produzir.
+atrasado. Peso 0,20: entre 100% e 60% de pontualidade são 8 pontos de índice, o
+bastante para reordenar o ranking entre pessoas de desempenho parecido no
+resto.
 
 Três decisões de cálculo, herdadas de regras que o app já aplicava:
 
