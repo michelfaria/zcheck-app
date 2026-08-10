@@ -2519,26 +2519,6 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
     return total > 0 ? Math.round((done / total) * 100) : 0;
   };
 
-  // ── Collaborator ranking ──────────────────────────────────────────────────
-  const calcRanking = (dateRange) => {
-    const relevant = completions.filter(c =>
-      c.unitId === unit.id &&
-      (!dateRange || dateRange.includes(c.date))
-    );
-    const byUser = {};
-    for (const c of relevant) {
-      const key = c.operatorUserId || c.operatorName;
-      if (!key) continue;
-      if (!byUser[key]) byUser[key] = { key, name: c.operatorName, done: 0, total: 0, checklists: 0 };
-      byUser[key].checklists++;
-      byUser[key].done += (c.items || []).filter(i => i.done).length;
-      byUser[key].total += (c.items || []).length;
-    }
-    return Object.values(byUser)
-      .map(u => ({ ...u, rate: u.total > 0 ? Math.round((u.done / u.total) * 100) : 0 }))
-      .sort((a, b) => b.rate - a.rate || b.checklists - a.checklists);
-  };
-
   const yesterday = addDays(today, -1);
   // last7 includes today + 6 previous days
   const last7 = lastDays(7, today);
@@ -2562,8 +2542,33 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
     })(),
   })) : [];
 
-  // ── Collaborator ranking ──────────────────────────────────────────────────
-  const ranking7 = calcRanking(last7);
+  /**
+   * Ranking da equipe — o MESMO da aba Equipe, não um segundo ranking.
+   *
+   * Antes esta lista era `calcRanking(last7)`: percentual de tarefas concluídas
+   * em 7 dias. A aba Equipe ordena pelo índice operacional. As duas apareciam
+   * lado a lado no mesmo app, com nomes em ordens diferentes e números
+   * diferentes para as mesmas pessoas — e quem olhasse as duas não tinha como
+   * saber qual valia. Um ranking que se contradiz não é ranking.
+   *
+   * Agora é o mesmo cálculo, o mesmo recorte de candidatos e a mesma
+   * ordenação de `EquipeView.rank`, escopado à loja em foco. O rótulo deixou de
+   * prometer "últimos 7 dias" porque o índice não é de 7 dias.
+   *
+   * O `calcRanking` que existia aqui foi removido junto: ninguém mais o
+   * chamava, e função morta que calcula ranking é a pior espécie de código
+   * morto — a próxima pessoa acha que existem duas réguas de propósito.
+   */
+  const ranking7 = useMemo(() => {
+    const ofUnit = (completions || []).filter(c => c.unitId === unit.id);
+    return (users || [])
+      .filter(u => RANKED_ROLES.includes(u.role) && !u.suspended && (!u.unitId || u.unitId === unit.id))
+      .map(u => ({ user: u, profile: computeOperationalProfile(ofUnit, u.id, u.name, tzOf(unit), templates, units) }))
+      .filter(x => x.profile.checklists > 0 || x.profile.tasksDone > 0)
+      .sort((a, b) => (b.profile.index ?? -1) - (a.profile.index ?? -1)
+        || b.profile.tasksDone - a.profile.tasksDone
+        || b.profile.checklists - a.profile.checklists);
+  }, [completions, users, unit, templates, units]);
 
   // ── Gamification: score & label ──────────────────────────────────────────
   const getRating = (rate) => {
@@ -2954,22 +2959,27 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
             );
           })}
 
-          {/* Ranking da equipe — penúltimo */}
-          <Eyebrow>Ranking da equipe — últimos 7 dias</Eyebrow>
+          {/* Ranking da equipe — penúltimo. Mesmo índice da aba Equipe: ver o
+              comentário em `ranking7`. */}
+          <Eyebrow>Ranking da equipe · índice operacional</Eyebrow>
           {ranking7.length === 0 ? (
             <Ticket accent={C.border}>
-              <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0' }}>Nenhum checklist concluído nos últimos 7 dias.</p>
+              <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0' }}>Ninguém com execuções nesta loja ainda.</p>
             </Ticket>
           ) : (
             <Ticket accent={C.border}>
               <div className="space-y-3">
-                {ranking7.map((collab, idx) => {
+                {ranking7.map(({ user: userObj, profile }, idx) => {
+                  const collab = {
+                    key: userObj.id, name: userObj.name,
+                    rate: profile.index ?? 0,
+                    checklists: profile.checklists, done: profile.tasksDone,
+                  };
                   const barColor = collab.rate >= 80 ? C.success : collab.rate >= 50 ? unit.color : C.critical;
-                  const isMe = collab.name === currentUser?.name;
-                  const userObj = (users || []).find(u => u.id === collab.key || u.name === collab.name);
+                  const isMe = userObj.id === currentUser?.id || collab.name === currentUser?.name;
                   const roleLabel = userObj ? ROLE_LABELS[userObj.role] : null;
                   return (
-                    <div key={collab.name} style={{
+                    <div key={collab.key} style={{
                       padding: isMe ? '8px 10px' : '4px 0',
                       borderRadius: isMe ? 8 : 0,
                       background: isMe ? `${unit.color}12` : 'transparent',
@@ -2986,15 +2996,20 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
                             <p style={{ fontSize: 13, fontWeight: isMe ? 800 : 700, color: isMe ? unit.color : C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {collab.name}{isMe ? ' · você' : ''}
                             </p>
-                            {roleLabel && (
-                              <p style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{roleLabel} · {collab.done}/{collab.total} tarefas · {collab.checklists} checklist{collab.checklists !== 1 ? 's' : ''}</p>
-                            )}
-                            {!roleLabel && (
-                              <p style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{collab.done}/{collab.total} tarefas · {collab.checklists} checklist{collab.checklists !== 1 ? 's' : ''}</p>
-                            )}
+                            {/* A pontualidade vem junto do resumo: é o
+                                componente novo do índice e o que a pessoa
+                                consegue mudar já no próximo turno. */}
+                            <p style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                              {roleLabel ? `${roleLabel} · ` : ''}{collab.done} tarefas · {collab.checklists} checklist{collab.checklists !== 1 ? 's' : ''}
+                              {profile.punctuality != null ? ` · ${profile.punctuality}% no prazo` : ''}
+                            </p>
                           </div>
                         </div>
-                        <span className="font-display" style={{ fontSize: 16, fontWeight: W.semibold, color: barColor, flexShrink: 0 }}>{collab.rate}%</span>
+                        {/* Índice, não percentual: 92 é uma nota composta, e o
+                            "%" fazia parecer "92% das tarefas". */}
+                        <span className="font-display" style={{ fontSize: 16, fontWeight: W.semibold, color: barColor, flexShrink: 0 }}>
+                          {profile.index == null ? '—' : profile.index}
+                        </span>
                       </div>
                       <div style={{ width: '100%', height: 5, background: C.border, borderRadius: 999, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${collab.rate}%`, background: barColor, borderRadius: 999, transition: 'width 0.5s ease' }} />
@@ -10302,6 +10317,32 @@ function longestStreak(days) {
 const QUALITY_CUTOFF = '2026-08-09';
 const QUALITY_MIN_JULGADAS = 5;
 
+/**
+ * Os pesos do índice do colaborador — FONTE ÚNICA.
+ *
+ * Ficavam só dentro de `computeOperationalProfile`, e a frase que explica o
+ * ranking na aba Equipe repetia os números à mão. Deu no que tinha que dar: o
+ * texto continuou dizendo "conclusão 50%, críticos 30%, constância 20%" muito
+ * depois de os pesos terem mudado duas vezes. Agora a frase é GERADA daqui —
+ * mexer num peso corrige a explicação junto, sem ninguém lembrar de nada.
+ *
+ * Ordem = ordem de exibição, do que mais pesa para o que menos pesa.
+ */
+const COLLAB_INDEX_PARTS = [
+  { key: 'conclusao',  label: 'Conclusão de tarefas', weight: 0.35 },
+  { key: 'prazo',      label: 'Entregas no prazo',    weight: 0.25 },
+  { key: 'criticos',   label: 'Críticos em dia',      weight: 0.20 },
+  { key: 'constancia', label: 'Constância',           weight: 0.10 },
+  { key: 'qualidade',  label: 'Qualidade avaliada',   weight: 0.10 },
+];
+
+// "conclusão de tarefas (35%), entregas no prazo (25%) e ..." — a lista em
+// português, com "e" antes do último, a partir dos pesos de verdade.
+const collabIndexSentence = () => {
+  const itens = COLLAB_INDEX_PARTS.map(p => `${p.label.toLowerCase()} (${Math.round(p.weight * 100)}%)`);
+  return `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`;
+};
+
 // `tz` é o da loja da pessoa: a sequência de dias seguidos tem que virar à
 // meia-noite dela, senão quem trabalha à noite em Manaus perde ou ganha um dia.
 //
@@ -10458,23 +10499,26 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
   const CONSISTENCY_WINDOW = 30;
   const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
   /**
-   * Os pesos, num lugar só. Quem entrega no prazo tem que terminar acima de
-   * quem entrega atrasado, e 0,25 é o que torna isso verdade de fato: entre
-   * 100% e 60% de pontualidade há 10 pontos de índice, mais do que qualquer
-   * empate nos outros componentes costuma produzir.
+   * Os pesos vêm de `COLLAB_INDEX_PARTS` — aqui só se liga cada um ao valor.
+   *
+   * Quem entrega no prazo tem que terminar acima de quem entrega atrasado, e
+   * 0,25 é o que torna isso verdade de fato: entre 100% e 60% de pontualidade
+   * há 10 pontos de índice, mais do que qualquer empate nos outros componentes
+   * costuma produzir.
    *
    * A pontualidade entrou tirando peso de CONSTÂNCIA (0.18 → 0.10) mais do que
    * dos outros de propósito: constância é `dias ativos ÷ 30`, e isso mede
    * ESCALA antes de mérito — quem trabalha três dias por semana tem teto de
    * ~43% por decisão da gerência, não por desempenho. Já tinha peso demais.
    */
-  const parts = [
-    { key: 'conclusao', label: 'Conclusão de tarefas', weight: 0.35, value: totalItems ? avgRate : null },
-    { key: 'prazo', label: 'Entregas no prazo', weight: 0.25, value: punctuality },
-    { key: 'criticos', label: 'Críticos em dia', weight: 0.20, value: criticalRate },
-    { key: 'constancia', label: 'Constância', weight: 0.10, value: checklists ? consistency : null },
-    { key: 'qualidade', label: 'Qualidade avaliada', weight: 0.10, value: qualidade },
-  ];
+  const valorDe = {
+    conclusao: totalItems ? avgRate : null,
+    prazo: punctuality,
+    criticos: criticalRate,
+    constancia: checklists ? consistency : null,
+    qualidade: qualidade,
+  };
+  const parts = COLLAB_INDEX_PARTS.map(p => ({ ...p, value: valorDe[p.key] }));
   const usable = parts.filter(x => x.value != null);
   const wsum = usable.reduce((a, x) => a + x.weight, 0);
   const index = usable.length ? Math.round(usable.reduce((a, x) => a + x.value * x.weight, 0) / wsum) : null;
@@ -12045,7 +12089,7 @@ export function EquipeView({ currentUser, users, completions, templates, closure
       <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
         {groupBy === 'lideranca'
           ? 'Índice de liderança: checklists da equipe no prazo (40%), aderência ao previsto (30%) e execuções conferidas por ele (30%). Últimos 30 dias.'
-          : 'Ordenado pelo índice operacional: conclusão de tarefas (50%), críticos em dia (30%) e constância (20%).'}
+          : `Ordenado pelo índice operacional: ${collabIndexSentence()}.`}
       </p>
 
       <div className="flex gap-2" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
@@ -12167,12 +12211,23 @@ export function EquipeView({ currentUser, users, completions, templates, closure
               </div>
 
               <div style={{ display: 'flex', gap: 14, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
-                {[['Conclusão', profile.avgRate], ['Críticos', profile.criticalRate], ['Constância', profile.checklists ? profile.consistency : null]].map(([label, v]) => (
-                  <div key={label} style={{ flex: 1, minWidth: 88 }}>
+                {/* Os mesmos componentes do índice, na mesma ordem de peso —
+                    quem lê o card tem que conseguir ligar o número grande da
+                    direita às partes que o formaram. `No prazo` leva os brutos
+                    junto porque um atraso em 3 entregas pesa muito diferente de
+                    um atraso em 30. */}
+                {[
+                  ['Conclusão', profile.avgRate, null],
+                  ['No prazo', profile.punctuality, profile.prazoTotal ? `${profile.prazoOk}/${profile.prazoTotal}` : 'sem prazo'],
+                  ['Críticos', profile.criticalRate, null],
+                  ['Constância', profile.checklists ? profile.consistency : null, null],
+                ].map(([label, v, sub]) => (
+                  <div key={label} style={{ flex: 1, minWidth: 76 }}>
                     <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
                     <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>
                       {v == null ? '—' : `${v}%`}
                     </p>
+                    {sub && <p style={{ fontSize: T.label, color: C.mutedLight }}>{sub}</p>}
                   </div>
                 ))}
               </div>
