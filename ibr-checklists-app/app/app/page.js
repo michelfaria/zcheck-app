@@ -10333,10 +10333,25 @@ const QUALITY_MIN_JULGADAS = 5;
  * mexer num peso corrige a explicação junto, sem ninguém lembrar de nada.
  *
  * Ordem = ordem de exibição, do que mais pesa para o que menos pesa.
+ *
+ * Pesos definidos pelo Michel em 10/08/2026. O que cada escolha significa na
+ * prática, para quem for mexer:
+ *
+ *   Entregar no prazo separa de verdade — entre 100% e 60% de pontualidade são
+ *   8 pontos de índice, o bastante para reordenar o ranking entre pessoas de
+ *   desempenho parecido no resto.
+ *
+ *   CONSTÂNCIA é a que pesa menos de propósito: ela é `dias ativos ÷ 30`, e
+ *   isso mede ESCALA antes de mérito — quem trabalha três dias por semana tem
+ *   teto de ~43% por decisão da gerência, não por desempenho próprio.
+ *
+ *   QUALIDADE começa baixa e sobe quando os apontamentos deixarem de chegar
+ *   mudos (ver §2 de docs/REVISAO_CONFERENCIA_v1.md): pesar muito um sinal que
+ *   hoje tem 3% de variância seria pendurar a colocação em ruído.
  */
 const COLLAB_INDEX_PARTS = [
-  { key: 'conclusao',  label: 'Conclusão de tarefas', weight: 0.35 },
-  { key: 'prazo',      label: 'Entregas no prazo',    weight: 0.25 },
+  { key: 'conclusao',  label: 'Conclusão de tarefas', weight: 0.40 },
+  { key: 'prazo',      label: 'Entregas no prazo',    weight: 0.20 },
   { key: 'criticos',   label: 'Críticos em dia',      weight: 0.20 },
   { key: 'constancia', label: 'Constância',           weight: 0.10 },
   { key: 'qualidade',  label: 'Qualidade avaliada',   weight: 0.10 },
@@ -10506,16 +10521,7 @@ function computeOperationalProfile(completions, userId, userName, tz, templates,
   const consistency = Math.min(100, Math.round((days.length / CONSISTENCY_WINDOW) * 100));
   /**
    * Os pesos vêm de `COLLAB_INDEX_PARTS` — aqui só se liga cada um ao valor.
-   *
-   * Quem entrega no prazo tem que terminar acima de quem entrega atrasado, e
-   * 0,25 é o que torna isso verdade de fato: entre 100% e 60% de pontualidade
-   * há 10 pontos de índice, mais do que qualquer empate nos outros componentes
-   * costuma produzir.
-   *
-   * A pontualidade entrou tirando peso de CONSTÂNCIA (0.18 → 0.10) mais do que
-   * dos outros de propósito: constância é `dias ativos ÷ 30`, e isso mede
-   * ESCALA antes de mérito — quem trabalha três dias por semana tem teto de
-   * ~43% por decisão da gerência, não por desempenho. Já tinha peso demais.
+   * Para mudar quanto cada coisa vale, é lá; nada aqui precisa saber disso.
    */
   const valorDe = {
     conclusao: totalItems ? avgRate : null,
