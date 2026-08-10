@@ -2962,6 +2962,12 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
           {/* Ranking da equipe — penúltimo. Mesmo índice da aba Equipe: ver o
               comentário em `ranking7`. */}
           <Eyebrow>Ranking da equipe · índice operacional</Eyebrow>
+          {/* A MESMA frase da aba Equipe, da mesma fonte. Duas telas mostrando
+              o mesmo ranking precisam explicá-lo com as mesmas palavras — se
+              divergirem, volta a parecer que são duas réguas. */}
+          <p style={{ fontSize: T.caption, color: C.muted, margin: '4px 0 10px' }}>
+            Ordenado pelo índice operacional: {collabIndexSentence()}.
+          </p>
           {ranking7.length === 0 ? (
             <Ticket accent={C.border}>
               <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0' }}>Ninguém com execuções nesta loja ainda.</p>
