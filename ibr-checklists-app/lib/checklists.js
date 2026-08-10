@@ -14,8 +14,8 @@
  * REGRA: este módulo não pode importar de `app/`. Só de outros `lib/`.
  */
 
-import { weekdayOf, instantAt, tzOfUnit } from './dates';
-import { roundIsComplete } from './rounds';
+import { weekdayOf, instantAt, tzOfUnit, APP_TZ } from './dates';
+import { roundIsComplete, roundProgress, statusFromProgress } from './rounds';
 
 /**
  * Os três tipos de checklist da operação, na ordem em que o dia acontece.
@@ -109,4 +109,40 @@ export function completionOnTime(c, templates, index, units) {
  */
 export function deadlineIndex(templates) {
   return new Map((templates || []).map(t => [t.id, t.deadline]));
+}
+
+/* --- movidos na Fase 1b: estado do checklist no dia --- */
+
+// Returns true if the given unit is marked as closed on the given date.
+export const isUnitClosed = (closures, unitId, dateStr) =>
+  closures.some(c => c.unitId === unitId && c.date === dateStr);
+
+/**
+ * Status do checklist no dia. Devolve 'done' | 'partial' | 'overdue' | 'pending'.
+ *
+ * `partial` existe porque "concluído" aqui sempre quis dizer só "foi submetido".
+ * Um checklist fechado com 5 de 8 itens ficava verde, com a mesma cara de um 8/8
+ * — e desde que o bloqueio passou a ser por tarefa, abrir esse "concluído" e
+ * encontrar 3 itens executáveis deixava o rótulo contradizendo a própria tela.
+ *
+ * Submetido sem nenhum item feito também é `partial`: foi entregue (vazio), não
+ * está pendente. Quem nunca foi submetido segue em `pending`/`overdue`, com a
+ * regra de prazo intacta.
+ */
+export function templateStatus(t, completions, today, tz = APP_TZ) {
+  const previstas = applicableItems(t, today).map(i => i.id);
+  const p = roundProgress(completions, { templateId: t.id, unitId: t.unitId, date: today }, previstas);
+  // A regra (e o porquê do prazo ser um INSTANTE no relógio da loja, não uma
+  // comparação com o relógio de quem olha) está em lib/rounds.js, com teste.
+  return statusFromProgress(p, { deadline: t.deadline, date: today, tz });
+}
+
+// Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de
+// só "parcial", que informa o estado mas não o tamanho do que falta.
+export function templateProgress(t, completions, today) {
+  return roundProgress(
+    completions,
+    { templateId: t.id, unitId: t.unitId, date: today },
+    applicableItems(t, today).map(i => i.id),
+  );
 }
