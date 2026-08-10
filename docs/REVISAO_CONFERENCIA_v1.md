@@ -152,19 +152,33 @@ Os pesos do índice do colaborador, desde 08/08/2026:
 | Constância | 0,10 | dias com atividade ÷ 30 |
 | Qualidade avaliada | 0,10 | o julgamento da liderança |
 
-**Janela: últimos 30 dias**, no relógio da loja da pessoa — TODOS os
-componentes. Antes cada um media um período diferente (conclusão, prazo e
-críticos varriam os 90 dias carregados; constância dividia por 30, então quem
-tivesse mais de 30 dias ativos saturava em 100% para sempre). Um índice que
-soma pedaços de janelas distintas não significa nada, e não respondia "esse
-ranking é de quando?".
+**Período: MÊS CORRENTE por padrão.** Não é uma janela deslizante de 30 dias, e
+a diferença é de incentivo: na janela deslizante o passado some sozinho todo
+dia, e um mês ruim se dilui sem ninguém fazer nada. No mês fechado existe um
+placar que começa limpo no dia 1º — dá para recuperar um começo ruim, e o
+esforço do dia 28 ainda conta.
 
-Ficam FORA da janela, de propósito: nível, conquistas, evidências, total de
+- **Painel** — sempre o mês corrente, sem seletor. É a tela da operação do dia,
+  e o colaborador também a vê; dois seletores independentes trariam de volta o
+  "qual dos dois vale".
+- **Equipe** (só liderança, por `ROLE_TABS`) — mês corrente por padrão, com
+  seletor: este mês · 30 · 60 · 90 dias · tudo. É onde se analisa.
+
+TODOS os componentes olham o mesmo período. Antes cada um media coisa diferente
+(conclusão, prazo e críticos varriam os 90 dias carregados; constância dividia
+por 30, então quem tivesse mais de 30 dias ativos saturava em 100% para
+sempre) — um índice que soma pedaços de janelas distintas não significa nada.
+
+O denominador da constância são os dias **decorridos** do período, não o tamanho
+dele: no dia 3 do mês ninguém pode aparecer com 10% porque o mês tem 30 dias.
+
+Ficam FORA do período, de propósito: nível, conquistas, evidências, total de
 tarefas, sequência de dias e a evolução semanal. Esses são história da pessoa,
 não desempenho recente — zerar a conquista de alguém porque tirou férias seria
 punir o calendário.
 
-Fonte única em `COLLAB_INDEX_PARTS` (page.js), janela em `RANKING_WINDOW_DAYS`. A frase que explica o ranking
+Fonte única dos pesos em `COLLAB_INDEX_PARTS`; períodos em `rankingPeriod` /
+`RANKING_PERIOD_OPTIONS` (page.js). A frase que explica o ranking
 na aba Equipe e no Painel é GERADA dali — mexer num peso corrige as duas
 descrições junto. Pesos definidos pelo Michel em 10/08/2026.
 
