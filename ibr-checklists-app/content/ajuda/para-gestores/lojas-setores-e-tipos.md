@@ -21,7 +21,7 @@ A aba **Gerenciar → Estrutura** é onde você desenha a espinha dorsal da oper
 ## Tipos de checklist
 
 - Os tipos padrão são **Abertura**, **Intermediário** e **Fechamento**, e você pode criar outros (Vistoria, Conferência, Produção…) aqui na Estrutura ou direto no + Novo (tipo livre).
-- O tipo organiza a aba Executar e os agrupamentos dos relatórios.
+- O tipo organiza a aba Executar e os agrupamentos da análise por período, no Painel.
 
 ## Logo da empresa
 
@@ -30,5 +30,5 @@ A aba **Gerenciar → Estrutura** é onde você desenha a espinha dorsal da oper
 
 <!-- TODO: screenshot -->
 
-> 💡 Estruture primeiro, crie checklists depois: com lojas e setores certos desde o início, os relatórios já nascem organizados do jeito que você vai querer analisar.
+> 💡 Estruture primeiro, crie checklists depois: com lojas e setores certos desde o início, a análise já nasce organizada do jeito que você vai querer ler.
 

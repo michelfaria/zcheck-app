@@ -15,7 +15,7 @@ Alguns checklists têm **prazo** (por exemplo, Abertura até 09:00). Passou da h
 ## O que muda com o atraso
 
 - Na aba **Executar**, o tipo mostra o alerta em vermelho (por exemplo, "1 atrasada").
-- No **Painel** e nos **Relatórios**, a gestão vê o horário real de conclusão — dá para saber o que foi feito no prazo e o que não foi.
+- No **Painel**, a gestão vê o horário real de conclusão — dá para saber o que foi feito no prazo e o que não foi.
 - O atraso não apaga: mesmo concluído depois, o horário registrado conta a história real do turno.
 
 ## O que fazer na prática
@@ -24,4 +24,4 @@ Alguns checklists têm **prazo** (por exemplo, Abertura até 09:00). Passou da h
 2. Atrasou? Execute assim mesmo, o quanto antes.
 3. Se o atraso teve um motivo real (equipamento quebrado, equipe reduzida), registre uma **observação** no item mais afetado — a gestão vê e entende o contexto.
 
-> 💡 Atraso recorrente no mesmo checklist geralmente é sinal de prazo mal calibrado ou de rotina mal distribuída. Gestores: os [Relatórios](/ajuda/para-gestores/relatorios-desempenho-e-evidencias) mostram o padrão — vale ajustar o prazo ou remanejar a tarefa.
+> 💡 Atraso recorrente no mesmo checklist geralmente é sinal de prazo mal calibrado ou de rotina mal distribuída. Gestores: a [análise por período no Painel](/ajuda/para-gestores/relatorios-desempenho-e-evidencias) mostra o padrão — vale ajustar o prazo ou remanejar a tarefa.

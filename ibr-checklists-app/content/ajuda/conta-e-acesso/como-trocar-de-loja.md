@@ -10,7 +10,7 @@ No ZCheck, cada pessoa enxerga as lojas conforme o seu papel.
 
 ## Gerência e diretoria: alternam livremente
 
-Se você é da gerência ou diretoria, os **botões das lojas** aparecem no topo da tela. Toque na loja desejada e todo o app (Executar, Painel, Relatórios, Gerenciar) passa a mostrar aquela unidade.
+Se você é da gerência ou diretoria, os **botões das lojas** aparecem no topo da tela. Toque na loja desejada e todo o app (Executar, Painel, Gerenciar) passa a mostrar aquela unidade.
 
 <!-- TODO: screenshot -->
 

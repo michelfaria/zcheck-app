@@ -16,7 +16,7 @@ O ZCheck é o app de checklists da sua operação. Nele, a equipe executa as rot
 1. Cada loja tem seus checklists organizados por tipo: **Abertura**, **Intermediário** e **Fechamento** (sua empresa pode criar outros tipos).
 2. Quem está no turno abre a aba **Executar**, escolhe o checklist da sua área e marca as tarefas conforme faz.
 3. Ao concluir, o registro fica salvo com data, hora, responsável e as fotos anexadas.
-4. Líderes e gestores acompanham pelo **Painel** (visão do dia) e pelos **Relatórios** (histórico e desempenho).
+4. Líderes e gestores acompanham tudo pelo **Painel**: o que exige ação agora, a visão do dia e, mais abaixo, o histórico e o desempenho por período.
 
 ## O que cada perfil vê
 
@@ -25,9 +25,9 @@ O menu de abas na parte de baixo da tela muda conforme o seu papel:
 | Papel | Abas |
 |---|---|
 | **Colaborador** | Executar · Painel · Meu ID |
-| **Liderança** | Executar · Painel · Relatórios · Meu ID · Equipe |
-| **Gerência** | Executar · Painel · Relatórios · Gerenciar · Equipe |
-| **Diretoria** | Executar · Painel · Relatórios · Gerenciar · Usuários · Equipe |
+| **Liderança** | Executar · Painel · Unidades · Meu ID · Equipe |
+| **Gerência** | Executar · Painel · Unidades · Gerenciar · Meu ID · Equipe |
+| **Diretoria** | Executar · Painel · Unidades · Gerenciar · Usuários · Meu ID · Equipe |
 
 > 💡 O ZCheck funciona no navegador do celular e pode ser instalado na tela inicial como um app. Ele também funciona **sem internet**: os dados ficam no aparelho e sincronizam quando a conexão volta.
 
