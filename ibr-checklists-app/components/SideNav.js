@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ClipboardCheck, LayoutGrid, BarChart3, Settings2, Users, Award, Star, Activity, Store,
+  ClipboardCheck, LayoutGrid, Settings2, Users, Award, Star, Store,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
 
@@ -29,15 +29,14 @@ import { C, R, W, T, greenOnDark } from '../lib/tokens';
  */
 export const NAV_ITEMS = [
   { id: 'executar', label: 'Executar', short: 'Rotina', icon: ClipboardCheck, group: 'Operação' },
+  // Painel: a aba consolidada. Absorveu o J.I.T. (o "agora" da operação) e
+  // Relatórios (o histórico, a produtividade e a exportação) — os três eram
+  // recortes de tempo da MESMA pergunta, e viviam como três destinos
+  // concorrentes. Ver docs/PLANO_CONSOLIDACAO_ABAS.md.
   { id: 'painel', label: 'Painel', icon: LayoutGrid, group: 'Operação' },
-  // J.I.T. (Just In Time): o resumo do que importa na operação AGORA. Também é
-  // destino, não só pop-up de abertura — fechado o pop-up, ele sumia até o dia
-  // seguinte. Só papéis de gestão o recebem (MANAGER_ROLES).
-  { id: 'jit', label: 'J.I.T.', icon: Activity, group: 'Operação' },
   // Ranking das unidades. Cada loja tem seu ID Operacional, como o colaborador
   // tem o dele em "Meu ID" — mesma ideia de identidade, outra escala.
   { id: 'unidades', label: 'Unidades', icon: Store, group: 'Operação' },
-  { id: 'relatorios', label: 'Relatórios', short: 'Dados', icon: BarChart3, group: 'Análise' },
   { id: 'equipe', label: 'Equipe', icon: Star, group: 'Pessoas' },
   { id: 'id', label: 'Meu ID', icon: Award, group: 'Pessoas' },
   { id: 'gerenciar', label: 'Gerenciar', short: 'Config', icon: Settings2, group: 'Configuração' },
@@ -48,12 +47,21 @@ export const NAV_ITEMS = [
  * Ordem da barra inferior — deliberadamente diferente da ordem do rail.
  *
  * `usuarios` NÃO está aqui: no celular ele passou a viver dentro de Gerenciar,
- * como sub-aba. Isso abriu o lugar que o J.I.T. ocupa agora — antes o acesso
- * a ele era um botão de largura inteira repetido no topo de TODAS as abas.
- * Seis é o teto real: com 390px cada alvo fica com ~57px úteis, e é o que os
- * rótulos `short` foram medidos para caber — ver NAV_ITEMS.
+ * como sub-aba. Seis é o teto real: com 390px cada alvo fica com ~57px úteis, e
+ * é o que os rótulos `short` foram medidos para caber — ver NAV_ITEMS.
+ *
+ * A justificativa antiga desta lista dizia que tirar `usuarios` daqui "abriu o
+ * lugar que o J.I.T. ocupa agora". Com o J.I.T. consolidado dentro do Painel a
+ * razão evaporou, e comentário que cita motivo morto é pior que nenhum. O que
+ * mantém `usuarios` fora continua valendo por si: é configuração, não uso
+ * diário.
+ *
+ * Com a consolidação, gerência e gestão saem de SETE ícones para cinco — abaixo
+ * do teto de seis, com folga de um slot. `unidades` NÃO ocupa a vaga: é consulta
+ * periódica, e a entrada contextual dela é o "Ver todas as lojas →" no rodapé da
+ * seção REDE do Painel (§D.2).
  */
-export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'jit', 'relatorios', 'gerenciar', 'id', 'equipe'];
+export const BOTTOM_NAV_ORDER = ['executar', 'painel', 'gerenciar', 'id', 'equipe'];
 
 /**
  * Rail lateral do desktop (>= BP.desktop). Quem decide se ele ou a BottomNav
@@ -114,7 +122,7 @@ export default function SideNav({
               const Icon = it.icon;
               const active = tab === it.id;
               const showBadge = it.id === 'usuarios' && pendingCount > 0;
-              const showDot = (it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal);
+              const showDot = (it.id === 'painel' && jitSignal) || (it.id === 'id' && idSignal);
               return (
                 <button
                   key={it.id}

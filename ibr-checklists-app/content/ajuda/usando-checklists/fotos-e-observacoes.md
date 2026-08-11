@@ -26,6 +26,6 @@ A foto é comprimida automaticamente antes do envio, então não pesa no seu pla
 
 ## Quem vê o que você registra
 
-Fotos e observações aparecem para a liderança e a gestão no **Painel** (visão do dia) e nos **Relatórios** (histórico), sempre junto do checklist, do item, da data e de quem registrou.
+Fotos e observações aparecem para a liderança e a gestão no **Painel** — tanto na visão do dia quanto na análise por período, na lente **Registros** —, sempre junto do checklist, do item, da data e de quem registrou.
 
 > 💡 Sem internet? Sem problema: a foto fica guardada no aparelho e sobe sozinha quando a conexão voltar. [Entenda o modo offline](/ajuda/problemas-comuns/sem-internet-modo-offline).

@@ -11,7 +11,7 @@ No ZCheck, o mesmo checklist pode ser executado por várias pessoas ao mesmo tem
 ## Como funciona
 
 - Quando um colega marca um item, ele aparece **marcado também na sua tela**, em poucos segundos.
-- Cada tarefa registra **quem** a concluiu e **quando** — a produtividade de cada um conta individualmente nos relatórios e no Meu ID.
+- Cada tarefa registra **quem** a concluiu e **quando** — a produtividade de cada um conta individualmente na análise do Painel e no Meu ID.
 - Se você tentar marcar um item que um colega já concluiu, o app avisa: **"já foi concluída por [nome]"** — assim ninguém faz trabalho dobrado.
 
 ## Reabrir um item seu

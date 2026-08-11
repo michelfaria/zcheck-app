@@ -22,6 +22,26 @@ import { useEffect } from 'react';
 const KEY_TAB = 'aba';
 const KEY_UNIT = 'loja';
 
+/**
+ * Abas que deixaram de existir, e para onde os links antigos apontam agora.
+ *
+ * J.I.T. e Relatórios foram consolidados dentro do Painel. Sem este mapa,
+ * `?aba=jit` não casa com `allowedTabs` e cai calado em `allowedTabs[0]` —
+ * Executar. O usuário clica num link salvo, chega numa tela que não pediu e
+ * nada explica o desvio. Links compartilhados em conversa e favoritos do
+ * navegador sobrevivem a mudanças de produto; a rota morta, não.
+ *
+ * É só leitura: o alias resolve na entrada e a URL é reescrita com o destino
+ * real, então ninguém continua propagando o endereço velho.
+ */
+const TAB_ALIASES = { jit: 'painel', relatorios: 'painel' };
+
+/** Resolve uma aba da URL, traduzindo endereços aposentados. */
+export function resolveTab(raw) {
+  if (!raw) return null;
+  return TAB_ALIASES[raw] || raw;
+}
+
 export function readUrlState() {
   if (typeof window === 'undefined') return { tab: null, unitId: null };
   const q = new URLSearchParams(window.location.search);
@@ -53,7 +73,8 @@ export function useAppUrlState({ ready, tab, setTab, allowedTabs, unitId, setUni
   useEffect(() => {
     if (!ready) return;
     const apply = () => {
-      const { tab: t, unitId: u } = readUrlState();
+      const { tab: rawTab, unitId: u } = readUrlState();
+      const t = resolveTab(rawTab);
       if (t && allowedTabs.includes(t) && t !== tab) setTab(t);
       if (canSwitchUnit && u !== null) {
         if (u === 'todas') {

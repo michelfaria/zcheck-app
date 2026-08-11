@@ -62,13 +62,8 @@ import {
 // Contextos de tenant: as lojas e os setores da empresa logada.
 import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../components/painel/context';
 // As views de análise que já saíram daqui (Fase 1b).
-import { PainelView } from '../../components/painel/PainelView';
-import { ReportsView } from '../../components/painel/ReportsView';
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
-// Aba consolidada (Fase 3) — atrás de `?v=2`. Enquanto o interruptor estiver
-// desligado nada aqui alcança produção; reverter é apagar este import, o
-// `usePainelV2()` abaixo, o ramo do render e o próprio arquivo.
-import { PainelConsolidado, usePainelV2 } from '../../components/painel/PainelConsolidado';
+import { PainelConsolidado } from '../../components/painel/PainelConsolidado';
 import { truncName } from '../../lib/format';
 import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
@@ -143,27 +138,11 @@ const ROLE_COLORS = {
 // quais os rótulos `short` foram medidos — ver BOTTOM_NAV_ORDER em SideNav.js.
 const ROLE_TABS = {
   colaborador: ['executar', 'painel', 'id'],
-  lideranca: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'id', 'equipe'],
-  gerencia: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'id', 'equipe'],
-  gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'id', 'equipe'],
+  lideranca: ['executar', 'painel', 'unidades', 'id', 'equipe'],
+  gerencia: ['executar', 'painel', 'unidades', 'gerenciar', 'id', 'equipe'],
+  gestao: ['executar', 'painel', 'unidades', 'gerenciar', 'usuarios', 'id', 'equipe'],
 };
 
-/**
- * Abas visíveis por papel, já considerando o interruptor da consolidação.
- *
- * Com `?v=2`, J.I.T. e Relatórios saem da navegação: o conteúdo dos dois passou
- * a viver dentro do Painel. É o ÚNICO ponto que precisa mudar — `SideNav` e
- * `BottomNav` filtram por `allowedTabs`, e o rail já suprime cabeçalho de grupo
- * que fica com menos de dois itens.
- *
- * `ROLE_TABS` não é tocado. A linha do colaborador não tem nem `jit` nem
- * `relatorios`, então para ele o filtro é um no-op — que é a prova mais barata
- * da restrição dura nº 1 (§D.2). Desligar o `?v=2` devolve as duas abas.
- */
-function tabsPermitidas(role, consolidado) {
-  const base = ROLE_TABS[role] || [];
-  return consolidado ? base.filter(t => t !== 'jit' && t !== 'relatorios') : base;
-}
 
 
 
@@ -5822,13 +5801,13 @@ function BottomNav({ tab, setTab, accent, allowedTabs, jitSignal = false, idSign
           <button
             key={it.id} onClick={() => setTab(it.id)}
             aria-current={active ? 'page' : undefined}
-            aria-label={(it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal) ? `${it.label}, há novidades` : undefined}
+            aria-label={(it.id === 'painel' && jitSignal) || (it.id === 'id' && idSignal) ? `${it.label}, há novidades` : undefined}
             className="flex-1 flex flex-col items-center gap-1"
             style={{ background: 'none', border: 'none', padding: '10px 4px 12px', minHeight: 56 }}
           >
             <span style={{ position: 'relative', display: 'inline-flex' }}>
               <Icon size={22} color={active ? accent : C.mutedLight} />
-              {((it.id === 'jit' && jitSignal) || (it.id === 'id' && idSignal)) && (
+              {((it.id === 'painel' && jitSignal) || (it.id === 'id' && idSignal)) && (
                 <span aria-hidden="true" style={{
                   position: 'absolute', top: -1, right: -3, width: 8, height: 8,
                   borderRadius: R.pill, background: C.warning, border: '1.5px solid white',
@@ -6356,8 +6335,8 @@ const GESTOR_TOUR_STEPS = [
     dica: 'Abra o Painel todo início de turno: é a foto instantânea da operação.',
   },
   {
-    tab: 'relatorios', title: 'Relatórios — histórico e produtividade',
-    desc: 'Desempenho por período, setor e colaborador, com o score de produtividade (100 = média da empresa) e exportação em PDF ou CSV.',
+    tab: 'painel', title: 'Painel — a análise, no mesmo lugar',
+    desc: 'Abaixo do dia, o Painel abre em período: desempenho por colaborador e por setor, produtividade (100 = média da empresa) e exportação em PDF ou CSV — tudo pela faixa "Período" no topo da seção.',
     dica: 'Os dados aparecem conforme a equipe executa. Use o PDF nas reuniões semanais.',
   },
   {
@@ -8529,11 +8508,9 @@ function AppInner() {
   // carregamento (LoadingScreen, login, paywall) — hook não pode vir depois de
   // return condicional. `ready` segura a aplicação da URL até o papel existir:
   // sem isso, o link de um gestor abriria uma aba que o colaborador não pode ver.
-  // Interruptor da aba consolidada. Precisa vir antes de `urlAllowedTabs`.
-  const painelV2 = usePainelV2();
   const urlAllowedTabs = useMemo(
-    () => (currentUser ? tabsPermitidas(currentUser.role, painelV2) : []),
-    [currentUser, painelV2],
+    () => (currentUser ? ROLE_TABS[currentUser.role] : []),
+    [currentUser],
   );
   const urlUnitIds = useMemo(() => ACTIVE_UNITS.map(u => u.id), [ACTIVE_UNITS]);
   useAppUrlState({
@@ -8668,7 +8645,7 @@ function AppInner() {
     // Se o usuário já ESTÁ no J.I.T. (link direto, ?aba=jit, ou item do menu),
     // o pop-up abriria por cima da própria página — dois J.I.T. empilhados.
     // Marca como visto para o auto-open não disparar depois numa troca de aba.
-    if (tab === 'jit') {
+    if (tab === 'painel') {
       autoOpenChecked.current = currentUser.id;
       try { localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`, '1'); } catch (_) {}
       return;
@@ -9332,7 +9309,7 @@ function AppInner() {
 
   const dismissNudge = () => setShowNudge(false);
 
-  const allowedTabs = tabsPermitidas(currentUser.role, painelV2);
+  const allowedTabs = ROLE_TABS[currentUser.role];
   const canSwitchUnit = currentUser.unitId == null;
   const activeTab = allowedTabs.includes(tab) ? tab : allowedTabs[0];
   // Contexto do rail lateral quando o papel tem poucos destinos (colaborador).
@@ -9607,9 +9584,9 @@ function AppInner() {
         {activeTab === 'executar' && (
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
-        {/* A aba consolidada (Fase 3) só entra com `?v=2`. Sem o parâmetro, a
-            `PainelView` de sempre — as três abas vivas seguem intocadas. */}
-        {activeTab === 'painel' && (painelV2 ? (
+        {/* O Painel consolidado: o "agora" que era o J.I.T., o dia, a rede e o
+            segmento analítico que era Relatórios, numa tela só. */}
+        {activeTab === 'painel' && (
           <PainelConsolidado
             unit={unit} templates={templates} completions={completions} closures={closures}
             canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES}
@@ -9622,35 +9599,6 @@ function AppInner() {
               if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
             }}
           />
-        ) : (
-          <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />
-        ))}
-        {/* J.I.T. como DESTINO, não só pop-up de abertura. Mesmo componente,
-            sem o overlay fixo (`asPage`) — não existe segunda implementação para
-            divergir da primeira. */}
-        {activeTab === 'jit' && (
-          jit ? (
-            <JitPanel
-              asPage
-              jit={jit}
-              currentUser={currentUser}
-              accent={unit.color}
-              openSource="menu"
-              actionPlans={actionPlans}
-              onCreatePlan={handleCreatePlan}
-              onCompletePlan={handleCompletePlan}
-              onClose={() => setTab('painel')}
-              onNavigate={(targetUnitId, targetTab) => {
-                if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);
-                if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
-              }}
-            />
-          ) : (
-            <div className="zc-view">
-              <EmptyState title="J.I.T. indisponível"
-                desc="O J.I.T. é montado a partir das execuções da empresa e ainda não há dados suficientes." />
-            </div>
-          )
         )}
         {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} templates={templates || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
         {activeTab === 'unidades' && (
@@ -9658,13 +9606,10 @@ function AppInner() {
             units={ACTIVE_UNITS} templates={templates} completions={completions || []}
             closures={closures} currentUser={currentUser} canSeeAllUnits={canSwitchUnit}
             accent={unit.color}
-            onBack={painelV2 ? () => setTab('painel') : undefined}
+            onBack={() => setTab('painel')}
           />
         )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
-        {activeTab === 'relatorios' && (
-          <ReportsView unit={unit} templates={templates} completions={completions} closures={closures} users={users} canSeeAllUnits={canSwitchUnit} allUnitsSelected={unitId == null} currentUser={currentUser} onReview={reviewCompletionAndSync} disputes={disputes} onResolveDispute={responderContestacao} activeTypes={ACTIVE_TYPES} />
-        )}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
             closures={closures} onSaveClosures={saveClosures} canSeeAllUnits={canSwitchUnit}

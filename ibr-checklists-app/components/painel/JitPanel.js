@@ -15,10 +15,8 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import {
-  AlertTriangle, Check, CheckCircle2, Circle, Clock, TrendingDown,
-} from 'lucide-react';
-import { C, R, T, W, successBright, greenOnDark } from '../../lib/tokens';
+
+import { C, R, W, greenOnDark } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
 import { todayStr, addDays, lastDays, weekStartStr, tzOfUnit } from '../../lib/dates';
 import { latestPerRound, earliestPerRound } from '../../lib/rounds';
@@ -27,28 +25,16 @@ import {
   isUnitClosed,
 } from '../../lib/checklists';
 import {
-  PUNCTUALITY_PERIODS, PUNCTUALITY_GROUPS, filterCompletions,
-  countApplicableTemplatesOnDate, summarizeCompletions, collaboratorStats,
-  groupStats, punctualityStats,
+  filterCompletions, countApplicableTemplatesOnDate, summarizeCompletions,
+  collaboratorStats, groupStats, punctualityStats,
 } from '../../lib/stats';
 import { truncName } from '../../lib/format';
 import { track } from '../../lib/track';
-import { SectionMark, FeedbackThumbs } from './shared';
+import { FeedbackThumbs } from './shared';
+import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades } from './agora';
 
 /* --------------------------------- J.I.T. (H1) --------------------------------- */
 
-/**
- * Ícone de cada recomendação, por `type`. Fica FORA dos objetos de dados de
- * propósito: `buildJit` é lógica pura e testável (tests/), e devolver componente
- * React de lá misturaria dado com apresentação. A chave é o `type`, então uma
- * recomendação nova sem entrada aqui cai no genérico em vez de quebrar.
- */
-const RECOMMENDATION_ICON = {
-  critical_hotspot: AlertTriangle,
-  overdue_today: Clock,
-  low_adherence: TrendingDown,
-  all_good: CheckCircle2,
-};
 
 // Deriva o J.I.T. 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
@@ -140,7 +126,11 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
       recs.push({
         id: 'low_adherence', type: 'low_adherence',
         text: `${worst.key} fechou ontem com ${Math.round(worst.rate)}% de conclusão. Reforce a rotina hoje.`,
-        tab: 'relatorios',
+        // Era 'relatorios'. A aba não existe mais, e `onNavigate` se protege com
+        // `allowedTabs.includes(targetTab)` — então sem esta linha o cartão
+        // viraria clique morto SILENCIOSO: responde ao toque e não acontece
+        // nada. As outras três recomendações já apontavam para 'painel'.
+        tab: 'painel',
       });
     }
   }
@@ -379,44 +369,59 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
 }
 
 /**
- * `asPage` renderiza o MESMO conteúdo sem o overlay fixo, para o J.I.T. virar
- * um destino de navegação (menu lateral > Operação > J.I.T.) além de continuar
- * abrindo sozinho no início do dia. O gestor pedia poder voltar nele quando
- * quisesse; antes, fechado o pop-up, o J.I.T. do dia sumia até amanhã.
+ * O pop-up de briefing — o único PUSH para dentro do app.
+ *
+ * Sobreviveu à consolidação porque é a única coisa que CHEGA ao gestor sem ele
+ * ir buscar: `jit_opened` com `source: auto|manual` é a métrica de hábito, e
+ * `jit_skipped` é o que distingue "dia quieto" de "gestor abandonou". Sem ele o
+ * briefing viraria algo que se precisa lembrar de rolar até — e rolagem é
+ * justamente o que a consolidação cortou.
+ *
+ * O que mudou: ele deixou de ser "a página do J.I.T. dentro de uma gaveta".
+ * Antes, pop-up e página eram o mesmo componente com um flag `asPage`, e a
+ * página era o superset. Com a página virando o Painel inteiro, herdar isso
+ * daria 12+ blocos num sheet de 92vh. Agora ele renderiza EXATAMENTE o registro
+ * AGORA — os mesmos componentes de `./agora` que o Painel usa, sem segunda
+ * implementação — e o resto vive no Painel, nos registros onde faz sentido.
+ *
+ * Saíram: Ontem e Hoje (fundidos no score do dia), Entrega no prazo (segmento
+ * Tendência), Situação por loja (seção REDE) e toda a coluna lateral, que nunca
+ * renderizou no sheet de qualquer forma.
  */
-export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate, asPage = false }) {
+export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate }) {
   const startRef = useRef(Date.now());
-  // A memória do J.I.T.: recomendações que já têm plano aberto nascem marcadas
-  // — fechar e reabrir o modal não "desfaz" mais o compromisso.
+  // A memória do J.I.T.: recomendação com plano aberto nasce marcada — fechar e
+  // reabrir o pop-up não "desfaz" mais o compromisso.
   const [actioned, setActioned] = useState(() =>
     Object.fromEntries((actionPlans || []).map(p => [p.recId, true])));
-  // Os planos chegam por fetch assíncrono e podem aterrissar depois do modal
-  // montar — mescla sem apagar o que o gestor marcou nesta sessão.
   useEffect(() => {
     if (!actionPlans?.length) return;
     setActioned(a => ({ ...Object.fromEntries(actionPlans.map(p => [p.recId, true])), ...a }));
   }, [actionPlans]);
-  // Esc fecha: um caminho de saída que não depende de acertar o × com o dedo.
+  // Esc fecha: uma saída que não depende de acertar o × com o dedo.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    const onKey = e => { if (e.key === 'Escape') onClose?.(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  // Follow-up: planos abertos de dias ANTERIORES, cobrados no topo do J.I.T.
-  const pendingPlans = (actionPlans || []).filter(p => p.jitDate !== jit.date);
-  const [planAnswers, setPlanAnswers] = useState({}); // planId → 'done' | 'kept'
+
+  const [planAnswers, setPlanAnswers] = useState({});
   const [survey, setSurvey] = useState(null);
   const [insightFeedback, setInsightFeedback] = useState(null);
   const [insightActioned, setInsightActioned] = useState(false);
   const insight = jit.insight;
-
-  // Pontualidade: recorte de tempo e de agrupamento. Padrão "7 dias" porque
-  // "hoje" às 9h ainda não tem os fechamentos da noite — abrir no recorte que
-  // parece ótimo toda manhã seria enganar o gestor logo na primeira leitura.
-  const [punPeriod, setPunPeriod] = useState('last7');
-  const [punGroup, setPunGroup] = useState('loja');
-
+  const pendingPlans = (actionPlans || []).filter(p => p.jitDate !== jit.date);
   const planAgeDays = p => Math.max(1, Math.round((new Date(`${jit.date}T00:00:00`) - new Date(`${p.jitDate}T00:00:00`)) / 86400000));
+
+  useEffect(() => {
+    track('jit_opened', { source: openSource, metadata: { ui: 2, recommendations: jit.recommendations.length } });
+    if (insight) track('ai_insight_viewed', { source: 'jit', unitId: insight.unitId || undefined, metadata: { ui: 2, insight_id: insight.id, type: insight.type } });
+    const start = startRef.current;
+    return () => {
+      track('jit_dwell', { source: openSource, metadata: { ui: 2, seconds: Math.round((Date.now() - start) / 1000) } });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resolvePlan = async plan => {
     if (planAnswers[plan.id]) return;
@@ -424,73 +429,48 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
     const ok = await onCompletePlan(plan);
     if (ok) {
       track('action_plan_completed', { source: 'jit', unitId: plan.unitId || undefined,
-        metadata: { plan_id: plan.id, rec_id: plan.recId, rec_type: plan.recType, age_days: planAgeDays(plan) } });
+        metadata: { ui: 2, plan_id: plan.id, rec_id: plan.recId, rec_type: plan.recType, age_days: planAgeDays(plan) } });
     }
   };
   const keepPlan = plan => {
     if (planAnswers[plan.id]) return;
     setPlanAnswers(a => ({ ...a, [plan.id]: 'kept' }));
   };
-
-  // Instrumentação de abertura + tempo em tela (dwell consolidado em 1 evento — §8).
-  useEffect(() => {
-    track('jit_opened', { source: openSource, metadata: { recommendations: jit.recommendations.length } });
-    if (insight) track('ai_insight_viewed', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
-    const start = startRef.current;
-    return () => {
-      track('jit_dwell', { source: openSource, metadata: { seconds: Math.round((Date.now() - start) / 1000) } });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const rateInsight = ans => {
     if (insightFeedback || !insight) return;
     setInsightFeedback(ans);
-    track('ai_insight_feedback', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type, answer: ans } });
+    track('ai_insight_feedback', { source: 'jit', unitId: insight.unitId || undefined, metadata: { ui: 2, insight_id: insight.id, type: insight.type, answer: ans } });
   };
   const actOnInsight = () => {
     if (!insight) return;
     if (!insightActioned) {
       setInsightActioned(true);
-      track('ai_insight_actioned', { source: 'jit', unitId: insight.unitId || undefined, metadata: { insight_id: insight.id, type: insight.type } });
+      track('ai_insight_actioned', { source: 'jit', unitId: insight.unitId || undefined, metadata: { ui: 2, insight_id: insight.id, type: insight.type } });
     }
-    if (insight.unitId) onNavigate(insight.unitId, 'painel');
+    if (insight.unitId) onNavigate?.(insight.unitId, 'painel');
   };
-
   const clickRec = rec => {
-    track('recommendation_clicked', { source: 'jit', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
-    if (rec.tab || rec.unitId) onNavigate(rec.unitId, rec.tab);
+    track('recommendation_clicked', { source: 'jit', unitId: rec.unitId || undefined, metadata: { ui: 2, rec_id: rec.id, type: rec.type } });
+    if (rec.tab || rec.unitId) onNavigate?.(rec.unitId, rec.tab);
   };
   const actionRec = async (rec, e) => {
     e.stopPropagation();
     if (actioned[rec.id]) return;
     setActioned(a => ({ ...a, [rec.id]: true }));
-    track('recommendation_actioned', { source: 'jit', unitId: rec.unitId || undefined, metadata: { rec_id: rec.id, type: rec.type } });
-    // Persiste o compromisso: é isso que faz o J.I.T. cobrar depois.
+    track('recommendation_actioned', { source: 'jit', unitId: rec.unitId || undefined, metadata: { ui: 2, rec_id: rec.id, type: rec.type } });
     const plan = await onCreatePlan(rec);
     if (plan) {
       track('action_plan_created', { source: 'jit', unitId: rec.unitId || undefined,
-        metadata: { plan_id: plan.id, rec_id: rec.id, rec_type: rec.type } });
+        metadata: { ui: 2, plan_id: plan.id, rec_id: rec.id, rec_type: rec.type } });
     }
   };
   const answerSurvey = ans => {
     if (survey) return;
     setSurvey(ans);
-    track('survey_answered', { source: 'jit', metadata: { question: 'briefing_helped_prioritize', answer: ans } });
+    track('survey_answered', { source: 'jit', metadata: { ui: 2, question: 'briefing_helped_prioritize', answer: ans } });
   };
 
-  const y = jit.yesterday, t = jit.today;
   const dateLabel = new Date(`${jit.date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
-  const firstName = (currentUser?.name || '').split(' ')[0];
-  const scopeLabel = jit.scopeLabel || '';
-
-  /**
-   * Carimbo de frescor. O J.I.T. não é um resumo de manhã que envelhece durante
-   * o dia: `completions` chega por realtime (subscribeToCompletions) e o
-   * J.I.T. é um useMemo sobre ele, então o conteúdo já se refaz sozinho a cada
-   * execução registrada. O relógio existe para o gestor VER isso — sem ele, um
-   * painel ao vivo é indistinguível de um painel parado.
-   */
   const [tick, setTick] = useState(() => new Date());
   useEffect(() => {
     setTick(new Date());
@@ -499,469 +479,45 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
   }, [jit]);
   const updatedAt = tick.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-  const Stat = ({ label, value, sub, color }) => (
-    <div style={{ flex: 1, textAlign: 'center', padding: '10px 6px' }}>
-      <p style={{ fontSize: 26, fontWeight: W.bold, color: color || C.ink, lineHeight: 1 }}>{value}</p>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: 4, fontWeight: W.semibold }}>{label}</p>
-      {sub && <p style={{ fontSize: 10, color: C.mutedLight, marginTop: 2 }}>{sub}</p>}
-    </div>
-  );
-
-  // ── Painéis laterais: só na versão PÁGINA ────────────────────────────────
-  // No pop-up a tela é estreita e o J.I.T. tem de ser curto. Numa página de
-  // desktop sobrava metade do monitor em branco — o que lê como "falta coisa",
-  // não como respiro. Tudo aqui vem do mesmo `J.I.T.`; nenhuma consulta nova.
-  const Card = ({ title, children, sub }) => (
-    <section style={{
-      background: '#fff', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16,
-    }}>
-      <h3 style={{
-        fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase',
-        letterSpacing: '0.06em', color: C.muted,
-      }}>{title}</h3>
-      {sub && <p style={{ fontSize: T.caption, color: C.mutedLight, marginTop: 2 }}>{sub}</p>}
-      <div style={{ marginTop: 12 }}>{children}</div>
-    </section>
-  );
-
-  const Row = ({ label, right, meta, rate, tone = C.ink }) => (
-    <div style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontSize: T.bodySm, fontWeight: W.medium, color: C.ink, minWidth: 0, flex: 1 }}>{label}</span>
-        <span className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: tone }}>{right}</span>
-      </div>
-      {meta && <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{meta}</p>}
-      {typeof rate === 'number' && (
-        <div style={{ height: 5, borderRadius: R.pill, background: C.bg, marginTop: 6, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${Math.max(2, Math.min(100, rate))}%`, background: rate >= 80 ? successBright : rate >= 50 ? C.warning : C.critical, borderRadius: R.pill }} />
-        </div>
-      )}
-    </div>
-  );
-
-  const trend = jit.trend7 || [];
-  const maxTrend = Math.max(100, ...trend.map(d => d.rate));
-
-  // ── Pontualidade: derivados ──────────────────────────────────────────────
-  const pun = jit.punctuality?.[punPeriod] || null;
-  const punPeriodLabel = punPeriod === 'today' ? 'hoje' : 'nos últimos 7 dias';
-  // Numa loja só, "por loja" é uma lista de um item — o recorte que importa
-  // ali é o setor, e o seletor com uma opção viável seria ruído.
-  const punCanGroupByUnit = !jit.scopeUnitId && (pun?.byUnit || []).length > 1;
-  const punGroupEff = punCanGroupByUnit ? punGroup : 'setor';
-  const punGroups = (punGroupEff === 'loja' ? pun?.byUnit : pun?.bySector) || [];
-  // 90/70: o corte é mais duro que o da aderência (80/50) de propósito —
-  // "quase sempre no horário" não é o mesmo padrão que "quase tudo feito".
-  const punTone = r => (r >= 90 ? C.success : r >= 70 ? C.warning : C.critical);
-  const punBar = r => (r >= 90 ? successBright : r >= 70 ? C.warning : C.critical);
-  const segStyle = active => ({
-    padding: '4px 10px', borderRadius: R.pill, cursor: 'pointer',
-    border: `1px solid ${active ? C.ink : C.border}`,
-    background: active ? C.ink : 'white',
-    color: active ? 'white' : C.muted,
-    fontSize: T.label, fontWeight: W.semibold, whiteSpace: 'nowrap',
-  });
-  const changePun = (kind, value) => {
-    if (kind === 'period') setPunPeriod(value); else setPunGroup(value);
-    track('jit_punctuality_filtered', {
-      source: openSource,
-      metadata: { period: kind === 'period' ? value : punPeriod, group_by: kind === 'group' ? value : punGroupEff },
-    });
-  };
-
-  const b = jit.base;
-  const BaseCell = ({ label, value, tone }) => (
-    <div style={{ padding: '8px 0' }}>
-      <p className="font-display" style={{ fontSize: 'calc(20px * var(--zc-t-scale))', fontWeight: W.bold, color: tone || C.ink, lineHeight: 1.1 }}>{value}</p>
-      <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>{label}</p>
-    </div>
-  );
-
-  const sidePanels = (
-    <aside className="zc-jit-aside">
-      {b && (
-        <Card title="Base da operação · agora" sub={scopeLabel}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0 16px' }}>
-            <BaseCell label={`unidades${b.unitsClosed ? ` · ${b.unitsClosed} de folga` : ''}`} value={b.units} />
-            <BaseCell label="setores" value={b.sectors} />
-            <BaseCell label="checklists ativos" value={b.templates} />
-            <BaseCell label="pessoas executando hoje" value={b.peopleToday} />
-            <BaseCell label="execuções hoje" value={b.executionsToday} />
-            <BaseCell label="evidências hoje" value={b.evidencesToday} />
-            <BaseCell label="críticos abertos hoje" value={b.criticalOpenToday}
-              tone={b.criticalOpenToday ? C.critical : C.success} />
-            <BaseCell label="atrasados agora" value={jit.today.overdue}
-              tone={jit.today.overdue ? C.warning : C.success} />
-          </div>
-        </Card>
-      )}
-      {trend.length > 0 && (
-        <Card title="Aderência · 7 dias" sub="% de tarefas concluídas por dia">
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 96 }}>
-            {trend.map(d => (
-              <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span className="font-display" style={{ fontSize: T.label, fontWeight: W.semibold, color: d.isToday ? C.ink : C.mutedLight }}>
-                  {d.checklists ? `${d.rate}%` : '—'}
-                </span>
-                <div style={{ width: '100%', height: 56, display: 'flex', alignItems: 'flex-end' }}>
-                  <div title={`${d.weekday}: ${d.rate}%`} style={{
-                    width: '100%',
-                    height: `${Math.max(3, (d.rate / maxTrend) * 100)}%`,
-                    background: d.isToday ? C.ink : (d.rate >= 80 ? successBright : d.rate >= 50 ? C.warning : C.critical),
-                    borderRadius: '3px 3px 0 0',
-                    opacity: d.checklists ? 1 : 0.25,
-                  }} />
-                </div>
-                <span style={{ fontSize: T.label, color: C.mutedLight, textTransform: 'capitalize' }}>{d.weekday}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {(jit.sectors || []).length > 0 && (
-        <Card title="Por setor · hoje" sub="conclusão de tarefas no setor">
-          {jit.sectors.map(sc => (
-            <Row key={sc.name} label={sc.name} right={`${sc.rate}%`} rate={sc.rate}
-              tone={sc.rate >= 80 ? C.success : sc.rate >= 50 ? C.warning : C.critical}
-              meta={`${sc.checklists} checklist${sc.checklists > 1 ? 's' : ''}${sc.criticalPending ? ` · ${sc.criticalPending} crítico${sc.criticalPending > 1 ? 's' : ''} pendente${sc.criticalPending > 1 ? 's' : ''}` : ''}`} />
-          ))}
-        </Card>
-      )}
-
-      {(jit.criticalTop || []).length > 0 && (
-        <Card title="Críticos recorrentes" sub="pendentes 2× ou mais nos últimos 7 dias">
-          {jit.criticalTop.map((c, i) => (
-            <Row key={`${c.unitId}-${i}`} label={truncName(c.text, 44)} right={`${c.count}×`} tone={C.critical}
-              meta={c.unitName} />
-          ))}
-        </Card>
-      )}
-
-      {(jit.peopleToday || []).length > 0 && (
-        <Card title="Quem executou hoje">
-          {jit.peopleToday.map(pp => (
-            <Row key={pp.key} label={truncName(pp.name, 26)} right={`${pp.tasksDone}`}
-              meta={`${pp.checklists} checklist${pp.checklists > 1 ? 's' : ''} · ${pp.tasksDone} tarefa${pp.tasksDone > 1 ? 's' : ''}`} />
-          ))}
-        </Card>
-      )}
-    </aside>
-  );
-
-  const Shell = ({ children }) => (asPage ? (
-    <div className="zc-jit-page">
-      <div className="zc-jit-panel">{children}</div>
-      {sidePanels}
-    </div>
-  ) : (
+  return (
     <div onClick={onClose}
       className="zc-sheet zc-sheet--drawer"
       style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
       <div onClick={e => e.stopPropagation()}
         className="zc-sheet-panel"
         style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
-        {children}
-      </div>
-    </div>
-  ));
 
-  return (
-    <Shell>
-      <>
-        {/* Cabeçalho — sticky: o J.I.T. é longo e o X ficava rolando para fora
-            da tela junto com ele. */}
+        {/* Cabeçalho sticky: o × ficava rolando para fora da tela junto com o
+            conteúdo. Alvo de toque de 40px, o mínimo de acessibilidade. */}
         <div style={{ background: accent, color: 'white', padding: '20px 20px 18px', borderRadius: '20px 20px 0 0', position: 'sticky', top: 0, zIndex: 2 }}>
-          {/* Alvo de toque de 40px (era 30, abaixo do mínimo de acessibilidade) e
-              flex de verdade, para o × ficar no centro do alvo e não só perto dele.
-              O padding-box inteiro clica: o raio arredondado antes recortava os
-              cantos do alvo. */}
-          {/* Numa PÁGINA não existe "fechar": o destino é o próprio menu. O × só
-              faz sentido no pop-up de abertura. */}
-          {!asPage && <button type="button" onClick={onClose} aria-label="Fechar J.I.T."
+          <button type="button" onClick={onClose} aria-label="Fechar"
             style={{ position: 'absolute', top: 12, right: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999,
-              width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>}
-          <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>J.I.T. · Just In Time</p>
+              width: 40, height: 40, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0, zIndex: 3 }}>×</button>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>Agora</p>
           <p className="font-display" style={{ fontSize: 'calc(22px * var(--zc-t-scale))', fontWeight: W.bold, marginTop: 6 }}>Sua operação agora</p>
           <p style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
             <span style={{ textTransform: 'capitalize' }}>{dateLabel}</span>
             {' · '}
             <span aria-hidden="true" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: R.pill, background: greenOnDark, marginRight: 5, verticalAlign: 'middle' }} />
             atualizado às {updatedAt}
-            {scopeLabel ? ` · ${scopeLabel}` : ''}
+            {jit.scopeLabel ? ` · ${jit.scopeLabel}` : ''}
           </p>
         </div>
 
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Follow-up (H1) — o que foi marcado "Tratar" volta até ser resolvido */}
-          {pendingPlans.length > 0 && (
-            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.warning}40`, borderLeft: `4px solid ${C.warning}`, padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <SectionMark color={C.warning} />
-                <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.warning, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Você marcou para tratar
-                </p>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {pendingPlans.map(plan => (
-                  <div key={plan.id}>
-                    <p style={{ fontSize: T.bodySm, color: C.ink, lineHeight: 1.45 }}>{plan.recText}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: T.label, color: C.muted }}>
-                        {planAgeDays(plan) === 1 ? 'ontem' : `há ${planAgeDays(plan)} dias`}
-                      </span>
-                      {planAnswers[plan.id] === 'done' ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginLeft: 'auto' }}>
-                          <Check size={13} aria-hidden /> Resolvido
-                        </span>
-                      ) : planAnswers[plan.id] === 'kept' ? (
-                        <span style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.warning, marginLeft: 'auto' }}>Fica para hoje</span>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                          <button onClick={() => resolvePlan(plan)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: R.sm, border: 'none', background: C.success, color: 'white', fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
-                            <Check size={12} aria-hidden /> Resolvido
-                          </button>
-                          <button onClick={() => keepPlan(plan)}
-                            style={{ padding: '6px 12px', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: C.muted, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
-                            Ainda não
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <AgoraFollowUp plans={pendingPlans} answers={planAnswers} onResolve={resolvePlan} onKeep={keepPlan} ageOf={planAgeDays} />
+          <AgoraLeitura insight={insight} accent={accent} feedback={insightFeedback}
+            actioned={insightActioned} onRate={rateInsight} onAct={actOnInsight} />
+          <AgoraPrioridades recs={jit.recommendations || []} actioned={actioned}
+            onClickRec={clickRec} onActionRec={actionRec} />
 
-          {/* Insight do dia (H4) — análise automática no topo do J.I.T. */}
-          {insight && (
-            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${accent}40`, borderLeft: `4px solid ${accent}`, padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <SectionMark color={accent} />
-                <p style={{ fontSize: 10.5, fontWeight: W.semibold, color: accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Leitura da operação</p>
-              </div>
-              <p className="font-display" style={{ fontSize: 15, fontWeight: W.semibold, color: C.ink, marginBottom: 5 }}>{insight.headline}</p>
-              <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 12 }}>{insight.evidence}</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                {insight.unitId && (
-                  <button onClick={actOnInsight}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 14px', borderRadius: 9, background: insightActioned ? `${C.success}18` : accent, color: insightActioned ? C.success : 'white', border: 'none', fontSize: 12.5, fontWeight: W.semibold, cursor: 'pointer' }}>
-                    {insightActioned ? <><Check size={14} aria-hidden /> Vou agir nisso</> : 'Agir sobre isso →'}
-                  </button>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                  {insightFeedback ? (
-                    <span style={{ fontSize: 11.5, color: C.success, fontWeight: W.semibold }}>Valeu pelo retorno!</span>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 11.5, color: C.mutedLight, fontWeight: W.semibold }}>Foi útil?</span>
-                      <FeedbackThumbs onRate={rateInsight} size={14} />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Ontem */}
-          <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
-            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Ontem</p>
-            <div style={{ display: 'flex' }}>
-              <Stat label="Aderência" value={y.adherence != null ? `${y.adherence}%` : '—'} color={y.adherence == null ? C.mutedLight : y.adherence >= 80 ? C.success : C.critical} />
-              {/* "Completos", não "Checklists": desde 30/07 a aderência conta só
-                  entrega completa, e o parcial ganhou número próprio ao lado —
-                  sem ele, o índice cai e a tela não explica o motivo. */}
-              <Stat label="Completos" value={`${y.checklists}${y.expected ? `/${y.expected}` : ''}`} />
-              {y.partial > 0 && <Stat label="Parciais" value={y.partial} color={C.warning} />}
-              <Stat label="Críticos pend." value={y.criticalPending} color={y.criticalPending > 0 ? C.critical : C.ink} />
-            </div>
-          </div>
-
-          {/* Hoje */}
-          <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: '6px 8px' }}>
-            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 2px' }}>Hoje</p>
-            <div style={{ display: 'flex' }}>
-              <Stat label="Previstos" value={t.expected} />
-              <Stat label="Completos" value={t.done} color={C.success} />
-              {t.partial > 0 && <Stat label="Parciais" value={t.partial} color={C.warning} />}
-              <Stat label="Pendentes" value={t.pending} />
-              <Stat label="Atrasados" value={t.overdue} color={t.overdue > 0 ? C.critical : C.ink} />
-            </div>
-          </div>
-
-          {/* Entrega no prazo — quantos checklists fecharam dentro do horário e
-              quantos passaram dele, com recorte por loja e por setor.
-              "Atrasados" acima conta o que AINDA não foi feito e já venceu;
-              aqui conta o que FOI feito e a que horas. São perguntas
-              diferentes e por isso não podem morar no mesmo bloco. */}
-          {pun && (
-            <div style={{ background: 'white', borderRadius: 14, border: `1px solid ${C.border}`, padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Entrega no prazo
-                </p>
-                <div role="group" aria-label="Período" style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                  {PUNCTUALITY_PERIODS.map(p => (
-                    <button key={p.id} type="button" aria-pressed={punPeriod === p.id}
-                      onClick={() => changePun('period', p.id)} style={segStyle(punPeriod === p.id)}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {pun.total === 0 ? (
-                <p style={{ fontSize: T.bodySm, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
-                  {pun.noDeadline > 0
-                    ? `Nenhum checklist COM prazo foi concluído ${punPeriodLabel}. Os ${pun.noDeadline} concluídos não têm horário definido — dê um prazo ao checklist em Gerenciar para acompanhar pontualidade.`
-                    : `Nenhum checklist concluído ${punPeriodLabel}.`}
-                </p>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 12 }}>
-                    <div>
-                      <p className="font-display" style={{ fontSize: 26, fontWeight: W.bold, color: C.success, lineHeight: 1 }}>{pun.onTime}</p>
-                      <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold, marginTop: 4 }}>no prazo</p>
-                    </div>
-                    <div>
-                      <p className="font-display" style={{ fontSize: 26, fontWeight: W.bold, color: pun.late > 0 ? C.critical : C.mutedLight, lineHeight: 1 }}>{pun.late}</p>
-                      <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold, marginTop: 4 }}>fora do prazo</p>
-                    </div>
-                    <p className="font-display" style={{ marginLeft: 'auto', fontSize: 20, fontWeight: W.bold, color: punTone(pun.rate) }}>
-                      {pun.rate}%
-                    </p>
-                  </div>
-                  <div role="img" aria-label={`${pun.onTime} de ${pun.total} checklists concluídos no prazo (${pun.rate}%)`}
-                    style={{ display: 'flex', height: 8, borderRadius: R.pill, overflow: 'hidden', background: C.bg, marginTop: 10 }}>
-                    <div style={{ width: `${pun.rate}%`, background: successBright }} />
-                    <div style={{ flex: 1, background: C.critical }} />
-                  </div>
-
-                  {punGroups.length > 0 && (
-                    <>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-                        <p style={{ fontSize: T.label, color: C.mutedLight, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                          Por {punGroupEff}
-                        </p>
-                        {punCanGroupByUnit && (
-                          <div role="group" aria-label="Agrupar por" style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                            {PUNCTUALITY_GROUPS.map(g => (
-                              <button key={g.id} type="button" aria-pressed={punGroupEff === g.id}
-                                onClick={() => changePun('group', g.id)} style={segStyle(punGroupEff === g.id)}>
-                                {g.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ marginTop: 4 }}>
-                        {punGroups.slice(0, 6).map(g => (
-                          <div key={g.key} style={{ padding: '8px 0', borderTop: `1px solid ${C.border}` }}>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                              <span style={{ flex: 1, minWidth: 0, fontSize: T.bodySm, fontWeight: W.medium, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {g.name}
-                              </span>
-                              <span className="font-display" style={{ flexShrink: 0, fontSize: T.bodySm, fontWeight: W.semibold, color: punTone(g.rate) }}>
-                                {g.rate}%
-                              </span>
-                            </div>
-                            <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
-                              {g.onTime} no prazo · {g.late} fora do prazo
-                            </p>
-                            <div style={{ height: 5, borderRadius: R.pill, background: C.bg, marginTop: 5, overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${Math.max(2, g.rate)}%`, background: punBar(g.rate), borderRadius: R.pill }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {pun.noDeadline > 0 && (
-                    <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 10, lineHeight: 1.45 }}>
-                      + {pun.noDeadline} checklist{pun.noDeadline > 1 ? 's' : ''} sem horário definido — fora desta conta, porque não há prazo a cumprir.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Recomendações */}
-          <div>
-            <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Prioridades agora</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {jit.recommendations.map(rec => {
-                const RecIcon = RECOMMENDATION_ICON[rec.type] || Circle;
-                // A cor carrega a urgência; o desenho, a natureza do alerta.
-                const recColor = rec.type === 'all_good' ? C.success
-                  : rec.type === 'critical_hotspot' ? C.critical : C.warning;
-                return (
-                <div key={rec.id} onClick={() => clickRec(rec)}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 12px', cursor: rec.tab || rec.unitId ? 'pointer' : 'default' }}>
-                  <RecIcon size={17} color={recColor} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />
-                  <p style={{ flex: 1, fontSize: 13.5, color: C.ink, lineHeight: 1.45 }}>{rec.text}</p>
-                  {rec.type !== 'all_good' && (
-                    <button onClick={e => actionRec(rec, e)}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, alignSelf: 'center', padding: '5px 10px', borderRadius: 8, border: `1px solid ${actioned[rec.id] ? C.success : C.border}`, background: actioned[rec.id] ? `${C.success}15` : 'white', color: actioned[rec.id] ? C.success : C.muted, fontSize: 11, fontWeight: W.semibold, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      {actioned[rec.id] ? <><Check size={11} aria-hidden /> No plano</> : 'Tratar'}
-                    </button>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Situação por loja — só na visão multi-loja. Onde olhar primeiro. */}
-          {jit.stores && jit.stores.length > 0 && (
-            <div>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingLeft: 2 }}>Situação por loja</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {jit.stores.map(s => {
-                  const critico = s.overdue > 0 || s.criticalHotspots > 0;
-                  const barra = critico ? C.critical : s.pendingToday > 0 ? C.warning : C.success;
-                  const sinais = [];
-                  if (s.closedToday) sinais.push('fechada hoje');
-                  else {
-                    if (s.overdue > 0) sinais.push(`${s.overdue} atrasado${s.overdue > 1 ? 's' : ''}`);
-                    if (s.criticalHotspots > 0) sinais.push(`${s.criticalHotspots} crítico${s.criticalHotspots > 1 ? 's' : ''} recorrente${s.criticalHotspots > 1 ? 's' : ''}`);
-                    if (s.pendingToday > 0) sinais.push(`${s.pendingToday} pendente${s.pendingToday > 1 ? 's' : ''} hoje`);
-                    if (sinais.length === 0) sinais.push('em dia');
-                  }
-                  return (
-                    <button key={s.unitId} onClick={() => onNavigate(s.unitId, 'painel')}
-                      className="flex items-stretch gap-2"
-                      style={{ background: 'white', borderRadius: R.md, border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', textAlign: 'left', overflow: 'hidden' }}>
-                      <span style={{ width: 4, flexShrink: 0, background: barra }} />
-                      <span style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
-                        <span className="flex items-center justify-between gap-2">
-                          <span style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink }}>{s.name}</span>
-                          {s.yAdherence != null && (
-                            <span style={{ fontSize: T.label, color: C.muted, flexShrink: 0 }}>ontem {s.yAdherence}%</span>
-                          )}
-                        </span>
-                        <span style={{ display: 'block', fontSize: T.label, color: critico ? C.critical : C.muted, marginTop: 2, lineHeight: 1.4 }}>
-                          {sinais.join(' · ')}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Micro-pergunta qualitativa (§10) */}
           <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${C.border}`, padding: '12px 14px', textAlign: 'center' }}>
             {survey ? (
               <p style={{ fontSize: 13, color: C.success, fontWeight: W.semibold }}>Obrigado pelo retorno!</p>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>O J.I.T. te ajudou a priorizar?</p>
+                <p style={{ fontSize: 13, color: C.ink, marginBottom: 10, fontWeight: W.semibold }}>Isto te ajudou a priorizar?</p>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                   <FeedbackThumbs onRate={answerSurvey} size={17} />
                 </div>
@@ -969,11 +525,13 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
             )}
           </div>
 
+          {/* O destino deixou de ser "a operação" genérica: é o Painel, onde o
+              mesmo AGORA continua visível junto do resto do dia. */}
           <button onClick={onClose} style={{ padding: '14px 0', borderRadius: 12, background: accent, color: 'white', border: 'none', fontWeight: W.semibold, fontSize: 15, cursor: 'pointer', marginTop: 2 }}>
-            Ir para a operação →
+            Abrir o painel →
           </button>
         </div>
-      </>
-    </Shell>
+      </div>
+    </div>
   );
 }

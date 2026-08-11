@@ -20,7 +20,7 @@ Terminou de marcar as tarefas? Hora de registrar o checklist.
 
 ## O que fica registrado
 
-O checklist concluído guarda: data e hora, loja, setor, responsável, cada item (feito ou pendente, e por quem), observações e fotos. É esse registro que alimenta o Painel e os Relatórios.
+O checklist concluído guarda: data e hora, loja, setor, responsável, cada item (feito ou pendente, e por quem), observações e fotos. É esse registro que alimenta o Painel.
 
 > ⚠️ Concluir com críticos pendentes não é "errado" — às vezes a tarefa realmente não pôde ser feita. Mas use a **observação** do item para explicar o motivo: a gestão vê e consegue agir.
 

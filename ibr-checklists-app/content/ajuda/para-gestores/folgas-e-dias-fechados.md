@@ -20,7 +20,7 @@ Loja fechada não pode contar como checklist atrasado. Para isso existem as **fo
 ## O que acontece no dia de folga
 
 - A aba **Executar** mostra "está fechada hoje — nenhum checklist é necessário".
-- O dia **não conta** na taxa de conclusão do Painel nem dos Relatórios — sua média não é penalizada.
+- O dia **não conta** na taxa de conclusão do Painel — nem na visão do dia, nem na análise por período. Sua média não é penalizada.
 
 > 💡 Marque as folgas do mês inteiro de uma vez (feriados, dias de fechamento programado). Assim os números da operação ficam sempre justos.
 

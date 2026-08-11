@@ -10,7 +10,7 @@ Dentro de um checklist, alguns itens carregam marcadores coloridos abaixo do tex
 
 ## ⚠ Crítico
 
-Tarefas essenciais para a operação — aparecem destacadas em vermelho. Você **consegue** concluir o checklist com um crítico pendente, mas o app pede uma confirmação extra e o item fica registrado como não conforme, visível para a gestão no Painel e nos Relatórios. Priorize sempre os críticos.
+Tarefas essenciais para a operação — aparecem destacadas em vermelho. Você **consegue** concluir o checklist com um crítico pendente, mas o app pede uma confirmação extra e o item fica registrado como não conforme, visível para a gestão no Painel. Priorize sempre os críticos.
 
 ## 🔒 Obrigatório
 

@@ -19,7 +19,7 @@ A aba **Painel** é a fotografia do dia: mostra como está a execução dos chec
 
 ## Para líderes e gestores
 
-Quem tem acesso a mais de uma loja alterna entre elas pelos botões no topo da tela e compara o desempenho. Para análises de período maior (semana, mês), use a aba [Relatórios](/ajuda/para-gestores/relatorios-desempenho-e-evidencias).
+Quem tem acesso a mais de uma loja alterna entre elas pelos botões no topo da tela e compara o desempenho. Para períodos maiores (semana, mês), role até a faixa **Período**, na [parte de baixo do próprio Painel](/ajuda/para-gestores/relatorios-desempenho-e-evidencias) — não é preciso trocar de tela.
 
 > 💡 Colaborador também tem Painel! Use-o para conferir se o seu turno está em dia antes de encerrar o expediente.
 

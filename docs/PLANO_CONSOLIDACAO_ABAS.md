@@ -1471,7 +1471,66 @@ reordena a lista inteira de lojas **dentro** do `map`, uma vez por loja, com
   - conferência (`review_completion`) funciona e emite `completion_reviewed` com `source: 'relatorios'`.
 - **Reverter:** desligar o interruptor.
 
-## Fase 5 — Virar a chave (**commit único, tudo junto**)
+## Fase 5 — ✅ EXECUTADA em 11/08/2026 (commit único)
+
+O interruptor **não existe mais**. `?v=2`, `PAINEL_V2` e `usePainelV2` foram
+removidos: a consolidação passou a ser o produto. Reverter é `git revert`.
+
+| Peça | O que foi feito |
+|---|---|
+| `ROLE_TABS` | `jit` e `relatorios` fora. **A linha do colaborador não mudou** |
+| `NAV_ITEMS` | 9 → 7 itens; o grupo `'Análise'` desapareceu (só tinha Relatórios); `Activity` e `BarChart3` saíram do import |
+| `BOTTOM_NAV_ORDER` | `['executar','painel','gerenciar','id','equipe']` — gerência e gestão saem de **7 para 5** ícones |
+| Deep links | `resolveTab()` em `lib/appUrlState.js`: `?aba=jit` e `?aba=relatorios` → `painel` |
+| Pop-up | reduzido ao registro AGORA (§F.1); `asPage` eliminado |
+| `jitSignal` | o ponto de sinal migrou de `jit` para `painel`, no rail e na BottomNav |
+| Tour | o passo de Relatórios virou o passo da análise dentro do Painel |
+| `buildJit` | `tab: 'relatorios'` da recomendação `low_adherence` → `'painel'` |
+| Central de Ajuda | **15 trechos em 11 arquivos** |
+
+### O que a execução obrigou a resolver antes
+
+**J6 e J14 ainda não tinham migrado.** O passo 2 da Fase 4b levou para o segmento
+só os blocos que vinham do `ReportsBody`. "Entrega no prazo" (J6) e "Críticos
+recorrentes" (J14) vinham do `buildJit` e continuavam existindo **apenas dentro
+do pop-up**. Reduzir o pop-up sem migrá-los teria apagado os dois do produto — J6
+é o único agregado de pontualidade do app, e J14 é a única lista que **nomeia** o
+item que reincide. Foram para Tendência e Registros antes de o pop-up encolher.
+
+**Os blocos do AGORA viraram módulo.** A duplicação declarada na Fase 3 (§F.1
+previa o prazo) acabou: `components/painel/agora.js` guarda `AgoraFollowUp`,
+`AgoraLeitura`, `AgoraPrioridades` e `AgoraBase`, e o Painel e o pop-up consomem
+os mesmos objetos. Não existe mais segunda implementação para divergir.
+
+### Telemetria (§F.2) — nenhum valor renomeado
+
+`completion_reviewed` e `dispute_resolved` seguem com `source: 'relatorios'`, e
+os eventos do briefing seguem com `'jit'`. Renomear cortaria a série histórica ao
+meio. Todo evento passou a levar `metadata.ui: 2`, que é o marcador de era —
+aditivo, e o que permite distinguir "queda causada pela virada" de "queda que
+aconteceu depois da virada".
+
+### O artigo de Relatórios manteve o slug
+
+`relatorios-desempenho-e-evidencias.md` foi reescrito para descrever a análise
+dentro do Painel, **sem trocar o endereço**: quatro outros artigos apontam para
+ele, e links compartilhados em conversa sobrevivem a mudanças de produto. Ganhou
+um aviso de "mudou de lugar" no topo e uma seção nova explicando **Feito do
+previsto vs Feito do entregue** — que é a leitura que mais confunde na tela.
+
+### Dívida que a fase deixa (Fase 6)
+
+1. `PainelView.js` e o wrapper `ReportsView` ficaram **inalcançáveis**. Não foram
+   apagados aqui de propósito: este commit já é grande, e código morto não muda
+   comportamento. Fase 6 remove.
+2. `useRelatorio` roda para todo papel (hook não pode ser condicional). Não vaza
+   — nada renderiza fora do gate — mas gasta cálculo no aparelho de quem não vai
+   ver nada. A correção é um provider que sirva o AGORA e o segmento.
+3. A corrida em `useAppUrlState`: os dois efeitos disparam no mesmo commit e o
+   sentido estado→URL sobrescreve a aba do link com o `tab` velho. **Deep link de
+   aba não sobrevive ao login.** Descoberto durante os testes de preview.
+
+### Escopo original (registro)
 
 **Escopo:** `PAINEL_V2 = true`; remover `jit` e `relatorios` de `ROLE_TABS` e `NAV_ITEMS`; `BOTTOM_NAV_ORDER` novo; alias de deep link; pop-up de briefing reduzido ao registro AGORA (§F.1); migrar `jitSignal` para `painel`; **tour**; **Central de Ajuda**.
 
