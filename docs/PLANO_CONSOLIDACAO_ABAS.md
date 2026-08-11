@@ -983,7 +983,13 @@ Resultado: `page.js` foi de 14.092 para 13.577 linhas (−532/+23). Três arquiv
 - **Aceite:** `npm run build` limpo. Nada de UI mudou de lugar, então build limpo é portão suficiente.
 - **Reverter:** `git revert`.
 
-## Fase 1b — Mover as três views
+## Fase 1b — ✅ EXECUTADA em 10/08/2026 (commits e282629, e2cc132, 3a2ea23, fffdc7f)
+
+Saldo: `page.js` 14.092 → 10.172 linhas (−28%). `components/painel/` com 5 arquivos (3.776 linhas): `PainelView.js` (838, inclui `NotificationHistory` privada), `ReportsView.js` (1.673, inclui `ReviewModal`, `ConferenceQueue`, `DisputeCard` e demais peças privadas da aba), `JitPanel.js` (979, inclui `buildJit`/`buildInsight`), `shared.js` (260) e `context.js` (26). `lib/` ganhou 6 módulos de cálculo puro (934 linhas): `checklists`, `stats`, `ranking`, `sectors`, `units`, `format`.
+
+Portões executados por commit: `npm run verify` (eslint com `no-undef` como erro + build), 71 testes de dates/rounds, teste de conferência, e regra de direção (`lib/` e `components/painel/` não importam de `app/`). A inspeção visual em produção segue pendente — exige deploy de preview.
+
+### Escopo original (registro)
 
 **Escopo:** `PainelView` (2452–3017), `ReportsView` (3286–3972) e `JitPanel` + `buildJit` + `buildInsight` saem para `components/painel/`. Só `import`/`export`; nenhuma linha de lógica muda.
 
