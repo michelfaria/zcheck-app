@@ -1267,6 +1267,63 @@ e é por isso que a fase se parte:
 - **Fase 4b — o segmento analítico.** Extração do motor da `ReportsView`, faixa
   PERÍODO, Exportar no cabeçalho, Conferir movido para o AGORA (§B.7).
 
+### Fase 4b, passo 1 — ✅ extração do motor (`10cc502`)
+
+`components/painel/useRelatorio.js` (421 linhas) recebe todo o estado de filtro,
+os derivados, `exportCSV` e `exportPDF`. A `ReportsView` vira casca de três
+linhas (chama o hook, renderiza `ReportsBody`); o `ReportsBody` desestrutura os
+**45 identificadores** que atravessam a fronteira e mantém o JSX intacto, com
+dois parâmetros novos ainda sem uso — `segment` e `embedded`.
+
+**O corte foi feito por script, não à mão**, e conferido depois contra `HEAD`:
+motor de 374 linhas e JSX de 438, os dois **byte a byte idênticos**. Isso é o que
+permite afirmar "nenhuma linha de lógica mudou" como fato, não como intenção.
+
+`exportCSV`/`exportPDF` foram junto porque fecham sobre `filtered`, `summary`,
+`groups` e `collaborators`. Deixá-los para trás recriaria o acoplamento por outro
+caminho, com o risco de o export cobrir recorte diferente do da tela — e a
+restrição dura nº 2 é justamente que o PDF continue igual.
+
+**Portão da tela — passou.** Este é o primeiro commit da consolidação que mexe em
+código de produção, então `npm run build` não bastava (foi esse o buraco que
+derrubou o app em 10/08). PDF de IBR2 · 30 dias reexportado do preview às 12:59:
+
+| | Baseline 09:12 | Preview Fase 3 · 10:37 | Pós-extração · 12:59 |
+|---|---|---|---|
+| Checklists | 128/156 · 82% | 128/156 · 82% | **128/156 · 82%** |
+| Realização geral | 1189 de 1192 | 1189 de 1192 | **1189 de 1192** |
+| Fotos | 182 | 182 | **182** |
+| Críticos pendentes | 1 | 1 | **1** |
+| Execuções | 128 | 128 | **128** |
+
+Idênticos em tudo, inclusive nas contagens absolutas.
+
+> Nota de ferramenta: não há `brew` nesta máquina, então o texto dos PDFs de
+> baseline se lê com `python3 -m pip install pypdf` e
+> `PdfReader(...).pages[0].extract_text()`. A extração ingênua por `zlib` +
+> regex **não** funciona nestes PDFs (fontes embutidas com CMap próprio) — e
+> falha em silêncio, devolvendo string vazia em vez de erro.
+
+**Falta da Fase 4b:** faixa PERÍODO com Exportar no topo, os três segmentos
+(Tendência/Pessoas/Registros), a fila de Conferir movida para o registro AGORA
+(§B.7) e os rótulos das três aderências.
+
+### Nomes das três aderências — ✅ decidido em 11/08 (Conjunto A)
+
+A pendência que atravessou desde a Fase 2. Vetados os nomes originais de §B.6
+("Entrega completa" lido como delivery). O dono do produto escolheu:
+
+| A conta | Rótulo na tela |
+|---|---|
+| tarefas feitas ÷ tarefas **previstas** | **Feito do previsto** |
+| checklists **100%** ÷ checklists previstos | **Checklists 100%** |
+| tarefas feitas ÷ tarefas **submetidas** | **Feito do entregue** |
+
+"do previsto" vs "do entregue" carrega a diferença de denominador na própria
+frase, que é onde a confusão mora, e cabe numa linha do cartão no celular.
+"Checklists 100%" quebra o paralelismo de propósito: é o único dos três cuja
+unidade é checklist e não tarefa, e a quebra sinaliza isso.
+
 ### Fase 4a — ✅ seção REDE
 
 Um componente `SecaoRede` no `PainelConsolidado.js`. Gate: `canSeeAllUnits`, e a
