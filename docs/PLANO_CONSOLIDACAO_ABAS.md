@@ -305,6 +305,30 @@ Isto **precisa ser decidido antes de desenhar**. Hoje só não aparece porque os
 
 E R1 (3668) herda o `latestPerRound` que o `buildJit` já aplicou (comentário 8996–9001). Sem isso, `summary.checklists / expectedChecklists` **pode passar de 100%** — é o bug de "146% de aderência" que o J.I.T. corrigiu e que Relatórios nunca recebeu. **A consolidação promoveria o bloco defeituoso e apagaria o corrigido.**
 
+## B.7 — Reconferência de §A/§B contra o código pós-merge (10/08, após a Fase 1b)
+
+O merge da main (16 commits: ranking + fila de conferência) mudou o terreno que §A e §B fotografaram. Varredura feita bloco a bloco no código atual (`components/painel/*.js`):
+
+**B.1 — SUPERADA. A main já resolveu a sobreposição, e escolheu o outro motor.**
+`calcRanking` foi **removido** (não existe mais no repo; só citado em comentário histórico, `PainelView.js:123-135`). O ranking do Painel (P11) agora é literalmente o da aba Equipe: `computeOperationalProfile` com `rankingPeriod('month')`, mesma ordenação, mesma frase explicativa (`PainelView.js:140-153`). A decisão de B.1 ("sobrevive `collaboratorStats` com o cartão de P11") **não vale mais**: a main escolheu o **índice operacional mensal**, não o % de realização em 7 dias.
+
+Consequências:
+1. A "duplicata D confirmada" P11 vs R2 vira **refutada**: P11 mede índice composto mensal; R2 (`ReportsView.js:981`, `collaboratorStats`) mede % de realização com filtros de período. São perguntas diferentes — mesmo padrão de B.3. R2 sobrevive como está, no segmento analítico.
+2. A condição inegociável nº 2 de B.1 ("colaborador com período fixo em 7 dias") ficou **sem objeto**: o colaborador já vê hoje, em produção via main, o ranking mensal por índice. A linha de base de §D.1 é o Painel ATUAL, que inclui essa mudança.
+3. J15 (por colaborador hoje, no J.I.T.) continua `collaboratorStats` com janela = hoje — segue como valor de seletor de R2, como planejado.
+
+**B.2 — VALE.** `calcRate` continua na `PainelView.js:78` com a mesma fórmula; J4/J5 continuam no `buildJit`. A decisão do cartão fundido segue de pé.
+
+**B.3 — VALE.** Os três blocos de loja continuam com as três perguntas. O "Ranking do dia" (duplicata interna, hoje `PainelView.js:358`) continua existindo e continua marcado para eliminação na Fase 3.
+
+**B.4 e B.5 — VALEM.** Conferido por amostragem: J11, R1 e os pares refutados continuam com as mesmas fontes.
+
+**B.6 — VALE, e continua sendo o bloqueador.** As quatro fórmulas concorrentes de aderência continuam todas vivas: `calcRate` (`PainelView.js:78`), `trend7` (`JitPanel.js:208`), StatCard "Tarefas concluídas" (`ReportsView.js:1341`, `summary.rate`), `yAdherence` (no `buildJit`). Nada da main tocou nisso.
+
+**A.3 — INVENTÁRIO INCOMPLETO: a aba Dados ganhou um segmento inteiro.**
+A `ReportsView` agora abre em **dois modos** (`vista`, `ReportsView.js:884`): **Conferir** (default para quem revisa) e **Análise** (todo o conteúdo antigo). O modo Conferir contém a `ConferenceQueue` (`ReportsView.js:109`) — fila agrupada por checklist, ordenada por gravidade (`lib/conferencia.js`), com contagem de pendências no rótulo do seletor. Colaborador não vê o seletor (`canReview`, linha 869-884) — irrelevante para a restrição nº 1, já que colaborador nem tem a aba.
+Consequência para a Fase 3: a fila de Conferir é **fila de trabalho, não análise** — pertence ao registro AGORA da aba consolidada (ao lado das prioridades do J.I.T.), não ao segmento de PERÍODO. Isso é uma decisão nova de arquitetura que §C não previu; default proposto: Conferir vira seção do registro AGORA, visível só para `canReview`, mantendo a contagem no cabeçalho.
+
 ---
 
 # C. Arquitetura da aba consolidada
