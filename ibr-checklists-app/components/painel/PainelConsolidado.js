@@ -1,35 +1,33 @@
 'use client';
 
 /**
- * Aba PAINEL consolidada — Fase 3 da consolidação de abas.
+ * Aba PAINEL — a operação inteira numa tela só.
  *
- * Junta num só lugar o que hoje mora em três abas (Painel, J.I.T. e Dados).
- * Esta fase entrega os registros AGORA (seção 1), DIA (seção 2) e a FAIXA FIXA
- * de 7 dias (seção 4) do §C.3 de `docs/PLANO_CONSOLIDACAO_ABAS.md`. REDE
- * (seção 3) e o segmento analítico (seção 5) entram na Fase 4.
+ * Reúne o que antes eram três abas concorrentes (Painel, J.I.T. e Relatórios):
+ * elas faziam a MESMA pergunta em três recortes de tempo, e obrigavam a escolher
+ * o recorte antes de saber o que se procurava. Ver
+ * `docs/PLANO_CONSOLIDACAO_ABAS.md`.
  *
- * ATRÁS DE UM INTERRUPTOR. Nada aqui alcança produção enquanto `PAINEL_V2` for
- * `false` e a URL não tiver `?v=2`. As três abas vivas continuam intactas —
- * reverter esta fase é apagar este arquivo e as linhas de roteamento em
- * `app/app/page.js`.
+ * Quatro registros, de cima para baixo:
  *
- * A faixa fixa de 7 dias entra JÁ nesta fase, e não na 4, porque sem ela o
- * colaborador em `?v=2` fica incompleto — e é o colaborador que esta fase
- * existe para validar (§D.1).
+ *   1. AGORA    — o que exige ação neste momento, e a fila de conferência.
+ *                 Só MANAGER_ROLES. Colapsa quando a data em foco não é hoje.
+ *   2. DIA      — navegável por data: score, ontem/média, por tipo, por setor.
+ *   3. REDE     — comparativo entre lojas. Só quem enxerga mais de uma.
+ *   4. 7 DIAS   — faixa FIXA, sem seletor e sem gate: aderência e ranking. Os
+ *                 dois blocos que o colaborador tem e que por isso não podem
+ *                 morar atrás de um controle que ele não recebe (§C.2).
+ *   5. PERÍODO  — a faixa com seletor, Exportar e as três lentes. Tudo dentro do
+ *                 ÚNICO `{isManager && …}` grande da aba: bloco novo aqui herda
+ *                 o gate por construção.
  *
- * ── Duplicação declarada e com prazo ──────────────────────────────────────
- * Os quatro blocos do registro AGORA (`AgoraFollowUp`, `AgoraLeitura`,
- * `AgoraPrioridades`, `AgoraBase`) reimplementam JSX que hoje também vive
- * dentro de `JitPanel`. É deliberado e temporário: a Fase 3 tem contrato de
- * reversão "apagar um arquivo", e extrair de `JitPanel` agora significaria
- * mexer numa aba viva. A Fase 5 (§F.1) dissolve o `JitPanel` em dois
- * consumidores do mesmo `buildJit` — `BriefingSheet` (pop-up) e a seção AGORA
- * daqui — e é lá que a segunda cópia morre. Eles já saem exportados para que
- * essa fase seja uma troca de import, não uma reescrita.
+ * A fronteira de acesso é verificada a cada commit por
+ * `tests/painel-render.spec.mjs`, bloco a bloco — a restrição dura nº 1 do plano
+ * ("a linha do colaborador não muda uma vírgula") deixou de depender de alguém
+ * lembrar de conferir com um PIN.
  *
  * REGRA: não pode importar de `app/`.
  */
-
 import { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle, ArrowLeft, Calendar, Camera, CheckCircle2, ChevronRight,
@@ -61,32 +59,6 @@ import {
   StatusBadge, RankBadge, PhotoModal, PillButton,
 } from './shared';
 import { useUnits, useSectors } from './context';
-
-/* ─────────────────────────── O interruptor ─────────────────────────────── */
-
-/**
- * Trava global da aba consolidada. Fica `false` até a Fase 5 ("virar a chave").
- * Enquanto isso, `?v=2` na URL liga a versão nova só para quem escrever o
- * parâmetro — que é como esta fase é testada com um PIN real sem expor nada.
- */
-export const PAINEL_V2 = false;
-
-/**
- * Lê o interruptor. O parâmetro só é lido DEPOIS da montagem: `/app` é estática
- * e o servidor não conhece a query, então decidir no primeiro render trocaria a
- * árvore entre servidor e cliente.
- *
- * `?v=2` sobrevive à troca de aba porque `writeUrlState` (lib/appUrlState.js)
- * reescreve a query preservando os parâmetros que não são `aba`/`loja`.
- */
-export function usePainelV2() {
-  const [on, setOn] = useState(PAINEL_V2);
-  useEffect(() => {
-    if (PAINEL_V2) return;
-    try { setOn(new URLSearchParams(window.location.search).get('v') === '2'); } catch (_) {}
-  }, []);
-  return on;
-}
 
 /* ───────────────────── Seção REDE — comparativo entre lojas ─────────────── */
 
