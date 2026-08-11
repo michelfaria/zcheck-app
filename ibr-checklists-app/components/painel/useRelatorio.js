@@ -213,6 +213,20 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
 
   const exportPDF = () => {
     const unitLabel = filterUnitId ? units.find(u => u.id === filterUnitId)?.name : 'Todas as lojas';
+    /**
+     * E-a (§E.3) — o escopo por extenso.
+     *
+     * O cabeçalho dizia só período + loja. Dois PDFs do mesmo mês e da mesma
+     * loja, um filtrado por Salão e outro por Cozinha, saíam VISUALMENTE
+     * IDÊNTICOS — e viram anexo de e-mail, impressão em reunião, arquivo numa
+     * pasta. Quem recebe não tem como saber qual é qual, e um relatório que não
+     * declara o próprio recorte convida a comparar coisas diferentes.
+     */
+    const escopo = [
+      filterSector && `setor: ${sectorOptions.find(o => o.id === filterSector)?.label || filterSector}`,
+      filterUserId && `colaborador: ${users.find(u => u.id === filterUserId)?.name || filterUserId}`,
+      `agrupado por ${groupBy}`,
+    ].filter(Boolean).join(' · ');
     const unitColor = filterUnitId ? (units.find(u => u.id === filterUnitId)?.color || '#063C5C') : '#063C5C';
 
     // Build bar chart SVG for groups
@@ -247,10 +261,24 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
       </tr>`
     ).join('');
 
-    // Execuções do período — o relatório gerado carrega o mesmo detalhamento
-    // da tela (pedido do piloto), do mais recente ao mais antigo.
-    const execRows = [...filtered]
-      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    /**
+     * E-c (§E.3) — teto de linhas.
+     *
+     * Com `period = 'all'` esta tabela despejava a história INTEIRA da loja:
+     * numa empresa com um ano de operação são milhares de linhas, e o PDF vira
+     * um documento que ninguém abre e uma impressora que ninguém perdoa. O teto
+     * é declarado no próprio arquivo — omitir em silêncio seria pior que
+     * despejar tudo, porque o leitor acharia que está vendo o total.
+     *
+     * Os NÚMEROS acima da tabela (cartões, gráfico, colaboradores) seguem sobre
+     * o período inteiro: o teto corta a lista, não a conta.
+     */
+    const EXEC_MAX_PDF = 300;
+    const execOrdenadas = [...filtered]
+      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+    const execCortadas = Math.max(0, execOrdenadas.length - EXEC_MAX_PDF);
+    const execRows = execOrdenadas
+      .slice(0, EXEC_MAX_PDF)
       .map(c => {
         const done = c.items.filter(i => i.done).length;
         const fotos = c.items.filter(i => i.hasPhoto).length;
@@ -322,6 +350,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
     <div class="header-left">
       <h1>ZCheck — Relatório Operacional</h1>
       <p>${periodLabel} &nbsp;·&nbsp; gerado em ${new Date().toLocaleString('pt-BR')}</p>
+      <p style="font-size:11px;color:#7A6F63;margin-top:2px">${escopo}</p>
     </div>
     <span class="badge">${unitLabel}</span>
   </div>
@@ -376,6 +405,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
   <!-- Execuções do período -->
   ${filtered.length > 0 ? `
   <p class="section-title">Execuções do período (${filtered.length})</p>
+  ${execCortadas > 0 ? `<p style="font-size:11px;color:#7A6F63;margin:-4px 0 8px">Mostrando as ${EXEC_MAX_PDF} mais recentes de ${execOrdenadas.length}. Os números acima cobrem o período inteiro.</p>` : ''}
   <table>
     <thead><tr>
       <th>Quando</th>
@@ -406,6 +436,18 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const win = window.open(url, '_blank');
+    /**
+     * E-b (§E.3) — o retorno de `window.open` nunca era olhado.
+     *
+     * Navegador com pop-up bloqueado devolve `null`, e a exportação morria em
+     * silêncio absoluto: o gestor clicava, nada acontecia, e não havia nada na
+     * tela que explicasse. A conclusão natural é "o relatório está quebrado".
+     */
+    if (!win) {
+      URL.revokeObjectURL(url);
+      alert('O navegador bloqueou a janela de impressão.\n\nLibere pop-ups para este site e toque em Exportar de novo. O relatório não foi perdido — ele é gerado na hora.');
+      return;
+    }
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 

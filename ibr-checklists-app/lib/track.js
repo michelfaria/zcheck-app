@@ -94,6 +94,27 @@ async function queueSet(q) {
   }
 }
 
+/**
+ * Trava de escrita da fila.
+ *
+ * `queueGet` → `push` → `queueSet` é read-modify-write, e duas chamadas
+ * `track()` sem `await` entre elas leem a MESMA fila: a segunda grava por cima
+ * da primeira e o evento some. Não é hipótese — foi medido em produção em
+ * 10/08/2026: `jit_opened` = 0 enquanto `ai_insight_viewed` = 109, sendo que os
+ * dois são disparados em linhas vizinhas do mesmo `useEffect`. Toda métrica de
+ * "primeiro de dois eventos simultâneos" estava subcontada, e `jit_opened` era
+ * justamente a métrica de hábito do briefing.
+ *
+ * Serializa por encadeamento de promessa: cada operação espera a anterior
+ * terminar, dando certo ou errado. Falha de uma não trava a fila.
+ */
+let queueLock = Promise.resolve();
+function withQueue(fn) {
+  const run = queueLock.then(fn, fn);
+  queueLock = run.then(() => {}, () => {});
+  return run;
+}
+
 function scheduleFlush(delay = 4000) {
   if (typeof window === 'undefined') return;
   if (flushTimer) return; // já há um flush agendado
@@ -126,9 +147,11 @@ export async function track(eventType, props = {}) {
       session_id: getSessionId(),
       metadata: props.metadata ?? {},
     };
-    const q = await queueGet();
-    q.push(ev);
-    await queueSet(q.slice(-QUEUE_CAP));
+    await withQueue(async () => {
+      const q = await queueGet();
+      q.push(ev);
+      await queueSet(q.slice(-QUEUE_CAP));
+    });
     scheduleFlush();
   } catch (e) {
     console.warn('[track] enqueue failed (ignored):', e?.message);
@@ -138,18 +161,38 @@ export async function track(eventType, props = {}) {
 /** Envia a fila em batches para o Supabase. Silencioso e resiliente. */
 export async function flushEvents() {
   if (typeof window === 'undefined' || !navigator.onLine) return;
-  let q = await queueGet();
-  if (q.length === 0) return;
 
-  const batch = q.slice(0, BATCH_SIZE);
+  /**
+   * REIVINDICA o lote antes de enviar, em vez de reescrever a fila depois.
+   *
+   * A versão anterior lia a fila, enviava (rede, centenas de ms) e só então
+   * gravava `q.slice(batch.length)` — o `q` de ANTES do envio. Todo evento
+   * registrado nesse intervalo era apagado pela gravação obsoleta. O envio é a
+   * janela mais longa do fluxo, e é exatamente quando o app está mais ativo.
+   */
+  const batch = await withQueue(async () => {
+    const q = await queueGet();
+    if (q.length === 0) return [];
+    const b = q.slice(0, BATCH_SIZE);
+    await queueSet(q.slice(b.length));
+    return b;
+  });
+  if (batch.length === 0) return;
+
   try {
     const { error } = await supabase.from('events').insert(batch);
     if (error) throw error;
-    const remaining = q.slice(batch.length);
-    await queueSet(remaining);
-    if (remaining.length > 0) scheduleFlush(1000); // continua drenando
+    const restam = await withQueue(async () => (await queueGet()).length);
+    if (restam > 0) scheduleFlush(1000); // continua drenando
   } catch (e) {
     console.warn('[track] flush failed, will retry:', e?.message);
+    // Devolve o lote à FRENTE da fila, sem atropelar o que chegou no meio-tempo.
+    // Com a fila no teto, o corte segue descartando o mais ANTIGO — mesma regra
+    // do enfileiramento, para não inventar uma segunda política de descarte.
+    await withQueue(async () => {
+      const q = await queueGet();
+      await queueSet([...batch, ...q].slice(-QUEUE_CAP));
+    });
     scheduleFlush(15000); // backoff
   }
 }
