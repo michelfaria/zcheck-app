@@ -1677,7 +1677,58 @@ A âncora (`#agora`, `#registros`) está fora do contrato do módulo, que faz ro
 
 Um aceite do tipo "o tour não referencia aba inexistente" seria satisfeito **fazendo nada**, o que é o resultado errado. Por isso o aceite acima exige explicitamente **5 passos** e que o passo `painel` (8717–8720) absorva o `desc`/`dica` do passo removido, apontando para a faixa PERÍODO e o botão Exportar.
 
-## Fase 6 — Limpeza e correções aditivas (**separável, pode não acontecer**)
+## Fase 6 — ✅ EXECUTADA em 11/08/2026
+
+Aconteceu, e cresceu: além das três correções de PDF previstas, absorveu toda a
+dívida que as fases anteriores registraram.
+
+| # | O quê | Efeito |
+|---|---|---|
+| 1 | `PainelView.js` (867 linhas) e o wrapper `ReportsView` removidos | código morto que descrevia um desenho extinto |
+| 2 | **E-a** — cabeçalho do PDF declara setor, colaborador e agrupamento | dois PDFs de recortes diferentes deixam de sair idênticos |
+| 3 | **E-b** — `window.open` verificado | pop-up bloqueado deixa de matar a exportação em silêncio |
+| 4 | **E-c** — teto de 300 linhas na tabela de execuções, declarado | `period='all'` deixa de despejar a história inteira |
+| 5 | **`lib/track.js`** — duas corridas de perda de evento | ver abaixo |
+| 6 | **`lib/appUrlState.js`** — corrida do deep link no login | `?aba=x` passa a sobreviver à autenticação |
+
+### As duas corridas da telemetria
+
+Registradas na Fase 0 como "fora do escopo desta consolidação". Entraram porque a
+aba consolidada acabou de ganhar `painel_agora_viewed`,
+`painel_segment_changed` e `report_exported`: sem a trava, a instrumentação nova
+nasceria subcontando.
+
+1. **`track()`** faz `queueGet` → `push` → `queueSet` sem trava. Duas chamadas
+   sem `await` entre elas leem a MESMA fila e a segunda grava por cima. Medido em
+   produção: `jit_opened` = 0 enquanto `ai_insight_viewed` = 109 — linhas
+   vizinhas do mesmo `useEffect`.
+2. **`flushEvents()`** era pior: lia a fila, enviava pela rede e só então gravava
+   o `remaining` calculado ANTES do envio. Todo evento registrado durante o
+   `insert` era apagado — e o envio é a janela mais longa do fluxo, justamente
+   quando o app está mais ativo. Agora o lote é **reivindicado** antes de sair e
+   devolvido à frente da fila se o envio falhar.
+
+⚠️ **Nenhuma das duas tem teste.** `track()` retorna cedo sem `window`, então não
+roda em Node sem um shim de DOM. A correção é por leitura, não por portão.
+
+### A corrida do deep link
+
+Quando `ready` vira `true`, os dois efeitos de `useAppUrlState` rodam no mesmo
+commit: o primeiro chama `setTab` a partir da URL, o segundo ainda enxerga o
+`tab` antigo e o grava por cima. Abrir `/app?aba=painel` e fazer login levava
+para Executar. Na primeira passagem, se a URL já traz aba, ela é a verdade e o
+sentido estado→URL não escreve.
+
+### O que a Fase 6 NÃO fez
+
+**`useRelatorio` continua rodando para todo papel.** Hook não pode ser
+condicional, e servir o mesmo `rel` para o AGORA (fila de conferência) e para o
+segmento exige um provider. Não vaza — nada do que ele devolve renderiza fora do
+gate, e `tests/painel-render.spec.mjs` prova isso a cada commit. É desperdício de
+cálculo, não risco, e a correção mexeria na composição da aba inteira sem
+nenhum defeito visível para justificar. **Fica registrado como dívida aberta.**
+
+### Escopo original (registro)
 
 - Apagar `calcRanking` (2510), `PainelView` antigo, `ReportsView` antigo, o segundo `getRating` (2647) que sombreia o de 2556, e o `filterShift` morto.
 - Correções de exportação E-a, E-b, E-c (§E.3).

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * Estado de navegação do app na URL.
@@ -69,6 +69,8 @@ export function writeUrlState({ tab, unitId }, push = true) {
  * aba que ele não pode ver.
  */
 export function useAppUrlState({ ready, tab, setTab, allowedTabs, unitId, setUnitId, canSwitchUnit, unitIds }) {
+  const primeiraSync = useRef(true);
+
   // URL → estado, na montagem e no voltar/avançar do navegador.
   useEffect(() => {
     if (!ready) return;
@@ -96,11 +98,31 @@ export function useAppUrlState({ ready, tab, setTab, allowedTabs, unitId, setUni
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, allowedTabs, canSwitchUnit, unitIds]);
 
-  // Estado → URL.
+  /**
+   * Estado → URL.
+   *
+   * O `primeiraSync` conserta uma corrida entre os dois sentidos. Quando `ready`
+   * vira `true` — o instante em que o login termina — os DOIS efeitos rodam no
+   * mesmo commit, nesta ordem. O de cima lê a URL e chama `setTab('painel')`,
+   * mas `setTab` só vale no próximo render: este efeito, logo em seguida, ainda
+   * enxerga o `tab` ANTIGO e o grava por cima do que estava na URL.
+   *
+   * Resultado: abrir `/app?aba=painel` e fazer login levava para Executar, com
+   * a URL reescrita para `aba=executar`. Deep link de aba não sobrevivia à
+   * autenticação — e link de aba é exatamente o que se manda para alguém.
+   *
+   * Regra: na primeira passagem, se a URL JÁ traz aba, ela é a verdade e este
+   * efeito não escreve. Sem aba na URL não há o que preservar, e a escrita
+   * segue normal para o link ficar compartilhável.
+   */
   useEffect(() => {
     if (!ready) return;
     const cur = readUrlState();
     const first = cur.tab === null && cur.unitId === null;
+    if (primeiraSync.current) {
+      primeiraSync.current = false;
+      if (cur.tab !== null) return;
+    }
     writeUrlState({ tab, unitId: canSwitchUnit ? (unitId ?? 'todas') : null }, !first);
   }, [ready, tab, unitId, canSwitchUnit]);
 }
