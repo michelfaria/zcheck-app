@@ -1037,7 +1037,42 @@ Portões executados por commit: `npm run verify` (eslint com `no-undef` como err
   - as três abas renderizam idênticas nos 4 papéis — **por inspeção humana em produção**. `tests/visual-baseline.spec.js:15` registra que telas logadas não são capturáveis (segredos `Sensitive`, auth só em produção), então **não existe portão automatizado aqui**. É o ponto mais arriscado do plano e está declarado como tal (§G.2-11).
 - **Reverter:** `git revert`.
 
-## Fase 2 — Pagar a dívida de cálculo (**ainda com 3 abas**)
+## Fase 2 — ✅ EXECUTADA em 11/08/2026 (commits 1f44adf, 8d67a9a, 57e16bf)
+
+Saldo — e o principal é que **metade da dívida já estava paga pela `main`**:
+
+| Item do escopo original | Desfecho |
+|---|---|
+| `latestPerRound` nos StatCards e no R3 | **Já estava feito.** A main resolveu em `681270a`; `ReportsView.js:947` já desduplica. Nada a fazer |
+| R5 agrupa dia da semana no fuso certo | **Não era bug.** O parse usava âncora ao meio-dia, que neutraliza fuso por acidente. Trocado por `weekdayOf` mesmo assim: parse de data à mão num projeto de fonte única é armadilha para a próxima pessoa |
+| Nomear as três aderências | **Adiado de propósito** — ver abaixo |
+| — (não estava no escopo) | **`calcRate` subcontava reexecução.** Achado e corrigido |
+| — (não estava no escopo) | **Denominador contava dias sem operação.** Achado, diagnosticado e corrigido no banco |
+
+### O que `calcRate` escondia (`1f44adf`)
+
+A conta do Painel varria `completions` à mão com `.find()`. Três defeitos numa linha, todos fechados ao trocar por `roundProgress`:
+
+1. `.find()` devolve a **primeira** submissão. Reexecutar um checklist para completá-lo não mexia no score do Painel — ele seguia lendo a submissão incompleta. **Quem refez trabalho via o número parado.**
+2. `comp.items.filter(i => i.done)` contava item concluído **fora da recorrência do dia**. O denominador só conta previstos, então o numerador podia ultrapassá-lo e a taxa estourar 100%. `roundProgress` intersecta com as previstas: `done <= total` por construção. O critério de aceite "nenhum percentual acima de 100%" deixa de depender de sorte.
+3. O `find` casava sem `unitId` — garantia apoiada na coincidência de o id ser único por loja.
+
+### O denominador: era dado, não código (`8d67a9a`, `57e16bf`)
+
+Os mesmos 124 checklists davam **32%** em "30 dias" e **87%** em "Tudo". `templateExistedOn` devolve `true` para `createdAt` nulo, e os 13 checklists do IBR estavam todos em NULL — então todo dia da janela contava como previsto, inclusive os 17 anteriores à primeira execução da empresa.
+
+O NULL foi **deliberado** (`20260730_templates_desativar.sql:51-56`): evitar que `default now()` materializasse "agora" nas linhas antigas e movesse a aderência de meses fechados. Raciocínio certo para um parque com histórico — que **se inverte** num tenant de 13 dias de vida.
+
+Corrigido por backfill em produção (11/08), com a primeira execução da empresa como âncora conservadora. Verificação: `13 templates, 0 nulos, min = max = 2026-07-29, 1 data distinta`.
+
+### Pendências que atravessam para depois
+
+- **Reexportar o relatório de 30 dias** e comparar com `docs/BASELINE_PRE_FASE2.md`. Esperado: `% do esperado` de 32% para ~75%, contagens absolutas idênticas. É o segundo baseline que a Fase 4 exige (§E.3).
+- **Nomear as três aderências.** Os nomes propostos em §B.6 não vão para a tela como estão: "Entrega completa" é lido como delivery num restaurante, e os três são jargão de análise. Candidatos a validar com quem opera o turno: "Feito do previsto", "Checklists 100%", "Feito do entregue". Entra na Fase 4, junto com o segmento analítico.
+
+### Escopo original (registro)
+
+**Escopo:** aplicar as correções de §B.6 nos blocos que sobrevivem, **antes** de fundi-los
 
 **Escopo:** aplicar as correções de §B.6 nos blocos que sobrevivem, **antes** de fundi-los:
 - `latestPerRound` para os StatCards (3668) e para R3 (3716)
