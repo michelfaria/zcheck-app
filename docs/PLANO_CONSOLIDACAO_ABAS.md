@@ -1358,12 +1358,12 @@ E o StatCard "Checklists concluídos" segue com o nome antigo, que descreve o qu
 ele faz. Renomeá-lo para algo honesto ("Checklists entregues") é mudança de
 rótulo no PDF também, e por isso não entrou junto do portão.
 
-### Aceite da Fase 4 — 3 de 4 confirmados no preview (11/08)
+### Aceite da Fase 4 — ✅ COMPLETO (11/08)
 
 | # | Aceite | Resultado |
 |:-:|---|---|
 | 1 | A consolidação se lê como UMA tela | ✅ ok |
-| 2 | Colaborador em `?v=2` segue com os mesmos 8 blocos | ⏳ **pendente** |
+| 2 | Colaborador em `?v=2` segue com os mesmos 8 blocos | ✅ ok |
 | 3 | PDF pelo Exportar novo idêntico ao segundo baseline | ✅ ok |
 | 4 | Fila de Conferir no AGORA abre e grava | ✅ ok |
 
@@ -1372,12 +1372,30 @@ rótulo no PDF também, e por isso não entrou junto do portão.
 de 09:12 e à leitura pós-extração de 12:59. **A faixa PERÍODO nova produz o mesmo
 PDF do caminho antigo**, que é a restrição dura nº 2.
 
-**Item 2 é o que falta, e é o mais caro de errar.** A Fase 4 acrescentou quatro
-superfícies novas atrás de `isManager` — faixa de período, três segmentos,
-Exportar e fila de Conferir. A auditoria de código confere (6 gates `isManager &&`;
-o `useRelatorio` roda para todo papel porque hook não pode ser condicional, mas
-nada do que ele devolve renderiza fora do gate, e a fila tem `canReview` próprio).
-Mas isso prova o gate, não a tela — a mesma distinção registrada na Fase 3.
+**Item 2, medido na tela em 11/08 14:10** com PIN de colaborador real, em três
+capturas cobrindo a rolagem inteira. A Fase 4 acrescentou quatro superfícies
+atrás de `isManager` — faixa de período, três segmentos, Exportar e fila de
+Conferir — e **nenhuma delas alcança o colaborador**:
+
+| # | Bloco | Como apareceu |
+|:-:|---|---|
+| 1 | navegador de data | `Dia · Hoje` + `11/08/2026`, ‹ ativo e › desabilitado |
+| 2 | loja fechada | n/a — loja aberta |
+| 3 | score + `n/N` | 38% · FEITO DO PREVISTO · "4 de 13 checklists" |
+| 4 | ontem / média 7d | 93% ▼−55pp · 86% ▼ abaixo da média |
+| 5 | por tipo + Foto | Abertura 4/4 com 4 botões Foto; Fechamento e Rotina 0/4 |
+| 6 | aderência 7 dias | qua→ter, dia da semana rotulado, domingo como lacuna |
+| 7 | ranking da equipe | agosto/2026, 4 pessoas |
+| 8 | PhotoModal | ⚠️ **não exercitado** — exigiria tocar num botão Foto |
+
+A página **termina no ranking**. Rail com 3 itens (Executar, Painel, Meu ID).
+
+Duas decisões que só existiam no papel ficaram confirmadas na tela: a faixa de
+7 dias está **cronológica com rótulo de dia da semana** (a inversão de
+`[...rates7].reverse()` foi mesmo corrigida), e dia sem previsto aparece como
+**lacuna cinza**, não como barra vermelha — o defeito do `null >= 50`.
+
+**A RESTRIÇÃO DURA Nº 1 ESTÁ CUMPRIDA E MEDIDA.**
 
 **O rótulo do PDF não foi tocado.** §E.3 previa que o renomear atingisse
 "Realização geral" (3521), mas mudar o PDF no mesmo commit em que ele é o portão
