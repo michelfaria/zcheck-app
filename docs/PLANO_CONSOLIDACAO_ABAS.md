@@ -1589,6 +1589,28 @@ Teste que passa sem nunca ter falhado não é portão, é decoração.
 **Ligado ao `npm run verify`**, que agora é `eslint --quiet && npm run test &&
 next build`. Era exatamente por ali que os três defeitos passaram.
 
+**Estendido ao `PainelConsolidado` (11/08).** 47 asserções no total. A parte que
+mais importa é a fronteira de acesso: os blocos que o colaborador TEM, e um a um
+os que ele **não pode ter** — AGORA inteiro, "Por setor · hoje", REDE, as três
+lentes, Exportar, execuções, histórico de notificações e a fila de conferência.
+Mais gestão vendo o que ele não vê, e liderança (presa a uma loja) sem REDE.
+
+Provado por mutação também aqui: remover o gate do segmento derruba 2 asserções,
+remover o do AGORA derruba 3.
+
+> **O que isso muda.** A restrição dura nº 1 foi verificada três vezes com PIN
+> real — o que prova o dia em que foi verificada, e nada sobre o commit seguinte.
+> Agora ela é portão: quem esquecer um `isManager` descobre no `npm run verify`,
+> não em produção.
+
+**Regressão que o teste desenterrou: P13 tinha sumido do produto.** O histórico de
+notificações vivia dentro da `PainelView`, que a Fase 5 deixou inalcançável, e
+nunca foi migrado — §C.3 o coloca em 5.C (Registros) e §A.1 registra que é a
+**única** superfície de `notification_log`. Quem recebe o push de atraso
+(gerência e liderança) tinha deixado de poder conferir o que foi enviado.
+Extraído para `components/painel/NotificationHistory.js` e ligado ao segmento
+Registros.
+
 **Achado colateral:** `lib/sync.js` importava `getSyncQueue` e `clearSyncQueue`
 de `lib/storage.js`, que **nunca exportou nenhum dos dois**. Ninguém os chamava,
 então o defeito era invisível — o bundler do Next não reclama de named import

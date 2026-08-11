@@ -55,6 +55,7 @@ import { track } from '../../lib/track';
 import { useRelatorio } from './useRelatorio';
 import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades, AgoraBase } from './agora';
 import { ReportsBody, ConferenceQueue, DisputeCard } from './ReportsView';
+import { NotificationHistory } from './NotificationHistory';
 import {
   MANAGER_ROLES, ROLE_LABELS, Eyebrow, Ticket, StarRating, Avatar, RatingLabel,
   StatusBadge, RankBadge, PhotoModal, PillButton,
@@ -260,7 +261,7 @@ const SEGMENTOS = [
  * renderiza, recebendo `segment` e `embedded`. Não existe segunda cópia dos
  * blocos analíticos, e por isso não existe o que divergir entre as duas telas.
  */
-function SecaoSegmento({ rel, props, userId, jit }) {
+function SecaoSegmento({ rel, props, userId, jit, units, last7 }) {
   const {
     period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo,
     selectedMonth, setSelectedMonth, exportCSV, exportPDF,
@@ -366,6 +367,13 @@ function SecaoSegmento({ rel, props, userId, jit }) {
             ))}
           </Ticket>
         </div>
+      )}
+
+      {/* P13 — a única superfície de `notification_log`. Quem RECEBE o push de
+          atraso (gerência e liderança) precisa poder conferir o que saiu; sem
+          isto, "não chegou nada" vira dúvida sobre se houve aviso. */}
+      {seg === 'registros' && (
+        <NotificationHistory templates={props.templates} units={units} last7={last7} unit={props.unit} />
       )}
     </section>
   );
@@ -1090,7 +1098,7 @@ export function PainelConsolidado({
           O único `isManager` de bloco grande da aba. Ver §C.3: a fronteira de
           acesso é uma linha só, e tudo daqui para baixo está dentro dela. */}
       {isManager && (
-        <SecaoSegmento rel={rel} props={relProps} userId={currentUser?.id} jit={jit} />
+        <SecaoSegmento rel={rel} props={relProps} userId={currentUser?.id} jit={jit} units={units} last7={last7} />
       )}
 
       {viewingPhoto && (

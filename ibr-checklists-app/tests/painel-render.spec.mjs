@@ -51,6 +51,9 @@ const out = join(dir, 'bundle.mjs');
 await writeFile(entry, `
   export { ReportsBody } from '${process.cwd()}/components/painel/ReportsView.js';
   export { useRelatorio } from '${process.cwd()}/components/painel/useRelatorio.js';
+  export { PainelConsolidado } from '${process.cwd()}/components/painel/PainelConsolidado.js';
+  export { buildJit } from '${process.cwd()}/components/painel/JitPanel.js';
+  export { UnitsContext } from '${process.cwd()}/components/painel/context.js';
 `);
 await build({
   entryPoints: [entry], outfile: out, bundle: true, format: 'esm',
@@ -66,7 +69,7 @@ await build({
   // ser que exista um `require` de verdade em escopo. Este banner cria um.
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 });
-const { ReportsBody, useRelatorio } = await import(out);
+const { ReportsBody, useRelatorio, PainelConsolidado, buildJit, UnitsContext } = await import(out);
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 const unit = { id: 'u1', name: 'Loja Teste', color: '#8a2be2', sectors: ['Salão'], timezone: 'America/Sao_Paulo' };
@@ -157,6 +160,68 @@ const soltaAnalise = render({}, { onReview: undefined });
 check(tem(soltaAnalise, 'Exportar'), 'solta em Análise, o bloco Exportar do rodapé continua lá');
 check(tem(soltaAnalise, 'Feito do entregue'), 'solta em Análise, os StatCards aparecem');
 check(tem(soltaAnalise, 'Execuções do período'), 'solta em Análise, as execuções aparecem');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAINEL CONSOLIDADO — a fronteira de acesso
+//
+// A restrição dura nº 1 do plano: "a linha do colaborador não muda uma vírgula".
+// Ela foi verificada três vezes com PIN real, o que prova o dia em que foi
+// verificada — e nada sobre o commit seguinte. Daqui em diante ela é portão.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const colaborador = { id: 'p1', name: 'Ana', role: 'colaborador', unitId: 'u1', sectorId: null };
+const lider = { id: 'l1', name: 'Carla', role: 'lideranca', unitId: 'u1' };
+
+const jit = buildJit(completions, templates, [], [unit], 'u1', 'u1');
+
+const painel = (user, over = {}) => renderToStaticMarkup(
+  h(UnitsContext.Provider, { value: [unit] },
+    h(PainelConsolidado, {
+      unit, templates, completions, closures: [], users,
+      canSeeAllUnits: user.unitId == null, currentUser: user,
+      jit, actionPlans: [], plansLoaded: true,
+      onCreatePlan: () => {}, onCompletePlan: () => {}, onNavigate: () => {},
+      allUnitsSelected: false, onReview: () => {}, disputes: [], onResolveDispute: () => {},
+      ...over,
+    })));
+
+console.log('\n═══ colaborador: os 8 blocos de §D.1, e NADA além ═══');
+const colab = painel(colaborador);
+
+// O que ele TEM hoje e não pode perder.
+check(tem(colab, 'Dia ·'), '1. navegador de data');
+check(tem(colab, 'Feito do previsto'), '3. score do dia, com o rótulo da aderência');
+check(tem(colab, 'Ontem') && tem(colab, 'Média 7 dias'), '4. ontem / média 7 dias');
+check(tem(colab, 'Por tipo de checklist'), '5. por tipo de checklist');
+check(tem(colab, 'Aderência por dia · 7 dias'), '6. faixa fixa de 7 dias');
+check(tem(colab, 'Ranking da equipe'), '7. ranking da equipe');
+
+// O que ele NÃO pode ver. Cada linha aqui é um vazamento potencial.
+check(!tem(colab, 'Você marcou para tratar'), 'AGORA: sem follow-up de planos');
+check(!tem(colab, 'Leitura da operação'), 'AGORA: sem insight');
+check(!tem(colab, 'Prioridades agora'), 'AGORA: sem prioridades');
+check(!tem(colab, 'Base da operação'), 'AGORA: sem base da operação');
+check(!tem(colab, 'Por setor · hoje'), 'DIA: sem o comparativo de setores');
+check(!tem(colab, 'Comparativo entre lojas'), 'REDE: sem comparativo entre lojas');
+check(!tem(colab, 'Tendência') && !tem(colab, 'Registros'), 'SEGMENTO: sem as três lentes');
+check(!tem(colab, 'Exportar'), 'SEGMENTO: sem exportação');
+check(!tem(colab, 'Execuções do período'), 'SEGMENTO: sem a lista de execuções');
+check(!tem(colab, 'Histórico de notificações'), 'SEGMENTO: sem histórico de notificações');
+check(!tem(colab, 'Conferido por') && !tem(colab, 'Conferir'), 'AGORA: sem a fila de conferência');
+
+console.log('\n═══ gestão vê o que o colaborador não vê ═══');
+const chefe = painel(gestor, { canSeeAllUnits: true });
+check(tem(chefe, 'Prioridades agora'), 'gestão tem o registro AGORA');
+check(tem(chefe, 'Base da operação'), 'gestão tem a base da operação');
+check(tem(chefe, 'Tendência'), 'gestão tem o segmento analítico');
+check(tem(chefe, 'Exportar'), 'gestão tem a exportação');
+check(tem(chefe, 'Feito do previsto'), 'gestão também tem o score do dia');
+
+console.log('\n═══ REDE só para quem enxerga a rede ═══');
+// Liderança é presa a uma loja: `canSeeAllUnits` é falso e a seção não existe.
+const lideranca = painel(lider);
+check(!tem(lideranca, 'Comparativo entre lojas'), 'liderança (presa a uma loja) não vê REDE');
+check(tem(lideranca, 'Prioridades agora'), 'liderança vê o AGORA');
 
 await rm(dir, { recursive: true, force: true });
 console.log(ok ? '\n  ✅ PASSOU' : '\n  ❌ FALHOU');
