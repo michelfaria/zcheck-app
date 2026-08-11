@@ -905,7 +905,13 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
   const emAnalise = embedded || vista === 'analise';
 
   return (
-    <div className="zc-view space-y-4 zc-rep">
+    /* `zc-rep` é um grid de DUAS colunas no desktop: `280px minmax(0,1fr)`,
+       filtros à esquerda e resultado à direita. Embutido no Painel a coluna de
+       filtros não é renderizada — e sem ela o resultado vira o PRIMEIRO item do
+       grid e cai nos 280px, que foi o layout espremido reportado em 11/08.
+       `zc-view` também sai: o Painel já é um, e dois aninhados somam padding.
+       Embutido, quem dá largura e respiro é a seção do Painel. */
+    <div className={embedded ? 'space-y-4' : 'zc-view space-y-4 zc-rep'}>
       {!embedded && (<div className="zc-rep-filters space-y-4">
       {/* O escopo, dito em letras. Quem responde pela rede lia o relatório da
           primeira loja achando que era o de todas — e nada na tela desmentia. */}

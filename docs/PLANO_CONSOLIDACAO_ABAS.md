@@ -1552,6 +1552,33 @@ previsto vs Feito do entregue** — que é a leitura que mais confunde na tela.
    > do arquivo exportado. O portão de não-regressão do PDF é forte para os
    > NÚMEROS e cego para a TELA, e isso agora está registrado.
 
+4. **O conteúdo embutido caiu numa coluna de 280px.** `.zc-rep` é um grid de
+   duas colunas no desktop (`280px minmax(0,1fr)`): filtros à esquerda,
+   resultado à direita. Embutido, a coluna de filtros não é renderizada — e sem
+   ela o `.zc-rep-results` vira o **primeiro** item do grid e cai nos 280px. Os
+   quatro StatCards ficaram empilhados quebrando palavra ao meio. Corrigido
+   trocando a classe do root quando `embedded`; `zc-view` saiu junto, porque o
+   Painel já é um e dois aninhados somam padding.
+
+### ⚠️ O padrão dos três defeitos desta fase
+
+Os três — briefing que não abre, segmento vazio, layout espremido — têm a mesma
+assinatura: **passaram por `npm run verify`, pelos 71 testes, pelo teste de
+conferência e pelo portão do PDF.** Nenhum deles é erro de cálculo; os três são
+erros de RENDERIZAÇÃO, e o projeto não tem um único portão que olhe para o que
+foi renderizado. O PDF, que era o portão mais forte, lê `filtered`/`summary`/
+`groups` direto do motor e **nunca toca no JSX**.
+
+Todos foram encontrados por inspeção humana no preview. Isso funcionou, mas não
+escala e não sobrevive a quem não conhece a tela de cor.
+
+**O que fecharia a lacuna:** um teste de componente que monte `ReportsBody` com
+`embedded` e afirme, por segmento, quais blocos aparecem — e que o root não
+carregue `zc-rep`. Não precisa de sessão logada nem de segredo: é componente
+puro sobre dados de fixture. Seria o primeiro portão de tela do projeto e o único
+capaz de pegar esta classe inteira de defeito. **Não existe hoje; entra na
+Fase 6.**
+
 ### Dívida que a fase deixa (Fase 6)
 
 1. `PainelView.js` e o wrapper `ReportsView` ficaram **inalcançáveis**. Não foram
