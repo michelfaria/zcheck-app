@@ -8642,14 +8642,17 @@ function AppInner() {
   useEffect(() => {
     if (!currentUser || !MANAGER_ROLES.includes(currentUser.role)) return;
     if (!jit || !plansLoaded) return;
-    // Se o usuário já ESTÁ no J.I.T. (link direto, ?aba=jit, ou item do menu),
-    // o pop-up abriria por cima da própria página — dois J.I.T. empilhados.
-    // Marca como visto para o auto-open não disparar depois numa troca de aba.
-    if (tab === 'painel') {
-      autoOpenChecked.current = currentUser.id;
-      try { localStorage.setItem(`zc_jit_seen_${currentUser.id}_${todayStr(appTz)}`, '1'); } catch (_) {}
-      return;
-    }
+    // Já está no Painel? A seção AGORA é a primeira dobra dele, então o pop-up
+    // abriria por cima exatamente do mesmo conteúdo. Não abre.
+    //
+    // Mas NÃO carimba o "visto do dia" daqui. Quem carimba é a própria seção
+    // AGORA, quando ela renderiza (`SecaoAgora`) — que é o instante em que o
+    // briefing foi de fato visto. A diferença não é teórica: `plansLoaded` chega
+    // por fetch, e carimbar aqui significa que abrir o Painel enquanto os planos
+    // ainda vinham matava o pop-up pelo resto do dia. Antes da consolidação o
+    // ramo era `tab === 'jit'`, um destino raro e deliberado; `painel` é o
+    // destino padrão de quem é gestão, e carimbar nele é carimbar sempre.
+    if (tab === 'painel') return;
     // Uma avaliação por login: sinal que surgir depois não toma a tela no meio
     // do trabalho — acende o badge do botão manual em vez de interromper.
     if (autoOpenChecked.current === currentUser.id) return;

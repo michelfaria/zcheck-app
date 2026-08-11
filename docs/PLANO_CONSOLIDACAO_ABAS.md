@@ -1518,6 +1518,23 @@ ele, e links compartilhados em conversa sobrevivem a mudanças de produto. Ganho
 um aviso de "mudou de lugar" no topo e uma seção nova explicando **Feito do
 previsto vs Feito do entregue** — que é a leitura que mais confunde na tela.
 
+### Dois defeitos achados no teste da própria fase
+
+1. **O pop-up de briefing parou de abrir.** O ramo "já está na aba, não abre por
+   cima" era `tab === 'jit'` — destino raro e deliberado — e **carimbava o
+   `zc_jit_seen_` do dia**. Trocado por `tab === 'painel'`, passou a carimbar no
+   destino padrão de quem é gestão: abrir o Painel uma vez matava o briefing pelo
+   resto do dia. Agravante: o efeito depende de `plansLoaded`, que chega por
+   fetch, então navegar para o Painel antes do fetch voltar fazia o pop-up perder
+   a corrida. Corrigido como §F.1 mandava desde o início — quem carimba é a seção
+   AGORA quando renderiza, que é o instante em que o briefing foi de fato visto.
+
+2. **A Ajuda contava a mudança.** O artigo reescrito abria com "o que antes era a
+   aba Relatórios agora vive…". O ZCheck **não foi lançado**: o IBR é a empresa
+   real em teste, e para todo leitor futuro nunca existiu aba Relatórios. Contar
+   a mudança inventa um passado que o leitor não tem e envelhece o texto no dia
+   seguinte. Toda narrativa de transição saiu — a Ajuda descreve o que é.
+
 ### Dívida que a fase deixa (Fase 6)
 
 1. `PainelView.js` e o wrapper `ReportsView` ficaram **inalcançáveis**. Não foram

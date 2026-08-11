@@ -1133,6 +1133,12 @@ function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCrea
     if (!jitDate || !currentUser?.id) return;
     const chave = `zc_painel_agora_${currentUser.id}_${jitDate}`;
     try {
+      // O "visto do dia" do briefing é carimbado AQUI, e não no efeito de
+      // auto-abertura (§F.1): o briefing foi visto quando esta seção renderizou,
+      // não quando a aba por acaso era 'painel' com os dados ainda chegando.
+      // Sem isso, quem lê o briefing rolando o Painel recebe o pop-up de novo no
+      // login seguinte — e é assim que se treina alguém a fechar no reflexo.
+      localStorage.setItem(`zc_jit_seen_${currentUser.id}_${jitDate}`, '1');
       if (localStorage.getItem(chave)) return;
       localStorage.setItem(chave, '1');
     } catch (_) { /* modo privado: perde a dedupe, não a tela */ }

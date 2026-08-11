@@ -6,13 +6,9 @@ order: 7
 updatedAt: "2026-08-11"
 ---
 
-> **Mudou de lugar.** O que antes era a aba **Relatórios** agora vive na parte de
-> baixo do **Painel**, junto do dia. As abas J.I.T. e Relatórios deixaram de
-> existir: eram três telas para a mesma pergunta em três recortes de tempo, e
-> agora são três seções de uma tela só. Nada foi removido — nem os filtros, nem
-> a exportação, nem a conferência.
-
-O Painel (liderança, gerência e diretoria) tem quatro andares, de cima para baixo:
+O **Painel** (liderança, gerência e diretoria) responde a três perguntas
+diferentes sobre a operação, de cima para baixo — do que exige ação agora até o
+histórico do mês. Ele tem quatro andares:
 
 | Seção | Responde |
 |---|---|
@@ -70,9 +66,9 @@ Além deles:
 
 ## Exportar
 
-O botão **Exportar** fica no topo da seção Período, ao lado do seletor — não
-mais no fim da página. Ele gera **CSV** (para planilha) ou **PDF** (para
-imprimir ou compartilhar), sempre com os filtros que estão na tela.
+O botão **Exportar** fica no topo da seção Período, ao lado do seletor. Ele
+gera **CSV** (para planilha) ou **PDF** (para imprimir ou compartilhar), sempre
+com os filtros que estão na tela.
 
 > 💡 Rotina que funciona: segunda-feira, role até Período, escolha **7 dias**
 > agrupado por setor, abra a lente **Tendência** e desça nos críticos pendentes.
