@@ -17,7 +17,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Star } from 'lucide-react';
+import { Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { C, R, W, T } from '../../lib/tokens';
 import { getPhotoUrl } from '../../lib/sync';
 
@@ -188,6 +188,38 @@ export function RankBadge({ pos, size = 28 }) {
       border: `1px solid ${pos <= 3 ? `${tone}40` : C.border}`,
       color: tone, fontSize: size <= 20 ? T.label : T.caption, fontWeight: W.bold,
     }}>{pos}</span>
+  );
+}
+
+/**
+ * Marcador de seção: o traço curto na cor do acento que o J.I.T. já usava no
+ * lugar de emoji ("Leitura da operação"). Virou componente porque a regra vale
+ * para todo cabeçalho de seção — num painel de gestão, emoji como dado custa
+ * mais credibilidade do que resolve.
+ */
+export function SectionMark({ color }) {
+  return <span aria-hidden="true" style={{ width: 14, height: 2, borderRadius: 2, background: color, flexShrink: 0 }} />;
+}
+
+/**
+ * "Foi útil?" — polegares. Botões de verdade, com nome acessível: os emoji
+ * 👍/👎 anteriores ficavam sem rótulo para leitor de tela e o desenho mudava
+ * de plataforma para plataforma.
+ */
+export function FeedbackThumbs({ onRate, size = 15 }) {
+  const btn = {
+    display: 'inline-grid', placeItems: 'center', padding: 6, borderRadius: R.sm,
+    border: `1px solid ${C.border}`, background: C.bg, color: C.muted, cursor: 'pointer',
+  };
+  return (
+    <>
+      <button type="button" onClick={() => onRate('yes')} aria-label="Foi útil" style={btn}>
+        <ThumbsUp size={size} aria-hidden />
+      </button>
+      <button type="button" onClick={() => onRate('no')} aria-label="Não foi útil" style={btn}>
+        <ThumbsDown size={size} aria-hidden />
+      </button>
+    </>
   );
 }
 
