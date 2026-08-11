@@ -103,7 +103,7 @@ const seloDe = f => SELOS.find(([k]) => f[k]);
  * funciona e transformaria os 30% de "conferidos" do índice da liderança em
  * velocidade de clique.
  */
-function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
+export function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
   const [verConferidas, setVerConferidas] = useState(false);
   const [verLimpas, setVerLimpas] = useState(false);
 
@@ -324,7 +324,7 @@ const VERDICTS = [
  * escolher o veredito novo na mesma ação — a RPC corrige tudo numa transação,
  * porque "revista, mas continua reprovado" é indefensável para quem justificou.
  */
-function DisputeCard({ dispute: d, accent, completions, onResolve }) {
+export function DisputeCard({ dispute: d, accent, completions, onResolve }) {
   const [modo, setModo] = useState(null);        // 'mantida' | 'revista'
   const [nota, setNota] = useState('');
   const [novoVeredito, setNovoVeredito] = useState('aprovado');
@@ -881,9 +881,18 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
     submissoesPorRodada, summary, units, viewingPhoto, vista,
   } = rel;
 
+  /**
+   * `segment` e `embedded` só chegam da aba consolidada (Fase 4b).
+   *
+   * Sem eles — que é como a aba viva chama — `seg()` devolve sempre `true` e
+   * nada aqui muda de comportamento. A alternativa era manter uma segunda cópia
+   * deste JSX no `PainelConsolidado`, e uma segunda cópia é uma segunda verdade.
+   */
+  const seg = s => segment === null || segment === s;
+
   return (
     <div className="zc-view space-y-4 zc-rep">
-      <div className="zc-rep-filters space-y-4">
+      {!embedded && (<div className="zc-rep-filters space-y-4">
       {/* O escopo, dito em letras. Quem responde pela rede lia o relatório da
           primeira loja achando que era o de todas — e nada na tela desmentia. */}
       <Eyebrow>Escopo</Eyebrow>
@@ -957,10 +966,10 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
           .filter(u => !filterUnitId || !u.unitId || u.unitId === filterUnitId)
           .map(u => <option key={u.id} value={u.id}>{truncName(u.name, 30)}</option>)}
       </select>
-      </div>
+      </div>)}
 
       <div className="zc-rep-results space-y-4">
-      {canReview && (() => {
+      {canReview && !embedded && (() => {
         const pendentes = filtered.filter(c => !c.reviewedAt).length;
         const abertas = (disputes || []).filter(d => d.status === 'aberta').length;
         return (
@@ -976,16 +985,21 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
       })()}
 
       {vista === 'analise' && (<>
-      <div className="grid grid-cols-2 gap-2">
+      {seg('tendencia') && (<div className="grid grid-cols-2 gap-2">
         <StatCard
           label="Checklists concluídos" accent={unit.color}
           value={expectedChecklists > 0 ? `${summary.checklists}/${expectedChecklists}` : summary.checklists}
           sub={checklistRate != null ? `${checklistRate.toFixed(0)}% do esperado no período` : `${numDays || 0} dia(s) com registros`}
         />
+        {/* "Feito do entregue" (Conjunto A, §B.6): tarefas feitas ÷ tarefas
+            SUBMETIDAS. Quase sempre perto de 100%, porque quem não abriu o
+            checklist não entra no denominador — e é por isso que ele precisa
+            dizer "do entregue" ao lado de um cartão que mede o previsto. O
+            rótulo "Tarefas concluídas" não distinguia os dois. */}
         <StatCard
-          label="Tarefas concluídas" accent={unit.color}
+          label="Feito do entregue" accent={unit.color}
           value={`${summary.rate.toFixed(0)}%`}
-          sub={`${summary.doneItems} de ${summary.totalItems} itens`}
+          sub={`${summary.doneItems} de ${summary.totalItems} tarefas entregues`}
         />
         <StatCard
           label="Críticos pendentes" accent={summary.criticalPending > 0 ? C.critical : unit.color}
@@ -997,8 +1011,9 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
           value={summary.photos}
           sub="comprovações com foto"
         />
-      </div>
+      </div>)}
 
+      {seg('pessoas') && (<>
       <Eyebrow>Nível de realização por colaborador</Eyebrow>
       {collaborators.length === 0 ? (
         <EmptyState title="Sem dados no período" desc="Nenhum checklist concluído com os filtros selecionados." />
@@ -1044,6 +1059,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
       )}
 
       {/* ── Produtividade — colaborador vs setor vs loja vs empresa ── */}
+      {/* fim de Pessoas logo abaixo, depois do bloco de produtividade */}
       {prod.company.points > 0 && (
         <>
           <Eyebrow>Produtividade · score 100 = média da empresa</Eyebrow>
@@ -1094,6 +1110,9 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
         </>
       )}
 
+      </>)}
+
+      {seg('tendencia') && (<>
       {/* ── Gráfico por dia da semana ── */}
       {(() => {
         const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -1150,8 +1169,12 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
         );
       })()}
       </>)}
+      </>)}
 
-      {vista === 'conferir' && (<>
+      {/* A fila de Conferir muda de endereço na aba consolidada: é fila de
+          TRABALHO, não análise, e pertence ao registro AGORA (§B.7). Aqui ela
+          continua exatamente onde estava para a aba viva. */}
+      {vista === 'conferir' && !embedded && (<>
       {/* Justificativas abertas — ANTES das execuções de propósito. É a única
           coisa nesta tela em que outra pessoa está esperando por uma resposta;
           o resto é a liderança olhando no próprio ritmo. */}
@@ -1176,7 +1199,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
       />
       </>)}
 
-      {vista === 'analise' && (<>
+      {vista === 'analise' && seg('registros') && (<>
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
           precisa ser visível também no Relatórios, não só no Painel do dia).
           Vive na ANÁLISE: aqui não se trabalha a fila, se procura um registro
@@ -1284,6 +1307,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
         })()}
       </div>
 
+      {!embedded && (<>
       <Eyebrow>Exportar</Eyebrow>
       <div className="flex gap-2">
         <button
@@ -1301,6 +1325,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
           <Printer size={15} aria-hidden /> Exportar PDF
         </button>
       </div>
+      </>)}
       </>)}
 
       {reviewing && (

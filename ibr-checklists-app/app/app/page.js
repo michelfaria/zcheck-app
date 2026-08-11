@@ -9594,6 +9594,8 @@ function AppInner() {
             unit={unit} templates={templates} completions={completions} closures={closures}
             canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES}
             jit={jit} actionPlans={actionPlans} plansLoaded={plansLoaded}
+            allUnitsSelected={unitId == null} onReview={reviewCompletionAndSync}
+            disputes={disputes} onResolveDispute={responderContestacao}
             onCreatePlan={handleCreatePlan} onCompletePlan={handleCompletePlan}
             onNavigate={(targetUnitId, targetTab) => {
               if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);

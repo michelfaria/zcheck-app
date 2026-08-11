@@ -33,7 +33,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle, ArrowLeft, Calendar, Camera, Check, CheckCircle2, ChevronRight,
-  Circle, Clock, ThumbsUp, TrendingDown, TrendingUp, Trophy,
+  Circle, Clock, Download, ThumbsUp, TrendingDown, TrendingUp, Trophy,
 } from 'lucide-react';
 import { C, R, T, W, successBright } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
@@ -48,10 +48,13 @@ import {
   RANKED_ROLES, RANKING_PERIOD_DEFAULT, rankingPeriod, collabIndexSentence,
   computeOperationalProfile,
 } from '../../lib/ranking';
+import { PERIODS } from '../../lib/stats';
 import { track } from '../../lib/track';
+import { useRelatorio } from './useRelatorio';
+import { ReportsBody, ConferenceQueue, DisputeCard } from './ReportsView';
 import {
   MANAGER_ROLES, ROLE_LABELS, Eyebrow, Ticket, StarRating, Avatar, RatingLabel,
-  StatusBadge, RankBadge, PhotoModal, SectionMark, FeedbackThumbs,
+  StatusBadge, RankBadge, PhotoModal, PillButton, SectionMark, FeedbackThumbs,
 } from './shared';
 import { useUnits, useSectors } from './context';
 
@@ -361,6 +364,112 @@ function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last
   );
 }
 
+/* ─────────────── Seção 5 — a faixa PERÍODO e o segmento analítico ───────── */
+
+const SEGMENTOS = [
+  { id: 'tendencia', label: 'Tendência' },
+  { id: 'pessoas',   label: 'Pessoas' },
+  { id: 'registros', label: 'Registros' },
+];
+
+/**
+ * Tudo daqui para baixo está dentro do ÚNICO `{isManager && …}` da aba (§C.3):
+ * a faixa de período, o Exportar e os três segmentos. Um bloco novo acrescentado
+ * aqui herda o gate por construção — é isso que torna a auditoria de §D.1 barata,
+ * porque só o que está ACIMA desta linha precisa ser conferido um a um.
+ *
+ * O conteúdo dos segmentos é o `ReportsBody`, o MESMO componente que a aba Dados
+ * renderiza, recebendo `segment` e `embedded`. Não existe segunda cópia dos
+ * blocos analíticos, e por isso não existe o que divergir entre as duas telas.
+ */
+function SecaoSegmento({ rel, props, userId }) {
+  const {
+    period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo,
+    selectedMonth, setSelectedMonth, exportCSV, exportPDF,
+  } = rel;
+  const accent = props.unit.color;
+
+  // O segmento aberto sobrevive à sessão: quem confere volta em Registros, quem
+  // analisa volta em Tendência (§C.4).
+  const chave = `zc_painel_seg_${userId || 'anon'}`;
+  const [seg, setSeg] = useState('tendencia');
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(chave);
+      if (v && SEGMENTOS.some(s => s.id === v)) setSeg(v);
+    } catch (_) {}
+  }, [chave]);
+  const trocarSeg = id => {
+    setSeg(id);
+    try { localStorage.setItem(chave, id); } catch (_) {}
+    track('painel_segment_changed', { source: 'painel', metadata: { ui: 2, segment: id } });
+  };
+
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportar = (fn, formato) => {
+    setExportOpen(false);
+    track('report_exported', { source: 'painel', metadata: { ui: 2, format: formato, period } });
+    fn();
+  };
+
+  return (
+    <section aria-label="Análise" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+      <div style={{ height: 1, background: C.border }} />
+
+      {/* Faixa PERÍODO + Exportar. O botão saiu do fim da lista paginada de 25
+          execuções, onde estava a ~4 telas de rolagem do topo no celular. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <select value={period} onChange={e => setPeriod(e.target.value)} aria-label="Período"
+          style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${C.border}`, borderRadius: R.sm, outline: 'none' }}>
+          {PERIODS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+
+        {period === 'month' && (
+          <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} aria-label="Mês"
+            style={{ fontSize: T.bodySm, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${C.border}`, borderRadius: R.sm }} />
+        )}
+        {period === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} aria-label="De"
+              style={{ fontSize: T.bodySm, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${C.border}`, borderRadius: R.sm }} />
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} aria-label="Até"
+              style={{ fontSize: T.bodySm, color: C.ink, background: 'white', padding: '8px 10px', border: `1.5px solid ${C.border}`, borderRadius: R.sm }} />
+          </>
+        )}
+
+        <div style={{ marginLeft: 'auto', position: 'relative' }}>
+          <button onClick={() => setExportOpen(o => !o)} aria-expanded={exportOpen}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: R.sm, border: 'none', background: accent, color: 'white', fontSize: T.bodySm, fontWeight: W.semibold, cursor: 'pointer' }}>
+            <Download size={14} aria-hidden /> Exportar
+          </button>
+          {exportOpen && (
+            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: 'white', border: `1px solid ${C.border}`, borderRadius: R.sm, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 150 }}>
+              <button onClick={() => exportar(exportCSV, 'csv')} style={menuItem}>Excel / CSV</button>
+              <button onClick={() => exportar(exportPDF, 'pdf')} style={{ ...menuItem, borderTop: `1px solid ${C.border}` }}>PDF</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        {SEGMENTOS.map(s => (
+          <PillButton key={s.id} active={seg === s.id} accent={accent} onClick={() => trocarSeg(s.id)}>
+            {s.label}
+          </PillButton>
+        ))}
+      </div>
+
+      <ReportsBody {...props} rel={rel} segment={seg} embedded />
+    </section>
+  );
+}
+
+const menuItem = {
+  display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
+  background: 'white', border: 'none', cursor: 'pointer',
+  fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink,
+};
+
 /* ──────────────────────────── A aba consolidada ─────────────────────────── */
 
 const WEEKDAY_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -370,6 +479,8 @@ export function PainelConsolidado({
   activeTypes = CHECKLIST_TYPE_ORDER,
   // Registro AGORA — tudo vem do mesmo `buildJit` que alimenta a aba J.I.T.
   jit, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate,
+  // Segmento analítico — os mesmos contratos que a aba Dados recebe hoje.
+  allUnitsSelected = false, onReview, disputes = [], onResolveDispute,
 }) {
   const units = useUnits();
   const sectorRows = useSectors();
@@ -385,6 +496,18 @@ export function PainelConsolidado({
    * dado que ele não tem hoje, porque um dia esse dado passa a existir.
    */
   const isManager = MANAGER_ROLES.includes(currentUser?.role);
+
+  /**
+   * O motor da aba Dados, compartilhado. O hook roda para TODO papel porque não
+   * pode ser condicional — mas nada do que ele devolve é renderizado fora do
+   * `{isManager && …}` da seção 5, e a fila de Conferir tem gate próprio
+   * (`canReview`, que o hook já calcula com `MANAGER_ROLES`).
+   */
+  const relProps = {
+    unit, templates, completions, closures, users, canSeeAllUnits,
+    allUnitsSelected, currentUser, onReview, disputes, onResolveDispute, activeTypes,
+  };
+  const rel = useRelatorio(relProps);
 
   const sectors = currentUser?.sectorId
     ? visibleSectors(unit, currentUser.sectorId, sectorRows)
@@ -589,6 +712,8 @@ export function PainelConsolidado({
             actionPlans={actionPlans} plansLoaded={plansLoaded}
             onCreatePlan={onCreatePlan} onCompletePlan={onCompletePlan}
             onNavigate={onNavigate} completions={completions}
+            rel={rel} templates={templates} units={units}
+            disputes={disputes} onResolveDispute={onResolveDispute}
           />
         ) : (
           /* Sair de hoje colapsa o AGORA (§C.2). Números ao vivo ao lado de uma
@@ -651,6 +776,16 @@ export function PainelConsolidado({
                   {rateToday !== null ? `${rateToday}%` : '—'}
                 </p>
                 {rating && <RatingLabel rating={rating} size={15} style={{ fontSize: 15, fontWeight: W.semibold, color: 'rgba(255,255,255,0.9)', marginTop: 4 }} />}
+                {/* "Feito do previsto" (Conjunto A, §B.6): é o que este número
+                    sempre mediu — tarefas feitas ÷ tarefas PREVISTAS. Sem o
+                    rótulo, ele ficava a uma rolagem do "Feito do entregue" dos
+                    StatCards, que quase sempre marca ~100%, e os dois pareciam
+                    se contradizer. */}
+                {rateToday !== null && (
+                  <p style={{ fontSize: 11, fontWeight: W.semibold, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 6 }}>
+                    Feito do previsto
+                  </p>
+                )}
                 {dayCount.expected > 0 && (
                   <p style={{ fontSize: 13, fontWeight: W.semibold, color: 'rgba(255,255,255,0.85)', marginTop: 6 }}>
                     {dayCount.done} de {dayCount.expected} checklist{dayCount.expected === 1 ? '' : 's'}
@@ -927,7 +1062,12 @@ export function PainelConsolidado({
         </Ticket>
       )}
 
-      {/* Seções 3 (REDE) e 5 (segmento analítico + Exportar): Fase 4. */}
+      {/* ═══ 5 · SEGMENTO ANALÍTICO ═══════════════════════════════════════
+          O único `isManager` de bloco grande da aba. Ver §C.3: a fronteira de
+          acesso é uma linha só, e tudo daqui para baixo está dentro dela. */}
+      {isManager && (
+        <SecaoSegmento rel={rel} props={relProps} userId={currentUser?.id} />
+      )}
 
       {viewingPhoto && (
         <PhotoModal recordId={viewingPhoto.recordId} item={viewingPhoto.item} onClose={() => setViewingPhoto(null)} />
@@ -950,7 +1090,7 @@ export function PainelConsolidado({
  * Todo evento daqui leva `ui: 2` no metadata, para separar as duas eras sem
  * tocar em `action_source`.
  */
-function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate, completions }) {
+function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate, completions, rel, templates, units, disputes, onResolveDispute }) {
   const [actioned, setActioned] = useState(() =>
     Object.fromEntries((actionPlans || []).map(p => [p.recId, true])));
   const [planAnswers, setPlanAnswers] = useState({});
@@ -1074,6 +1214,40 @@ function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCrea
       )}
 
       <AgoraBase base={jit.base} scopeLabel={jit.scopeLabel} />
+
+      {/* ── A fila de Conferir ──
+          Mudança de arquitetura que §C não previu e §B.7 descobriu: conferir é
+          fila de TRABALHO, não análise. Alguém está esperando resposta. Na aba
+          Dados ela vive atrás do seletor Conferir/Análise, ao lado de
+          produtividade e exportação; aqui ela sobe para o AGORA, junto das
+          prioridades — que é a outra coisa desta tela em que o gestor AGE, e
+          não apenas olha.
+          Gate: `canReview`, que o motor já calcula com MANAGER_ROLES. O portão
+          de verdade continua sendo a RPC `review_completion`, que confere o
+          papel pelo token. */}
+      {rel?.canReview && (
+        <>
+          {/* Justificativas primeiro: é a única coisa aqui em que outra pessoa
+              está bloqueada esperando por uma resposta. */}
+          {(disputes || []).some(d => d.status === 'aberta') && (
+            <div>
+              <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                Justificativas aguardando você
+              </p>
+              <div className="space-y-1.5">
+                {(disputes || []).filter(d => d.status === 'aberta').map(d => (
+                  <DisputeCard key={`${d.completionId}|${d.itemId}`} dispute={d} accent={accent}
+                    completions={completions} onResolve={onResolveDispute} />
+                ))}
+              </div>
+            </div>
+          )}
+          <ConferenceQueue
+            completions={rel.filtered} templates={templates} units={units}
+            accent={accent} onOpen={c => rel.setReviewing(c)}
+          />
+        </>
+      )}
     </section>
   );
 }

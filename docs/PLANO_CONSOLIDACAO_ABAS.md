@@ -1304,9 +1304,63 @@ Idênticos em tudo, inclusive nas contagens absolutas.
 > regex **não** funciona nestes PDFs (fontes embutidas com CMap próprio) — e
 > falha em silêncio, devolvendo string vazia em vez de erro.
 
-**Falta da Fase 4b:** faixa PERÍODO com Exportar no topo, os três segmentos
-(Tendência/Pessoas/Registros), a fila de Conferir movida para o registro AGORA
-(§B.7) e os rótulos das três aderências.
+### Fase 4b, passo 2 — ✅ faixa PERÍODO, segmentos e Conferir no AGORA
+
+`ReportsBody` ganhou `seg(s)` — sem `segment`/`embedded`, devolve sempre `true` e
+a aba viva não muda de comportamento. Distribuição dos blocos:
+
+| Segmento | Blocos |
+|---|---|
+| Tendência | 4 StatCards (R1) · Desempenho por dia da semana (R5) |
+| Pessoas | Nível por colaborador (R2) · Realização por grupo (R3) · Produtividade (R4) |
+| Registros | Execuções do período (R6), com Foto e Conferir |
+
+`embedded` some com a coluna de filtros, com o seletor Conferir/Análise e com o
+bloco Exportar do rodapé — os três reaparecem no lugar novo.
+
+**A faixa PERÍODO** leva o seletor e `[ Exportar ▾ ]` (CSV / PDF) para o topo da
+seção. Hoje o botão está **depois** da lista paginada de 25 execuções, a ~4 telas
+de rolagem no celular. Segmento aberto persiste em `zc_painel_seg_<userId>`.
+
+**A fila de Conferir mudou de registro (§B.7).** Conferir é fila de TRABALHO, não
+análise: alguém está esperando resposta. Sobe para o AGORA, junto das
+prioridades — a outra coisa da tela em que o gestor AGE em vez de olhar. As
+justificativas vêm antes da fila, porque nelas há uma pessoa bloqueada. Gate:
+`rel.canReview`; o portão real segue sendo a RPC `review_completion`.
+
+`ConferenceQueue` e `DisputeCard` passaram a ser exportados. O `ReviewModal`
+continua vivendo no `ReportsBody`, fora dos gates de segmento, e é acionado pelo
+`rel.setReviewing` compartilhado — abrir da fila do AGORA abre o mesmo modal.
+
+### ⚠️ O Conjunto A não cabia em três cartões — e o motivo é um achado
+
+Ao aplicar os rótulos, `summarizeCompletions` (lib/stats.js:92) revelou que
+`summary.checklists` é **`filtered.length`**: rodadas ENTREGUES, completas ou
+parciais. O StatCard "Checklists concluídos" (`128/156 · 82%`) mede portanto
+**checklists entregues ÷ previstos** — que **não é** nenhuma das três fórmulas de
+§B.6, e em particular **não é** "Checklists 100%".
+
+Rotulá-lo assim teria colado um nome errado num número — exatamente o defeito que
+§B.6 existe para eliminar. Aplicado só onde é verdade:
+
+| Rótulo | Onde entrou | Fórmula |
+|---|---|---|
+| **Feito do previsto** | score de 56px do registro DIA | tarefas feitas ÷ previstas ✅ |
+| **Feito do entregue** | StatCard antes "Tarefas concluídas" | tarefas feitas ÷ submetidas ✅ |
+| **Checklists 100%** | **em lugar nenhum** | não existe como cartão hoje |
+
+"Checklists 100%" é a métrica `yAdherence` do `buildJit` (J4), que vive nos
+registros AGORA/DIA e não no segmento. Ou ela ganha cartão próprio — o que exige
+decidir se entra no PDF, e aí o baseline muda de propósito — ou o nome fica sem
+uso. **Decisão pendente, para depois do aceite da Fase 4.**
+
+E o StatCard "Checklists concluídos" segue com o nome antigo, que descreve o que
+ele faz. Renomeá-lo para algo honesto ("Checklists entregues") é mudança de
+rótulo no PDF também, e por isso não entrou junto do portão.
+
+**O rótulo do PDF não foi tocado.** §E.3 previa que o renomear atingisse
+"Realização geral" (3521), mas mudar o PDF no mesmo commit em que ele é o portão
+de não-regressão destruiria o portão. Fica para depois do aceite.
 
 ### Nomes das três aderências — ✅ decidido em 11/08 (Conjunto A)
 
