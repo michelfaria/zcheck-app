@@ -231,6 +231,136 @@ export function AgoraBase({ base, scopeLabel }) {
   );
 }
 
+/* ───────────────────── Seção REDE — comparativo entre lojas ─────────────── */
+
+/**
+ * 3.1 — a fusão de P4 (comparativo entre lojas) com J8 (situação por loja), com
+ * P5 (ranking do dia) absorvido (§C.3).
+ *
+ * As duas perguntas sobreviveram porque são diferentes (§B.3): P4 pergunta "quem
+ * está melhor no dia X?", J8 pergunta "onde eu olho primeiro AGORA?". Uma loja
+ * com 95% e um checklist atrasado sobe ao topo das duas, em direções opostas.
+ *
+ * **A ordenação é a de P4 — desempenho.** J8 vira um par de sinais na linha de
+ * baixo do cartão, não uma segunda lista. Motivo: esta seção mora no registro
+ * DIA, que é navegável por data, e "urgência" não tem leitura em 12/07 — os
+ * atrasados de hoje não são os daquele dia. Por isso os sinais só aparecem com
+ * `viewDate === today`, a mesma regra de "Por setor · hoje".
+ *
+ * P5 morre porque era duplicata INTERNA: mesmos dados, mesma ordenação e o mesmo
+ * `RankBadge` que os cartões acima dele já mostravam.
+ */
+function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last7, dateLabel, sinaisPorLoja, onNavigate, turnoRate }) {
+  // Menos de duas lojas: a seção inteira some, título incluso (§C.6). Comparar
+  // uma loja com ela mesma é um cabeçalho sem conteúdo.
+  if ((units || []).length < 2) return null;
+
+  const comEscopo = units.map(u => {
+    const fechada = isUnitClosed(closures, u.id, viewDate);
+    const rate = fechada ? null : calcRate(viewDate, u.id, u.sectors);
+    const last7u = last7.map(d => calcRate(d, u.id, u.sectors));
+    const validos = last7u.filter(v => v !== null);
+    const avg = validos.length ? Math.round(validos.reduce((a, b) => a + b, 0) / validos.length) : null;
+    return { u, fechada, rate, last7u, avg, trend: rate !== null && avg !== null ? rate - avg : null };
+  });
+  // Uma ordenação só, calculada uma vez. A versão do Painel de hoje reordenava
+  // a lista inteira DENTRO do map — uma vez por loja, com `calcRate` rodando de
+  // novo em cada comparação.
+  const ranked = [...comEscopo].filter(x => !x.fechada && x.rate !== null).sort((a, b) => b.rate - a.rate);
+  const posDe = id => ranked.findIndex(x => x.u.id === id);
+
+  return (
+    <>
+      <Eyebrow>Comparativo entre lojas — {dateLabel}</Eyebrow>
+      <div className="flex flex-col gap-3">
+        {comEscopo.map(({ u, fechada, rate, last7u, avg, trend }) => {
+          const pos = posDe(u.id);
+          const sinais = viewDate === today ? sinaisPorLoja[u.id] : null;
+          const rateYest = calcRate(yesterday, u.id, u.sectors);
+          return (
+            <Ticket key={u.id} accent={u.color}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p style={{ fontSize: 13, fontWeight: W.semibold, color: u.color }}>{u.name}</p>
+                    {pos >= 0 && <RankBadge pos={pos + 1} size={20} />}
+                  </div>
+                  {fechada
+                    ? <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Fechada</p>
+                    : <p className="font-display" style={{ fontSize: 'calc(36px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, lineHeight: 1, marginTop: 4 }}>{rate ?? '—'}%</p>
+                  }
+                  {rateYest !== null && !fechada && (
+                    <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>ontem {rateYest}%</p>
+                  )}
+                </div>
+                {!fechada && trend !== null && (
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: 11, color: C.muted, fontWeight: W.semibold }}>vs média 7d</p>
+                    <p style={{ fontSize: 18, fontWeight: W.semibold, color: trend >= 0 ? C.success : C.critical }}>
+                      {trend >= 0 ? '▲' : '▼'} {Math.abs(trend)}%
+                    </p>
+                    <p style={{ fontSize: 11, color: C.muted }}>média {avg}%</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Os sinais de urgência do J.I.T., na linha de baixo. É o que J8
+                  respondia; aqui ele deixa de ser lista separada e vira atributo
+                  da loja — mas só quando a data em foco é hoje. */}
+              {sinais && sinais.texto && (
+                <p style={{ fontSize: T.label, color: sinais.critico ? C.critical : C.muted, marginTop: 8, lineHeight: 1.4 }}>
+                  {sinais.texto}
+                </p>
+              )}
+
+              {!fechada && rate !== null && (
+                <>
+                  <div style={{ width: '100%', height: 5, background: C.border, borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
+                    <div style={{ height: '100%', width: `${rate}%`, background: rate >= 80 ? C.success : rate >= 50 ? u.color : C.critical, borderRadius: 999, transition: 'width 0.5s ease' }} />
+                  </div>
+
+                  <div className="flex gap-2 mt-3">
+                    {[{ label: 'Abertura', shift: 'Manhã' }, { label: 'Fechamento', shift: 'Tarde' }].map(({ label, shift }) => {
+                      const r = turnoRate(u, shift);
+                      return r !== null ? (
+                        <div key={label} style={{ flex: 1, background: C.bg, borderRadius: 6, padding: '4px 6px', textAlign: 'center' }}>
+                          <p style={{ fontSize: 9, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase' }}>{label.slice(0, 4)}</p>
+                          <p style={{ fontSize: 13, fontWeight: W.semibold, color: r >= 80 ? C.success : r >= 50 ? u.color : C.critical }}>{r}%</p>
+                        </div>
+                      ) : null;
+                    })}
+                    <div style={{ flex: 2, background: C.bg, borderRadius: 6, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 2 }}>
+                      {last7u.map((v, i) => (
+                        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: 20 }}>
+                          <div style={{ width: '100%', background: v === null ? C.border : v >= 80 ? C.success : v >= 50 ? u.color : C.critical, borderRadius: 2, height: v === null ? 2 : `${Math.max(2, (v / 100) * 20)}px`, opacity: i === 6 ? 1 : 0.6 + i * 0.06 }} />
+                        </div>
+                      ))}
+                      <p style={{ fontSize: 9, color: C.muted, fontWeight: W.semibold, marginLeft: 2 }}>7d</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* A afordância de J8: o cartão leva para a loja. */}
+              <button onClick={() => onNavigate?.(u.id, 'painel')}
+                style={{ marginTop: 10, width: '100%', padding: '7px 0', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: u.color, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
+                Ver {u.name} →
+              </button>
+            </Ticket>
+          );
+        })}
+      </div>
+
+      {/* Entrada contextual para Unidades, que ficou fora da barra inferior de
+          propósito (§D.2) — consulta periódica, não uso diário. */}
+      <button onClick={() => onNavigate?.(null, 'unidades')}
+        style={{ width: '100%', padding: '10px 0', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: C.ink, fontSize: T.bodySm, fontWeight: W.semibold, cursor: 'pointer' }}>
+        Ver todas as lojas →
+      </button>
+    </>
+  );
+}
+
 /* ──────────────────────────── A aba consolidada ─────────────────────────── */
 
 const WEEKDAY_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -374,6 +504,68 @@ export function PainelConsolidado({
         || b.profile.checklists - a.profile.checklists);
   }, [completions, users, unit.id, templates, units, periodoPainel, tz]);
 
+  /**
+   * Aderência de um turno, para os cartões de REDE.
+   *
+   * Reescrito sobre `roundProgress`. A versão do Painel de hoje ainda usa o
+   * padrão que a Fase 2 aposentou do `calcRate`:
+   *
+   *     const comp = completions.find(c => c.templateId === t.id && c.date === viewDate);
+   *     done += comp ? comp.items.filter(i => i.done).length : 0;
+   *
+   * — primeira submissão da rodada (reexecução não conta), item feito fora da
+   * recorrência do dia entrando no numerador (taxa podendo estourar 100%) e
+   * casamento sem `unitId`. Levar isso para a tela nova seria promover o bloco
+   * defeituoso e apagar o corrigido, que é exatamente o erro que §B.6 descreve.
+   *
+   * O recorte de setor deixa de ser omissão: aqui o cartão É a loja inteira,
+   * então varrer todos os setores dela é o escopo certo, e não um esquecimento
+   * (a ressalva de §A.1 P4b some por construção).
+   */
+  const turnoRate = (u, shift) => {
+    if (isUnitClosed(closures, u.id, viewDate)) return null;
+    const doTurno = templates.filter(t =>
+      templateAtiva(t) &&
+      t.unitId === u.id &&
+      (u.sectors || []).includes(t.sector) &&
+      (Array.isArray(t.shift) ? t.shift.includes(shift) : t.shift === shift) &&
+      applicableItems(t, viewDate).length > 0
+    );
+    if (doTurno.length === 0) return null;
+    let done = 0, total = 0;
+    for (const t of doTurno) {
+      const p = roundProgress(
+        completions,
+        { templateId: t.id, unitId: u.id, date: viewDate },
+        applicableItems(t, viewDate).map(i => i.id),
+      );
+      total += p.total;
+      done += p.done;
+    }
+    return total > 0 ? Math.round((done / total) * 100) : 0;
+  };
+
+  /**
+   * Os sinais de urgência de J8, indexados por loja. Vêm prontos do `buildJit`;
+   * aqui só viram frase — a mesma que a aba J.I.T. monta, para as duas telas não
+   * descreverem o mesmo estado com palavras diferentes.
+   */
+  const sinaisPorLoja = useMemo(() => {
+    const out = {};
+    for (const s of (jit?.stores || [])) {
+      const partes = [];
+      if (s.closedToday) partes.push('fechada hoje');
+      else {
+        if (s.overdue > 0) partes.push(`${s.overdue} atrasado${s.overdue > 1 ? 's' : ''}`);
+        if (s.criticalHotspots > 0) partes.push(`${s.criticalHotspots} crítico${s.criticalHotspots > 1 ? 's' : ''} recorrente${s.criticalHotspots > 1 ? 's' : ''}`);
+        if (s.pendingToday > 0) partes.push(`${s.pendingToday} pendente${s.pendingToday > 1 ? 's' : ''} hoje`);
+        if (partes.length === 0) partes.push('em dia');
+      }
+      out[s.unitId] = { texto: partes.join(' · '), critico: s.overdue > 0 || s.criticalHotspots > 0 };
+    }
+    return out;
+  }, [jit]);
+
   const getRating = (rate) => {
     if (rate === null) return null;
     if (rate === 100) return { Icon: Trophy,        label: 'Perfeito!', color: C.warning, stars: 5 };
@@ -515,6 +707,23 @@ export function PainelConsolidado({
                 </Ticket>
               )}
             </div>
+          )}
+
+          {/* ═══ 3 · REDE ═════════════════════════════════════════════════
+              Posição: §C.3 numera REDE como seção 3, DEPOIS de 2.3/2.4 — mas o
+              wireframe de gerência (§C.5) e a tabela "primeira dobra por papel"
+              põem o comparativo entre lojas logo após o score, antes do detalhe
+              por tipo. Seguimos os dois últimos: eles raciocinam sobre a ordem
+              de LEITURA, e a lista numerada é inventário de seções. Para quem
+              está com "Todas as lojas" no cabeçalho, o detalhe por tipo de UMA
+              loja antes da comparação da rede é a ordem errada. */}
+          {canSeeAllUnits && (
+            <SecaoRede
+              units={units} calcRate={calcRate} closures={closures}
+              viewDate={viewDate} today={today} yesterday={yesterday} last7={last7}
+              dateLabel={dateLabel} sinaisPorLoja={sinaisPorLoja}
+              onNavigate={onNavigate} turnoRate={turnoRate}
+            />
           )}
 
           {/* 2.3 — por tipo de checklist (o "o que falta hoje" de quem executa) */}

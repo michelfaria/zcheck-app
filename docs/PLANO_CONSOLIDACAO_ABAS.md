@@ -1069,7 +1069,13 @@ Corrigido por backfill em produção (11/08), com a primeira execução da empre
 
 ### Pendências que atravessam para depois
 
-- **Reexportar o relatório de 30 dias** e comparar com `docs/BASELINE_PRE_FASE2.md`. Esperado: `% do esperado` de 32% para ~75%, contagens absolutas idênticas. É o segundo baseline que a Fase 4 exige (§E.3). ⚠️ **AINDA ABERTO em 11/08.** O preview de §F.7 destravou o acesso, mas a reexportação não foi feita — a inspeção de 11/08 cobriu as telas, não o PDF. **A Fase 4 não pode ser aceita sem isto**: o aceite dela é "PDF em `?v=2` idêntico ao segundo baseline", e sem o segundo baseline esse teste não prova não-regressão, só prova que os dois caminhos chamam o mesmo código. O PDF vai para `_baseline/` (no `.gitignore` — tem nome e desempenho de gente real, e o repositório é público).
+- **Reexportar o relatório de 30 dias** e comparar com `docs/BASELINE_PRE_FASE2.md`. Esperado: `% do esperado` de 32% para ~75%, contagens absolutas idênticas. É o segundo baseline que a Fase 4 exige (§E.3). ✅ **FEITO em 11/08 09:12** — está no fim de `docs/BASELINE_PRE_FASE2.md`, seção "SEGUNDO BASELINE", com os PDFs em `_baseline/`. IBR2 · 30 dias saiu `128/156 · 82% do esperado` (era `125/362 · 35%`).
+
+> Correção de registro: uma revisão anterior desta linha marcou o segundo baseline como pendente. Estava errado — ele já existia, e a Fase 4 tem contra o que comparar.
+
+**Reconfirmado no preview em 11/08 10:37**, agora com o código das Fases 1a/1b/2/3 rodando (`_baseline/PREVIEW-FASE3 IBR2 - 30 dias.pdf`, exportado da URL de preview de §F.7). Todos os campos idênticos ao baseline de 09:12: `128/156 · 82%`, realização `1189 de 1192`, 182 fotos, 1 crítico pendente, 128 execuções.
+
+Isso fecha uma pergunta que estava em aberto desde a Fase 1a: **a extração de ~4.000 linhas para `components/painel/` não mudou um dígito do PDF.** É a prova de não-regressão que o `npm run build` não podia dar, e a referência contra a qual o PDF da aba consolidada terá de bater na Fase 4.
 - **Nomear as três aderências.** Os nomes propostos em §B.6 não vão para a tela como estão: "Entrega completa" é lido como delivery num restaurante, e os três são jargão de análise. Candidatos a validar com quem opera o turno: "Feito do previsto", "Checklists 100%", "Feito do entregue". Entra na Fase 4, junto com o segmento analítico.
 
 ### Escopo original (registro)
@@ -1223,7 +1229,87 @@ Um nono elemento aparece para o colaborador, e é estado vazio, não bloco: a fr
   - `todayStr(tzOf(unit))` é a única origem de "hoje" — `grep -n "todayStr()" components/painel/` volta vazio.
 - **Reverter:** apagar o arquivo novo e a linha de roteamento. Zero impacto nas abas vivas.
 
-## Fase 4 — REDE + segmento analítico
+## Fase 4 — 🔨 EM ANDAMENTO (iniciada 11/08/2026)
+
+**A fase precisou ser partida em duas**, e o motivo importa mais que a divisão.
+
+### Por que o escopo de arquivos do plano não sobreviveu
+
+O texto original diz "**Arquivos:** `PainelConsolidado.js`; `globals.css`" — ou
+seja, a fase comporia o que já existe sem tocar em mais nada. Isso foi escrito
+antes de duas coisas que hoje são fato:
+
+1. **§B.7** descobriu que a aba Dados ganhou dois modos (`vista`: Conferir /
+   Análise) e que a fila de Conferir pertence ao registro AGORA, não ao PERÍODO.
+2. A Fase 1b transformou a `ReportsView` num módulo de **1.673 linhas**, mas não
+   a decompôs: os blocos R1–R8 são JSX inline dentro de um único `return`,
+   fechando sobre ~20 estados e derivados (`period`, `filtered`, `summary`,
+   `groups`, `collaborators`, `prod`, `dates`, os seis filtros…).
+
+O segmento analítico precisa **fatiar** esse conteúdo em três lentes, mover o
+seletor de período para uma faixa no topo, mover Exportar para o cabeçalho e
+tirar Conferir dali. Nenhuma dessas quatro coisas é possível tratando a
+`ReportsView` como caixa-preta, e nenhuma cabe em "só compor". As opções reais
+são três, e todas contrariam o escopo de arquivos escrito:
+
+| Opção | Custo |
+|---|---|
+| Reimplementar os blocos no `PainelConsolidado` | ~1.600 linhas duplicadas. Inaceitável |
+| Dar props de controle à `ReportsView` (`segment`, `externalPeriod`, `hideVista`) | Mexe na aba viva; `period` é estado interno de ~15 derivados |
+| **Extrair o motor** (`useRelatorio`) e os blocos para módulos que as DUAS telas consomem | Mexe na aba viva, mas é o mesmo padrão que §F.1 já prevê para o `JitPanel` — e não deixa segunda implementação |
+
+**Decisão: a terceira.** É a única que não cria divergência entre a aba antiga e
+a nova durante o período em que as duas coexistem. Mas ela **toca código que
+está em produção**, então vira commit próprio, com o PDF do §E.3 como portão —
+e é por isso que a fase se parte:
+
+- **Fase 4a — REDE.** Autocontida no `PainelConsolidado`. ✅ feita, abaixo.
+- **Fase 4b — o segmento analítico.** Extração do motor da `ReportsView`, faixa
+  PERÍODO, Exportar no cabeçalho, Conferir movido para o AGORA (§B.7).
+
+### Fase 4a — ✅ seção REDE
+
+Um componente `SecaoRede` no `PainelConsolidado.js`. Gate: `canSeeAllUnits`, e a
+seção inteira some com menos de duas lojas (§C.6).
+
+**Fusão P4 ⊃ J8, com P5 eliminado.** A ordenação é a de P4 (desempenho, com
+`RankBadge`); os sinais de urgência de J8 (atrasados · críticos recorrentes ·
+pendentes hoje) viram uma linha no cartão, e só aparecem com
+`viewDate === today` — "urgência" não tem leitura em 12/07, e é a mesma regra já
+aplicada a "Por setor · hoje". P5 (Ranking do dia) morre por ser duplicata
+**interna**: mesmos dados, mesma ordenação e o mesmo `RankBadge` dos cartões
+logo acima. A frase dos sinais é montada igual à da aba J.I.T., para as duas
+telas não descreverem o mesmo estado com palavras diferentes.
+
+**Posição na página:** logo após o score do dia, **antes** de "Por tipo" e "Por
+setor". §C.3 numera REDE como seção 3 (depois de 2.3/2.4), mas o wireframe de
+gerência (§C.5) e a tabela "primeira dobra por papel" colocam o comparativo
+imediatamente após o score. Seguimos estes dois: eles raciocinam sobre ordem de
+**leitura**, e a lista numerada é inventário. Para quem está com "Todas as lojas"
+no cabeçalho, o detalhe por tipo de UMA loja antes da comparação da rede é a
+ordem errada.
+
+**Duas correções que o bloco original carregava** — ambas do mesmo tipo que a
+Fase 2 já havia fechado no `calcRate`, e que teriam sido promovidas para a tela
+nova sem alarde:
+
+1. **`turnoRate` reescrito sobre `roundProgress`.** Usava `.find()` (primeira
+   submissão da rodada — reexecução não contava), somava item concluído fora da
+   recorrência do dia (numerador podendo passar o denominador) e casava sem
+   `unitId`. É literalmente o defeito de três pontas que §Fase 2 descreve.
+2. **A terceira célula de turno era cópia da segunda.** A lista era
+   `[Abertura→Manhã, Intermediário→Tarde, Fechamento→Tarde]`: dois rótulos
+   diferentes lendo o **mesmo** turno, sempre com o mesmo número. Ficaram duas
+   células, Abertura e Fechamento.
+
+Também some uma reordenação acidentalmente quadrática: a versão de hoje
+reordena a lista inteira de lojas **dentro** do `map`, uma vez por loja, com
+`calcRate` rodando de novo em cada comparação. Agora é uma ordenação só.
+
+- **Portões 4a:** `npm run verify` limpo. O colaborador não é afetado — REDE
+  está sob `canSeeAllUnits`, que ele nunca teve.
+
+### Escopo original (registro)
 
 **Escopo:** seção 3 (REDE) e seção 5 (o segmento Tendência/Pessoas/Registros), com a faixa PERÍODO e o botão Exportar no cabeçalho. Tudo dentro do **único** `{isManager && ( … )}` de §C.3. Exportação PDF/CSV ligada aos mesmos estados (§E.2). Ainda atrás do interruptor.
 
