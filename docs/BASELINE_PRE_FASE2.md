@@ -116,8 +116,41 @@ Ou seja: se `templates.created_at` estiver **nulo** (ou for anterior a 29/07) no
 banco, todo dia do período conta, e é exatamente isso que produz 385. O código
 estaria certo e o **dado** é que falta.
 
-**Consulta que decide, e que ainda não foi rodada** (o SQL Editor não carregou
-nas tentativas de 11/08):
+**RESPONDIDO em 11/08:** `templates = 13`, `sem_created_at = 13`,
+`mais_antigo = null`, `primeira_execucao = 2026-07-29`. **Todos os 13 checklists
+têm `created_at` nulo.** O código está correto; o dado é que falta.
+
+E o NULL foi **deliberado**. A migration `20260730_templates_desativar.sql:56`
+adiciona a coluna sem default e só então declara `default now()`, justamente
+para as linhas existentes ficarem em NULL — o comentário 51-55 diz por quê:
+`add column ... default now()` num passo só materializaria "agora" nas linhas
+antigas e todo checklist do parque passaria a "ter nascido hoje", movendo a
+aderência de meses fechados.
+
+O raciocínio era certo para um parque com histórico. **Para um tenant que
+acabou de começar ele se inverte:** o IBR executou pela primeira vez em 29/07 e
+a migration rodou em 30/07, então "sempre existiu" faz o previsto alcançar 30
+dias para trás numa empresa com 13 dias de vida. É daí que sai o 385, e o "32%".
+
+**Correção proposta — backfill, não patch no app** (roda no SQL Editor; a
+decisão de aplicar é do dono do banco):
+
+```sql
+-- Checklist não pode ser cobrado de antes de a empresa existir.
+-- Usa a primeira execução da empresa como piso; ajuste se houver data melhor.
+update public.templates t
+   set created_at = coalesce(
+         (select min(c.date)::timestamptz from public.completions c
+           where c.company_id = t.company_id),
+         now())
+ where t.created_at is null;
+```
+
+Efeito estimado no recorte de 30 dias: previsto cai de 385 para ~165
+(13 dias × ~12,8/dia), e o "% do esperado" sobe de **32% para ~75%**. Nenhuma
+contagem absoluta se move — só o denominador.
+
+**Consulta original que decidiu isto:**
 
 ```sql
 select count(*)                       as templates,
