@@ -1572,12 +1572,28 @@ foi renderizado. O PDF, que era o portão mais forte, lê `filtered`/`summary`/
 Todos foram encontrados por inspeção humana no preview. Isso funcionou, mas não
 escala e não sobrevive a quem não conhece a tela de cor.
 
-**O que fecharia a lacuna:** um teste de componente que monte `ReportsBody` com
-`embedded` e afirme, por segmento, quais blocos aparecem — e que o root não
-carregue `zc-rep`. Não precisa de sessão logada nem de segredo: é componente
-puro sobre dados de fixture. Seria o primeiro portão de tela do projeto e o único
-capaz de pegar esta classe inteira de defeito. **Não existe hoje; entra na
-Fase 6.**
+**Fechada em 11/08:** `tests/painel-render.spec.mjs` — o primeiro portão do
+projeto que olha para o que foi renderizado. 20 asserções: o que cada lente
+mostra e o que ela NÃO mostra, a raiz sem `zc-rep`/`zc-view` no modo embutido, e
+a aba solta inalterada nos dois caminhos (com e sem conferência).
+
+Renderiza com `renderToStaticMarkup` sobre fixtures — **sem sessão logada e sem
+segredo**, que é o que impedia o Playwright de cobrir tela logada
+(`tests/visual-baseline.spec.js:15`). `esbuild` entrou como devDependency para
+transformar o JSX; Node não parseia.
+
+**Provado por mutação, não por passar.** Cada defeito foi reintroduzido e o teste
+falhou: o `vista` travado derruba 5 asserções, a raiz com `zc-rep` derruba 2.
+Teste que passa sem nunca ter falhado não é portão, é decoração.
+
+**Ligado ao `npm run verify`**, que agora é `eslint --quiet && npm run test &&
+next build`. Era exatamente por ali que os três defeitos passaram.
+
+**Achado colateral:** `lib/sync.js` importava `getSyncQueue` e `clearSyncQueue`
+de `lib/storage.js`, que **nunca exportou nenhum dos dois**. Ninguém os chamava,
+então o defeito era invisível — o bundler do Next não reclama de named import
+inexistente e `no-undef` não checa a outra ponta. Quem fosse usá-los receberia
+`undefined is not a function` sem pista da origem. Removidos.
 
 ### Dívida que a fase deixa (Fase 6)
 

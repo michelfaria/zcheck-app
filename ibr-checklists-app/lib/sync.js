@@ -10,7 +10,12 @@
  */
 
 import { supabase, authedSupabase, getSessionToken } from './supabase';
-import { storageGet, storageSet, getSyncQueue, clearSyncQueue } from './storage';
+// `getSyncQueue`/`clearSyncQueue` também eram importados daqui e NÃO existem em
+// `storage.js` — nunca existiram. Ninguém os chamava, então o defeito ficou
+// invisível: o bundler do Next não reclama de named import inexistente, e
+// `no-undef` não checa a outra ponta do import. Quem fosse usá-los receberia
+// `undefined is not a function` em runtime, sem pista da origem.
+import { storageGet, storageSet } from './storage';
 import { daysAgoStr } from './dates';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
