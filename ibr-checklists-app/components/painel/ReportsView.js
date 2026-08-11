@@ -1,16 +1,21 @@
 'use client';
 
 /**
- * Aba RELATÓRIOS (rotulada "Dados" na barra inferior) — o histórico, a
- * produtividade, a exportação em PDF e a fila de conferência.
+ * O corpo analítico do Painel — histórico, produtividade, exportação e a fila de
+ * conferência.
  *
- * Movida de `app/app/page.js` na Fase 1b da consolidação de abas. Nenhuma linha
- * de lógica mudou: só endereço e os imports do que antes era escopo de módulo
- * compartilhado. Ver `docs/PLANO_CONSOLIDACAO_ABAS.md`.
+ * Foi a aba "Dados" até a consolidação. Hoje o único consumidor é o
+ * `PainelConsolidado`, que renderiza este mesmo JSX fatiado em três lentes
+ * (`segment`) e sem a cromagem da aba própria (`embedded`). Sem esses dois
+ * parâmetros ele monta a tela inteira — é assim que `tests/painel-render.spec.mjs`
+ * verifica que a fatia não escondeu nada por engano.
+ *
+ * O ESTADO e os cálculos não moram aqui: estão em `useRelatorio`, e quem chama
+ * o hook é quem compõe a tela. Assim o seletor de período pode viver numa faixa
+ * no topo do Painel enquanto os números continuam vindo de uma origem só.
  *
  * REGRA: não pode importar de `app/`.
  */
-
 import { useState, useMemo } from 'react';
 import {
   AlertTriangle, Camera, CheckCheck, CheckCircle2, ChevronRight, Circle,
@@ -30,7 +35,6 @@ import {
   Eyebrow, Ticket, EmptyState, PillButton, StatCard, RateBar, PhotoModal,
 } from './shared';
 import { useUnits } from './context';
-import { useRelatorio } from './useRelatorio';
 
 /* --- peças privadas desta aba: vieram junto de page.js --- */
 
@@ -858,18 +862,6 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
  * contrário, e sem caminho de UI para chegar em "todas" (o export já sabia
  * imprimir 'Todas as lojas', mas o estado nunca chegava lá).
  */
-/**
- * A aba Dados como ela sempre foi: o motor de `useRelatorio` + este corpo.
- *
- * `segment` e `embedded` existem para a aba consolidada (Fase 4b) reaproveitar
- * ESTE mesmo JSX fatiado, em vez de ter uma segunda cópia dele. Sem eles — que é
- * como a aba viva chama — o comportamento é exatamente o de antes.
- */
-export function ReportsView(props) {
-  const rel = useRelatorio(props);
-  return <ReportsBody {...props} rel={rel} />;
-}
-
 export function ReportsBody({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, disputes = [], onResolveDispute, activeTypes = CHECKLIST_TYPE_ORDER, rel, segment = null, embedded = false }) {
   const {
     canReview, checklistRate, collaborators, customFrom, customTo, execPage,

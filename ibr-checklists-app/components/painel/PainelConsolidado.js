@@ -526,7 +526,7 @@ export function PainelConsolidado({
   /**
    * Cobertura do previsto no dia: tarefas feitas ÷ tarefas previstas.
    *
-   * Cópia literal de `PainelView.calcRate`, já com a correção da Fase 2 (usa
+   * Veio da `PainelView` (removida na Fase 6), já com a correção da Fase 2 (usa
    * `roundProgress` em vez de varrer `completions` com `.find()`, que lia a
    * PRIMEIRA submissão da rodada e deixava reexecução fora da conta). Fica
    * duplicada aqui pelo mesmo motivo dos blocos do AGORA: a Fase 3 não toca em
@@ -610,7 +610,7 @@ export function PainelConsolidado({
   [templates, completions, closures, unit.id, sectors, today]);
 
   // O Painel é MENSAL e ponto — mesma régua da aba Equipe. Cópia literal de
-  // `PainelView.ranking7`: §B.7 registra que a `main` já resolveu esta
+  // ranking da antiga `PainelView`: §B.7 registra que a `main` já resolveu esta
   // sobreposição escolhendo o índice operacional, e a linha de base de §D.1 é o
   // Painel ATUAL. Trocar o motor aqui mudaria o que o colaborador lê hoje.
   const periodoPainel = useMemo(
