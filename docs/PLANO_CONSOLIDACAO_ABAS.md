@@ -340,6 +340,7 @@ Consequência para a Fase 3: a fila de Conferir é **fila de trabalho, não aná
 | **Painel** ✅ | dispensa (6ch cabem nos ~57px) | Único dos três destinos que **todos os papéis já têm**. `tab='painel'` já é fallback (11606) e já é alvo do `onClose` do J.I.T. (12735). Zero palavra nova. **`ROLE_TABS.colaborador` não muda** | Subdimensiona: o gestor pode não procurar exportação ali |
 | Operação | — | Cobre os três horizontes | Não tem `short` honesto ("OPERAÇÃO" ≈ 70px, não cabe); **colide com `group: 'Operação'`** do rail — leitor de tela anunciaria "Operação, Operação" |
 | Desempenho | Desemp. | Nomeia o resultado | Abreviação com ponto, padrão inexistente no app; soa avaliativo para o colaborador, que usa o Painel como espelho |
+| J.I.T. | J.I.T. | Único dos três com identidade conceitual própria; gestor já reconhece (85 sessões medidas) | Ver abaixo — **avaliado e recusado em 11/08** |
 
 **Escolha: `Painel`, mantendo `id: 'painel'`.**
 
@@ -348,6 +349,19 @@ Consequência para a Fase 3: a fila de Conferir é **fila de trabalho, não aná
 ```
 
 Mitigação do contra: a ação **Exportar** sobe para o cabeçalho da seção *Registros*. Hoje ela está em 3937, **depois** da lista paginada de 25 execuções — genuinamente inalcançável no celular.
+
+### Por que `J.I.T.` foi recusado como nome da ABA (decisão de 11/08)
+
+Proposta do dono do produto: estender o conceito Just In Time — "veja como sua operação está agora" — para cobrir também o histórico. Recusada por quatro motivos, do mais grave ao menos:
+
+1. **O colaborador nunca viu esse nome.** `ROLE_TABS.colaborador` é `['executar','painel','id']`; o J.I.T. é gated para gestão. Nomear a aba consolidada de J.I.T. faria a tela mais usada do maior grupo de usuários passar a se chamar com uma sigla inglesa do sistema Toyota de produção — e o "Painel" que ele conhece sumiria. Junto vem o custo técnico: reusar `id: 'painel'` é o que mantém a linha do colaborador em `ROLE_TABS` **intocada**, que é a prova mais barata da restrição dura nº 1. Renomear obriga a mexer exatamente na linha que a restrição pede para não mexer.
+2. **O nome contradiz o conteúdo.** Just In Time é um conceito anti-estoque: só o necessário, exatamente quando necessário. A aba consolidada passa a ter 30 dias de histórico, exportação e tendência. Um nome que precisa de nota de rodapé para explicar por que significa o oposto do que diz não é nome, é enigma.
+3. **O público.** Gerente de turno de restaurante. "Entrega completa" já corria o risco de ser lido como delivery; "J.I.T." não vira nem palpite errado.
+4. **A marca J.I.T. não é ativo consolidado.** Em 85 sessões medidas, o botão "Tratar" foi clicado **zero** vezes espontaneamente (§Fase 0). É tela olhada, não tela agida — não é uma marca forte que valha carregar para o resto do produto.
+
+**O que foi preservado da proposta.** O conceito vale onde é verdade: o primeiro registro temporal da aba passa a se chamar **`Agora`** na tela — é lá que vivem as prioridades, os atrasados, o insight e a fila de Conferir (§B.7). Se o termo J.I.T. for desejado como assinatura, ele cabe no subtítulo dessa seção, não no rótulo da aba.
+
+⚠️ Precisão que a restrição dura nº 1 exige: `Agora` é a primeira seção **para quem tem `MANAGER_ROLES`**. Para o colaborador a seção não existe — a primeira dobra dele continua sendo o registro DIA (§C.5, linha "O colaborador **nunca** vê AGORA"). O nome novo não altera em nada o que ele enxerga.
 
 **Objetivo primário da aba (1 frase):** dizer, numa tela, se a operação está em dia e o que fazer a respeito — e só depois provar com o histórico.
 
