@@ -1358,6 +1358,27 @@ E o StatCard "Checklists concluídos" segue com o nome antigo, que descreve o qu
 ele faz. Renomeá-lo para algo honesto ("Checklists entregues") é mudança de
 rótulo no PDF também, e por isso não entrou junto do portão.
 
+### Aceite da Fase 4 — 3 de 4 confirmados no preview (11/08)
+
+| # | Aceite | Resultado |
+|:-:|---|---|
+| 1 | A consolidação se lê como UMA tela | ✅ ok |
+| 2 | Colaborador em `?v=2` segue com os mesmos 8 blocos | ⏳ **pendente** |
+| 3 | PDF pelo Exportar novo idêntico ao segundo baseline | ✅ ok |
+| 4 | Fila de Conferir no AGORA abre e grava | ✅ ok |
+
+**Item 3, medido** (`_baseline/POS-FASE4B IBR2 - 30 dias.pdf`, 13:43): `128/156 ·
+82%`, `1189 de 1192`, 182 fotos, 1 crítico, 128 execuções — idêntico ao baseline
+de 09:12 e à leitura pós-extração de 12:59. **A faixa PERÍODO nova produz o mesmo
+PDF do caminho antigo**, que é a restrição dura nº 2.
+
+**Item 2 é o que falta, e é o mais caro de errar.** A Fase 4 acrescentou quatro
+superfícies novas atrás de `isManager` — faixa de período, três segmentos,
+Exportar e fila de Conferir. A auditoria de código confere (6 gates `isManager &&`;
+o `useRelatorio` roda para todo papel porque hook não pode ser condicional, mas
+nada do que ele devolve renderiza fora do gate, e a fila tem `canReview` próprio).
+Mas isso prova o gate, não a tela — a mesma distinção registrada na Fase 3.
+
 **O rótulo do PDF não foi tocado.** §E.3 previa que o renomear atingisse
 "Realização geral" (3521), mas mudar o PDF no mesmo commit em que ele é o portão
 de não-regressão destruiria o portão. Fica para depois do aceite.
