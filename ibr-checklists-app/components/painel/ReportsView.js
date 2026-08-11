@@ -890,6 +890,20 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
    */
   const seg = s => segment === null || segment === s;
 
+  /**
+   * Embutido no Painel, a tela só tem UM emprego: análise.
+   *
+   * `vista` nasce em `'conferir'` para quem confere — o padrão certo para a aba
+   * própria, onde ela é a tarefa de todo dia. Embutida, o seletor
+   * Conferir/Análise não é renderizado (a fila mudou de endereço, §B.7) e
+   * `vista` ficaria travada em `'conferir'` para sempre: os três blocos gateados
+   * por `vista === 'analise'` — cartões, pessoas e execuções — nunca
+   * renderizariam, e o segmento apareceria vazio.
+   *
+   * Quem escolhe o que aparece aqui é o `segment`, não a `vista`.
+   */
+  const emAnalise = embedded || vista === 'analise';
+
   return (
     <div className="zc-view space-y-4 zc-rep">
       {!embedded && (<div className="zc-rep-filters space-y-4">
@@ -984,7 +998,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
         );
       })()}
 
-      {vista === 'analise' && (<>
+      {emAnalise && (<>
       {seg('tendencia') && (<div className="grid grid-cols-2 gap-2">
         <StatCard
           label="Checklists concluídos" accent={unit.color}
@@ -1199,7 +1213,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
       />
       </>)}
 
-      {vista === 'analise' && seg('registros') && (<>
+      {emAnalise && seg('registros') && (<>
       {/* Execuções do período — evidências com foto (pedido do piloto: a foto
           precisa ser visível também no Relatórios, não só no Painel do dia).
           Vive na ANÁLISE: aqui não se trabalha a fila, se procura um registro

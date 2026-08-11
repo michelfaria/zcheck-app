@@ -1535,6 +1535,23 @@ previsto vs Feito do entregue** — que é a leitura que mais confunde na tela.
    a mudança inventa um passado que o leitor não tem e envelhece o texto no dia
    seguinte. Toda narrativa de transição saiu — a Ajuda descreve o que é.
 
+3. **O segmento aparecia quase vazio para gestão.** `vista` nasce em
+   `'conferir'` para quem confere — padrão certo na aba própria, onde conferir é
+   a tarefa diária. Embutido no Painel o seletor Conferir/Análise não é
+   renderizado (a fila mudou de endereço, §B.7), e ninguém trocava o valor: os
+   três blocos gateados por `vista === 'analise'` — os StatCards, o trio
+   colaborador/grupo/produtividade e a lista de execuções — **nunca
+   renderizavam**. Só apareciam J6 em Tendência e J14 em Registros, que o
+   `SecaoSegmento` desenha por fora do `ReportsBody`, e por isso Tendência
+   parecia funcionar. Corrigido com `emAnalise = embedded || vista === 'analise'`:
+   embutido, quem escolhe o conteúdo é o `segment`, não a `vista`.
+
+   > **Por que os portões não pegaram.** O aceite da Fase 4 conferiu o PDF, e o
+   > PDF vem de `exportPDF`, que lê `filtered`/`summary`/`groups` **direto do
+   > motor** — não passa pelo JSX. Um bloco que não renderiza não muda um dígito
+   > do arquivo exportado. O portão de não-regressão do PDF é forte para os
+   > NÚMEROS e cego para a TELA, e isso agora está registrado.
+
 ### Dívida que a fase deixa (Fase 6)
 
 1. `PainelView.js` e o wrapper `ReportsView` ficaram **inalcançáveis**. Não foram
