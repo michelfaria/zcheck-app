@@ -148,6 +148,23 @@ const ROLE_TABS = {
   gestao: ['executar', 'painel', 'jit', 'unidades', 'relatorios', 'gerenciar', 'usuarios', 'id', 'equipe'],
 };
 
+/**
+ * Abas visíveis por papel, já considerando o interruptor da consolidação.
+ *
+ * Com `?v=2`, J.I.T. e Relatórios saem da navegação: o conteúdo dos dois passou
+ * a viver dentro do Painel. É o ÚNICO ponto que precisa mudar — `SideNav` e
+ * `BottomNav` filtram por `allowedTabs`, e o rail já suprime cabeçalho de grupo
+ * que fica com menos de dois itens.
+ *
+ * `ROLE_TABS` não é tocado. A linha do colaborador não tem nem `jit` nem
+ * `relatorios`, então para ele o filtro é um no-op — que é a prova mais barata
+ * da restrição dura nº 1 (§D.2). Desligar o `?v=2` devolve as duas abas.
+ */
+function tabsPermitidas(role, consolidado) {
+  const base = ROLE_TABS[role] || [];
+  return consolidado ? base.filter(t => t !== 'jit' && t !== 'relatorios') : base;
+}
+
 
 
 // unitId === null means "todas as lojas" (gerência / gestão).
@@ -8507,9 +8524,11 @@ function AppInner() {
   // carregamento (LoadingScreen, login, paywall) — hook não pode vir depois de
   // return condicional. `ready` segura a aplicação da URL até o papel existir:
   // sem isso, o link de um gestor abriria uma aba que o colaborador não pode ver.
+  // Interruptor da aba consolidada. Precisa vir antes de `urlAllowedTabs`.
+  const painelV2 = usePainelV2();
   const urlAllowedTabs = useMemo(
-    () => (currentUser ? ROLE_TABS[currentUser.role] : []),
-    [currentUser],
+    () => (currentUser ? tabsPermitidas(currentUser.role, painelV2) : []),
+    [currentUser, painelV2],
   );
   const urlUnitIds = useMemo(() => ACTIVE_UNITS.map(u => u.id), [ACTIVE_UNITS]);
   useAppUrlState({
@@ -8519,10 +8538,6 @@ function AppInner() {
     canSwitchUnit: currentUser ? currentUser.unitId == null : false,
     unitIds: urlUnitIds,
   });
-
-  // Interruptor da aba consolidada. Precisa ficar aqui, junto dos outros hooks
-  // que antecedem os returns de carregamento/login.
-  const painelV2 = usePainelV2();
 
   // Active checklist types — dynamic when loaded, fallback to hardcoded.
   // Os tipos-padrão que NÃO existem no banco entram no fim: empresa antiga (IBR,
@@ -9312,7 +9327,7 @@ function AppInner() {
 
   const dismissNudge = () => setShowNudge(false);
 
-  const allowedTabs = ROLE_TABS[currentUser.role];
+  const allowedTabs = tabsPermitidas(currentUser.role, painelV2);
   const canSwitchUnit = currentUser.unitId == null;
   const activeTab = allowedTabs.includes(tab) ? tab : allowedTabs[0];
   // Contexto do rail lateral quando o papel tem poucos destinos (colaborador).
