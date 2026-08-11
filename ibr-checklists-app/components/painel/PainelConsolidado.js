@@ -253,7 +253,22 @@ export function AgoraBase({ base, scopeLabel }) {
  * P5 morre porque era duplicata INTERNA: mesmos dados, mesma ordenação e o mesmo
  * `RankBadge` que os cartões acima dele já mostravam.
  */
-function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last7, dateLabel, sinaisPorLoja, onNavigate, turnoRate }) {
+function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last7, dateLabel, sinaisPorLoja, onNavigate, turnoRate, focoUnitId }) {
+  /**
+   * Trocar a loja reescreve o topo da página — o score do dia, o "por tipo", o
+   * "por setor". No celular isso acontece inteiramente ACIMA da dobra: quem
+   * tocou o botão continua olhando os cartões de rede e não vê nada mudar.
+   * Subir junto é o que torna a ação perceptível.
+   */
+  const irParaLoja = id => {
+    onNavigate?.(id, 'painel');
+    requestAnimationFrame(() => {
+      const main = typeof document !== 'undefined' && document.getElementById('zc-main-content');
+      if (main && main.scrollHeight > main.clientHeight + 4) main.scrollTo({ top: 0, behavior: 'smooth' });
+      else if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  };
+
   // Menos de duas lojas: a seção inteira some, título incluso (§C.6). Comparar
   // uma loja com ela mesma é um cabeçalho sem conteúdo.
   if ((units || []).length < 2) return null;
@@ -344,11 +359,21 @@ function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last
                 </>
               )}
 
-              {/* A afordância de J8: o cartão leva para a loja. */}
-              <button onClick={() => onNavigate?.(u.id, 'painel')}
-                style={{ marginTop: 10, width: '100%', padding: '7px 0', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: u.color, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
-                Ver {u.name} →
-              </button>
+              {/* A afordância de J8: o cartão leva para a loja.
+                  A loja que JÁ é o escopo da tela não ganha botão — ele seria um
+                  no-op (`setUnitId` para o mesmo id, `setTab` para a aba em que
+                  já se está) e um botão que não faz nada lê como quebrado. Foi
+                  assim que este botão foi reportado em 11/08. */}
+              {u.id === focoUnitId ? (
+                <p style={{ marginTop: 10, fontSize: T.label, fontWeight: W.semibold, color: C.mutedLight, textAlign: 'center' }}>
+                  loja em foco nesta tela
+                </p>
+              ) : (
+                <button onClick={() => irParaLoja(u.id)}
+                  style={{ marginTop: 10, width: '100%', padding: '7px 0', borderRadius: R.sm, border: `1px solid ${C.border}`, background: 'white', color: u.color, fontSize: T.label, fontWeight: W.semibold, cursor: 'pointer' }}>
+                  Ver {u.name} →
+                </button>
+              )}
             </Ticket>
           );
         })}
@@ -858,6 +883,9 @@ export function PainelConsolidado({
               viewDate={viewDate} today={today} yesterday={yesterday} last7={last7}
               dateLabel={dateLabel} sinaisPorLoja={sinaisPorLoja}
               onNavigate={onNavigate} turnoRate={turnoRate}
+              /* Com "Todas" no cabeçalho nenhuma loja é o foco, e todas as
+                 lojas ganham botão. */
+              focoUnitId={allUnitsSelected ? null : unit.id}
             />
           )}
 

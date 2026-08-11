@@ -7891,7 +7891,7 @@ function UnitIdView({ profile, position, total, accent, sectorRanking = [] }) {
  * Ranking das unidades. Cada linha abre o ID Operacional daquela unidade — o
  * mesmo gesto que Equipe já usa para abrir a carteirinha de um colaborador.
  */
-export function UnidadesView({ units, templates, completions, closures, currentUser, canSeeAllUnits, accent }) {
+export function UnidadesView({ units, templates, completions, closures, currentUser, canSeeAllUnits, accent, onBack }) {
   const [selected, setSelected] = useState(null);
 
   const scoped = useMemo(
@@ -7936,6 +7936,11 @@ export function UnidadesView({ units, templates, completions, closures, currentU
 
   return (
     <div className="zc-view space-y-3">
+      {/* Unidades não está na barra inferior (§D.2: consulta periódica, não uso
+          diário), então quem chega pelo "Ver todas as lojas →" do Painel cai
+          numa tela sem saída óbvia no celular. `onBack` só é passado com a aba
+          consolidada ligada; sem ele, nada muda para a aba de hoje. */}
+      {onBack && <BackBar onBack={onBack} label="Voltar para o Painel" accent={accent} />}
       <Eyebrow>Ranking das unidades · últimos 30 dias</Eyebrow>
       <p style={{ fontSize: T.caption, color: C.muted, marginTop: -4 }}>
         Ordenado pelo índice operacional: aderência (50%), tarefas concluídas (30%) e críticos em dia (20%).
@@ -9653,6 +9658,7 @@ function AppInner() {
             units={ACTIVE_UNITS} templates={templates} completions={completions || []}
             closures={closures} currentUser={currentUser} canSeeAllUnits={canSwitchUnit}
             accent={unit.color}
+            onBack={painelV2 ? () => setTab('painel') : undefined}
           />
         )}
         {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
