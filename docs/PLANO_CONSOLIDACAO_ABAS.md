@@ -1025,7 +1025,9 @@ Resultado: `page.js` foi de 14.092 para 13.577 linhas (−532/+23). Três arquiv
 
 Saldo: `page.js` 14.092 → 10.172 linhas (−28%). `components/painel/` com 5 arquivos (3.776 linhas): `PainelView.js` (838, inclui `NotificationHistory` privada), `ReportsView.js` (1.673, inclui `ReviewModal`, `ConferenceQueue`, `DisputeCard` e demais peças privadas da aba), `JitPanel.js` (979, inclui `buildJit`/`buildInsight`), `shared.js` (260) e `context.js` (26). `lib/` ganhou 6 módulos de cálculo puro (934 linhas): `checklists`, `stats`, `ranking`, `sectors`, `units`, `format`.
 
-Portões executados por commit: `npm run verify` (eslint com `no-undef` como erro + build), 71 testes de dates/rounds, teste de conferência, e regra de direção (`lib/` e `components/painel/` não importam de `app/`). A inspeção visual em produção segue pendente — exige deploy de preview.
+Portões executados por commit: `npm run verify` (eslint com `no-undef` como erro + build), 71 testes de dates/rounds, teste de conferência, e regra de direção (`lib/` e `components/painel/` não importam de `app/`).
+
+**Inspeção visual: ✅ feita em 11/08/2026**, no preview descrito em §F.7. As três abas (Painel, J.I.T. e Dados) renderizam idênticas ao conhecido. Isto fecha o risco §G.2-11 — "o ponto mais arriscado do plano", que ficou aberto desde 10/08 por não existir portão automatizado para tela logada.
 
 ### Escopo original (registro)
 
@@ -1067,7 +1069,7 @@ Corrigido por backfill em produção (11/08), com a primeira execução da empre
 
 ### Pendências que atravessam para depois
 
-- **Reexportar o relatório de 30 dias** e comparar com `docs/BASELINE_PRE_FASE2.md`. Esperado: `% do esperado` de 32% para ~75%, contagens absolutas idênticas. É o segundo baseline que a Fase 4 exige (§E.3).
+- **Reexportar o relatório de 30 dias** e comparar com `docs/BASELINE_PRE_FASE2.md`. Esperado: `% do esperado` de 32% para ~75%, contagens absolutas idênticas. É o segundo baseline que a Fase 4 exige (§E.3). ⚠️ **AINDA ABERTO em 11/08.** O preview de §F.7 destravou o acesso, mas a reexportação não foi feita — a inspeção de 11/08 cobriu as telas, não o PDF. **A Fase 4 não pode ser aceita sem isto**: o aceite dela é "PDF em `?v=2` idêntico ao segundo baseline", e sem o segundo baseline esse teste não prova não-regressão, só prova que os dois caminhos chamam o mesmo código. O PDF vai para `_baseline/` (no `.gitignore` — tem nome e desempenho de gente real, e o repositório é público).
 - **Nomear as três aderências.** Os nomes propostos em §B.6 não vão para a tela como estão: "Entrega completa" é lido como delivery num restaurante, e os três são jargão de análise. Candidatos a validar com quem opera o turno: "Feito do previsto", "Checklists 100%", "Feito do entregue". Entra na Fase 4, junto com o segmento analítico.
 
 ### Escopo original (registro)
@@ -1190,9 +1192,12 @@ Um nono elemento aparece para o colaborador, e é estado vazio, não bloco: a fr
 "Nenhum checklist previsto para este dia neste setor.", que §C.6 pede no lugar do
 `—` mudo de hoje.
 
-> ⚠️ **Esta auditoria é estática.** Ela prova o gate, não a tela. O aceite escrito
-> ("verificar com um PIN de colaborador real, item por item") **continua
-> pendente** e depende do mesmo deploy de preview que as Fases 1a/1b/2 esperam.
+> ✅ **Confirmada na tela em 11/08/2026.** A auditoria acima é estática — prova o
+> gate, não o render. O aceite escrito ("verificar com um PIN de colaborador
+> real, item por item") foi cumprido no preview: os 8 blocos apareceram na ordem
+> prevista, com a linha `n/N · atrasados` no score e a faixa de 7 dias rotulada
+> por dia da semana, **e nada além deles**. Com PIN de gerência, a seção AGORA no
+> topo e o seletor de setor ausente, como previsto.
 
 ### Duas pendências que a fase abre
 
@@ -1338,6 +1343,41 @@ Registrado para não virar escopo por osmose:
 9. **Migrations.** Nenhuma fase precisa de mudança de schema. A Fase 0 só **lê**.
 10. **Alterar a aba Unidades**, que continua existindo como está — e cuja sobreposição com o Painel **não foi inventariada** (§H-Q5).
 11. **Remover o portão global de carregamento** (12433). Ver §C.6.
+
+## F.7 — Como verificar uma fase numa tela logada
+
+O plano inteiro depende de inspeção humana em pontos que nenhum teste cobre:
+`tests/visual-baseline.spec.js:15` registra que tela logada não é capturável, e
+os segredos são `Sensitive`, então local não autentica. O caminho que funcionou
+em 11/08/2026, registrado para as Fases 4 e 5 não terem que redescobri-lo:
+
+```bash
+cd ibr-checklists-app && npx vercel --yes    # SEM --prod: sai target: null
+```
+
+Quatro coisas que não são óbvias e custaram tempo:
+
+1. **A URL de preview carrega o tenant IBR.** `getTenantSlug()` (`lib/tenant.js`)
+   não conhece o hostname com hash da Vercel e cai no fallback `'ibr'`; o
+   `middleware.js` não intercepta esse hostname. Então `/app` simplesmente abre.
+   Não é preciso alias nem entrada nova no `DOMAIN_MAP`.
+2. **Deployment Protection (Vercel Authentication) está ligada.** O preview
+   responde `302` para `vercel.com/sso-api`. Quem estiver logado na org
+   `ilhabelarepublic` abre normalmente — inclusive no celular, bastando entrar
+   em `vercel.com` naquele aparelho primeiro. **Não** é preciso criar Protection
+   Bypass: aquele token é do projeto inteiro, permanente, e vale também para
+   produção. No terminal, `npx vercel curl <url>` atravessa a proteção sozinho —
+   foi assim que se conferiu que o bundle publicado continha o código da fase.
+3. **O preview fala com o Supabase de PRODUÇÃO.** Não é sandbox. "Tratar" grava
+   em `action_plans` de verdade, e a seção AGORA grava `painel_agora_viewed` em
+   `events`. Testar execução só em checklist descartável.
+4. **Origem diferente = sessão, IndexedDB e service worker próprios.** Isso
+   resolve de graça a armadilha do CLAUDE.md ("correção só aparece para quem
+   reinicia a sessão"): no preview o cache nasce limpo. Em compensação, é preciso
+   logar de novo com PIN.
+
+Conferir strings acentuadas no bundle publicado com `grep -F` engana — o
+minificador escapa não-ASCII. Buscar por trecho ASCII (`"Base da opera"`).
 
 ---
 
