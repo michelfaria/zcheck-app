@@ -16,10 +16,16 @@ que importa: **este número mudou porque eu quis, ou porque eu quebrei?**
 | Todas as lojas · 7 dias | `IBR Relatório — Todas as lojas.pdf` |
 | Todas as lojas · 30 dias | `IBR Relatório — Todas as lojas - 30 dias.pdf` |
 | Todas as lojas · Tudo | `IBR Relatório — Todas as lojas - tudo dias.pdf` |
+| IBR2 · 7 dias | `IBR Relatório — IBR2. - 7 dias.pdf` |
+| IBR2 · 30 dias | `IBR Relatório — IBR2. - 30 dias.pdf` |
 
-**Faltam:** IBR1 e IBR2, em 7d e 30d. Sem eles não dá para verificar se a Fase 2
-quebrou o escopo por loja — que é justamente onde `groupStats` perdeu o default
-`UNITS` na Fase 1a.
+**IBR1 não existe como recorte** — a loja não tem execução nenhuma (confirmado
+pelo usuário em 11/08). Praticamente todo o dado da empresa é IBR2.
+
+⚠️ Os PDFs de IBR2 foram exportados em **11/08 07:54**, os de "Todas as lojas"
+em **10/08 21:25**. Por isso IBR2/30d (125 execuções) tem uma execução A MAIS que
+Todas/30d (124): entrou uma durante a noite. Ao comparar depois da Fase 2, use o
+recorte contra ele mesmo, nunca IBR2 contra Todas.
 
 ## Números do cabeçalho (os quatro cartões do PDF)
 
@@ -28,6 +34,8 @@ quebrou o escopo por loja — que é justamente onde `groupStats` perdeu o defau
 | 7 dias | **100%** (652 de 652 tarefas) | 71/90 | **79%** | 0 | 100 |
 | 30 dias | **100%** (1146 de 1149) | 124/385 | **32%** | 1 | 178 |
 | Tudo | **100%** (1146 de 1149) | 124/143 | **87%** | 1 | 178 |
+| IBR2 · 7 dias | **100%** (553 de 553) | 60/78 | **77%** | 0 | 88 |
+| IBR2 · 30 dias | **100%** (1154 de 1157) | 125/362 | **35%** | 1 | 181 |
 
 Realização por tipo de checklist: Abertura 100%, Rotina 100%, Fechamento 100%
 nos três recortes.
@@ -64,6 +72,8 @@ Prova, extraída das próprias listas de execução dos PDFs:
 | 7 dias | 71 | 6 | 04/08 → 10/08 | 90 |
 | 30 dias | **124** | **11** | **29/07 → 10/08** | **385** |
 | Tudo | **124** | **11** | **29/07 → 10/08** | **143** |
+| IBR2 · 30 dias | 125 | 12 | 29/07 → 11/08 | 362 |
+| IBR2 · 7 dias | 60 | 6 | 05/08 → 11/08 | 78 |
 
 "30 dias" e "Tudo" têm **exatamente os mesmos dados**. A diferença é que:
 
@@ -88,9 +98,42 @@ na Fase 2:
    faz sem querer);
 2. ou limitar pela data de criação de cada checklist (`templateExistedOn` já
    existe e é usado em `countApplicableTemplatesOnDate`) — mais correto, porque
-   cobre checklist criado no meio do período;
-3. e, nos dois casos, descontar as folgas (`closures`), que hoje entram como
-   previsto em alguns caminhos.
+   cobre checklist criado no meio do período.
+
+### ⚠️ Antes de escolher: pode não ser bug de código, e sim dado faltando
+
+Investigado em 11/08. O caminho do previsto **já tem** a trava certa:
+
+- `ReportsView.js:967` soma `countApplicableTemplatesOnDate` sobre `openDates`,
+  que já exclui folgas (`isUnitClosed`);
+- `countApplicableTemplatesOnDate` (`lib/stats.js`) já filtra por
+  `templateExistedOn(t, dateStr)`;
+- `templateExistedOn` (`lib/rounds.js:128`) devolve **`true` quando
+  `t.createdAt` é nulo**;
+- `lib/sync.js:83` mapeia `createdAt: row.created_at ?? null`.
+
+Ou seja: se `templates.created_at` estiver **nulo** (ou for anterior a 29/07) no
+banco, todo dia do período conta, e é exatamente isso que produz 385. O código
+estaria certo e o **dado** é que falta.
+
+**Consulta que decide, e que ainda não foi rodada** (o SQL Editor não carregou
+nas tentativas de 11/08):
+
+```sql
+select count(*)                       as templates,
+       count(*) filter (where created_at is null) as sem_created_at,
+       min(created_at)::date          as mais_antigo,
+       max(created_at)::date          as mais_novo,
+       (select min(date) from public.completions) as primeira_execucao
+  from public.templates;
+```
+
+- `sem_created_at > 0` → **backfill no banco**, não patch no app.
+- `mais_antigo` bem antes de 29/07 → decisão de produto: o previsto deve ser
+  limitado ao início do uso do app, e aí sim entra código.
+
+Enquanto isso não for respondido, **não** inventar heurística de "primeira
+execução" no app: mascararia um problema de dado.
 
 ## Como usar isto depois da Fase 2
 

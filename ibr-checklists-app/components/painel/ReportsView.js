@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { C, R, T, W } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
-import { todayStr, tzOf } from '../../lib/dates';
+import { todayStr, tzOf, weekdayOf } from '../../lib/dates';
 import { latestPerRound, roundKey } from '../../lib/rounds';
 import {
   CHECKLIST_TYPE_ORDER, completionOnTime, deadlineIndex, isUnitClosed,
@@ -1456,7 +1456,11 @@ export function ReportsView({ unit, templates, completions, closures, users, can
         const byDow = Array.from({length: 7}, () => ({ done: 0, total: 0, count: 0 }));
         filtered.forEach(c => {
           if (!c.date) return;
-          const dow = new Date(c.date + 'T12:00:00').getDay();
+          // `weekdayOf` (lib/dates.js) e não um `new Date` à mão: a fonte do
+          // dia é uma só neste projeto. O parse local daqui devolvia o mesmo
+          // resultado por acidente — âncora ao meio-dia — mas convidava a
+          // próxima pessoa a mexer na hora e quebrar sem o build reclamar.
+          const dow = weekdayOf(c.date);
           const items = c.items || [];
           byDow[dow].done += items.filter(i => i.done).length;
           byDow[dow].total += items.length;

@@ -21,7 +21,7 @@ import {
 import { C, T, W } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
 import { todayStr, addDays, lastDays, dateStrOf, tzOf } from '../../lib/dates';
-import { latestPerRound } from '../../lib/rounds';
+import { latestPerRound, roundProgress } from '../../lib/rounds';
 import {
   CHECKLIST_TYPE_ORDER, applicableItems, templateAtiva, templateStatus,
   templateProgress, isUnitClosed,
@@ -75,6 +75,32 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
     : new Date(`${viewDate}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
 
   // ── Rate calculation ─────────────────────────────────────────────────────
+  /**
+   * Cobertura do previsto no dia: tarefas feitas ÷ tarefas previstas.
+   *
+   * A conta passou a usar `roundProgress` (lib/rounds.js) em vez de varrer
+   * `completions` à mão — Fase 2 da consolidação de abas. A versão anterior era
+   *
+   *     const comp = completions.find(c => c.templateId === t.id && c.date === date);
+   *     done += comp ? comp.items.filter(i => i.done).length : 0;
+   *
+   * e tinha três defeitos que `roundProgress` fecha de uma vez:
+   *
+   * 1. `.find()` pega a PRIMEIRA submissão da rodada. Reexecutar um checklist
+   *    para completá-lo não mexia no score do Painel: ele continuava lendo a
+   *    submissão velha, a incompleta. Quem refez trabalho via o número parado.
+   *    `roundProgress` faz a UNIÃO das submissões do dia, que é a semântica de
+   *    rodada usada no resto do app desde 30/07.
+   * 2. `comp.items.filter(i => i.done)` conta item concluído que NÃO estava
+   *    previsto para aquele dia (recorrência semanal, item removido do
+   *    checklist depois). Como o denominador só conta os previstos, dava para
+   *    o numerador passar o denominador e a taxa estourar 100%.
+   *    `roundProgress` intersecta com as previstas — `done <= total` por
+   *    construção.
+   * 3. O `find` casava só por `templateId` + `date`, sem `unitId`. Hoje o id do
+   *    checklist é único por loja e isso não mordia, mas era uma garantia
+   *    apoiada em coincidência.
+   */
   const calcRate = (date, unitId, filterSectors) => {
     if (isUnitClosed(closures, unitId, date)) return null;
     const dayTemplates = templates.filter(t =>
@@ -86,10 +112,13 @@ export function PainelView({ unit, templates, completions, closures, canSeeAllUn
     if (dayTemplates.length === 0) return null;
     let done = 0, total = 0;
     for (const t of dayTemplates) {
-      const comp = completions.find(c => c.templateId === t.id && c.date === date);
-      const applicable = applicableItems(t, date);
-      total += applicable.length;
-      done += comp ? comp.items.filter(i => i.done).length : 0;
+      const p = roundProgress(
+        completions,
+        { templateId: t.id, unitId, date },
+        applicableItems(t, date).map(i => i.id),
+      );
+      total += p.total;
+      done += p.done;
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;
   };
