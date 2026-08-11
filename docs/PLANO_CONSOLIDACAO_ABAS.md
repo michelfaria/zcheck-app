@@ -1098,7 +1098,113 @@ Na maioria dos casos o `buildJit` já passa dados pré-`latestPerRound`, então 
   - **capturar o segundo baseline de PDF** (§E.3).
 - **Reverter:** `git revert`. Os dados no banco não mudam — só a leitura.
 
-## Fase 3 — Casca da aba consolidada, com AGORA e DIA
+## Fase 3 — ✅ EXECUTADA em 11/08/2026
+
+Saldo: um arquivo novo, `components/painel/PainelConsolidado.js` (870 linhas), e
+**+24/−1 linhas em `page.js`** — o import, o `usePainelV2()` e o ramo do render.
+Nenhuma das três abas vivas foi tocada. `PAINEL_V2 = false`; só `?v=2` liga.
+
+Portões executados: `npm run verify` (eslint com `no-undef` como erro + build),
+71 testes de `dates`/`rounds`, teste de conferência, regra de direção
+(`grep -nE "^\s*(import|export).*from ['\"].*app/" components/painel/ lib/` volta
+vazio) e `grep -n "todayStr()" components/painel/` vazio.
+
+### Sete decisões que a execução obrigou a tomar
+
+1. **O `n/N · atrasados` do score NÃO vem de `jit.today`.** Aquele objeto é de
+   HOJE e da loja inteira; o registro DIA é navegável por data e escopado ao
+   setor de quem olha. Um colaborador do Salão leria "87%" (só Salão) sobre "9
+   de 13" (loja toda) — dois números que não conversam. A contagem sai dos
+   **mesmos `templateStatus`** que o bloco "Por tipo de checklist" logo abaixo
+   já renderiza um a um, então agregado e detalhe não podem divergir. Continua
+   sendo reagrupamento do que ele já vê, como §B.2 exigia.
+2. **"Por setor · hoje" só renderiza quando `viewDate === today`.** `jit.sectors`
+   é de hoje e o título diz "hoje"; mostrá-lo sobre uma data passada seria
+   exatamente a mentira que o colapso do AGORA (§C.2, regra 2) existe para
+   evitar. Alternativa recusada: recalcular o bloco por `viewDate`, que exigiria
+   segunda implementação de `groupStats` fora do `buildJit` (§F.3-5).
+3. **A faixa de 7 dias passou a ser cronológica.** A versão atual inverte a série
+   (`[...rates7].reverse()`), o que só não confunde porque não há rótulo nenhum
+   embaixo das barras. Assim que o dia da semana entra — que é a apresentação de
+   J12 que §D.1 bloco 6 manda adotar — a direção vira algo que se lê, e ela
+   precisa ser a natural. **É uma mudança visível para o colaborador**, dentro do
+   que §D.1 bloco 6 já autorizava ("ganha rótulo de dia da semana").
+4. **Dia sem previsto é cinza, não vermelho.** `null >= 50` é falso, então a
+   lacuna cairia em `C.critical` — pintar de falha um dia em que não havia nada
+   a fazer é o oposto do que o tratamento de dia vazio existe para resolver.
+5. **O ranking ficou idêntico ao do Painel de hoje.** §B.7 já havia registrado
+   que a `main` resolveu esta sobreposição escolhendo `computeOperationalProfile`
+   com período mensal. Como a linha de base de §D.1 é o Painel ATUAL, trocar o
+   motor aqui mudaria o que o colaborador lê. **Consequência: o item de aceite
+   "ranking novo comparado ao antigo" (⚠️ §D.1 bloco 7) fica sem objeto** —
+   `calcRanking` não existe mais no repositório, e não há troca de motor a
+   validar. O aceite morre com a fase, não passa adiante.
+6. **Os quatro blocos do AGORA foram reimplementados, não extraídos.** Extrair de
+   `JitPanel` significaria mexer numa aba viva e quebrar o contrato de reversão
+   desta fase ("apagar um arquivo"). A duplicação é declarada no cabeçalho do
+   arquivo, tem prazo (§F.1, Fase 5, quando o `JitPanel` se dissolve) e os
+   componentes (`AgoraFollowUp`, `AgoraLeitura`, `AgoraPrioridades`, `AgoraBase`)
+   **já saem exportados**, para que a Fase 5 seja troca de import e não reescrita.
+   Mesmo raciocínio para `calcRate`, copiado de `PainelView` já com a correção da
+   Fase 2.
+7. **P2 (o seletor de setor) saiu, e o substituto só chega na Fase 4.** O filtro
+   Setor mora na faixa PERÍODO. Até lá, o gestor em `?v=2` perde a capacidade de
+   escopar a tela a Salão/Cozinha. Não afeta o colaborador (P2 sempre foi
+   `canSwitchSectors`) e é temporário, atrás do interruptor — mas é uma
+   regressão real para quem testar a fase com PIN de gerência.
+
+### O que ficou implementado além dos blocos
+
+- **Telemetria (§F.2):** `painel_agora_viewed` com `source: 'painel'`, uma vez
+  por usuário por dia (`zc_painel_agora_<userId>_<data>`). `jit_opened` **não** é
+  emitido pela seção inline. Todo evento do AGORA leva `metadata.ui: 2`.
+- **Colapso do AGORA fora de hoje (§C.2, regra 2):** vira a linha
+  `Você está vendo dd/mm · [Voltar para hoje]`.
+- **Vazio positivo (§C.6):** sem plano pendente, sem insight e com todas as
+  recomendações em `all_good`, o bloco de prioridades dá lugar a "Nada exigindo
+  ação agora · última execução às HH:MM".
+- **Loja fechada suprime só a seção DIA**, com a faixa fixa seguindo visível —
+  a mudança declarada em §D.1 bloco 2.
+- **Esqueleto do follow-up** enquanto `plansLoaded` é falso: sem ele, o gestor
+  com pendência vê a seção sem ela por um instante e lê como "resolvido".
+
+### Auditoria de §D.1 — feita no código, não com PIN
+
+Varredura dos gates do arquivo, bloco a bloco, com `isManager = false`:
+
+| # | Bloco de §D.1 | Onde | Gate |
+|:-:|---|---|---|
+| 1 | navegador de data | 2.0 | nenhum ✔ |
+| 2 | loja fechada | 2.0b | nenhum ✔ |
+| 3 | score + `n/N · atrasados` | 2.1 | nenhum ✔ |
+| 4 | ontem / média 7 dias | 2.2 | nenhum ✔ |
+| 5 | por tipo + botão Foto | 2.3 | nenhum ✔ |
+| 6 | aderência por dia · 7 dias | 4.1 | nenhum ✔ |
+| 7 | ranking da equipe | 4.2 | nenhum ✔ |
+| 8 | PhotoModal | — | nenhum ✔ |
+
+Tudo o mais está atrás de `{isManager && …}`: a seção AGORA inteira (incluindo a
+linha de colapso), e "Por setor · hoje". REDE, segmento, Exportar e histórico de
+notificações **não existem neste arquivo** — entram na Fase 4, já dentro do gate.
+Um nono elemento aparece para o colaborador, e é estado vazio, não bloco: a frase
+"Nenhum checklist previsto para este dia neste setor.", que §C.6 pede no lugar do
+`—` mudo de hoje.
+
+> ⚠️ **Esta auditoria é estática.** Ela prova o gate, não a tela. O aceite escrito
+> ("verificar com um PIN de colaborador real, item por item") **continua
+> pendente** e depende do mesmo deploy de preview que as Fases 1a/1b/2 esperam.
+
+### Duas pendências que a fase abre
+
+1. **J9 (micro-survey) não tem endereço.** §C.3 não o coloca em nenhuma das cinco
+   seções, e §F.1 o dá ao pop-up. Ficou de fora da Fase 3 de propósito; a Fase 5
+   precisa confirmar que o pop-up é mesmo o destino, ou o bloco some sem decisão.
+2. **`canSeeAllUnits` chega como prop e não é usado.** É o gate de REDE, que entra
+   na Fase 4. Deixado no contrato para a assinatura não mudar duas vezes.
+
+---
+
+### Escopo original (registro)
 
 **Escopo:** criar `components/painel/PainelConsolidado.js` com os registros AGORA (seção 1) e DIA (seção 2) **mais a faixa fixa de 7 dias (seção 4)** — ou seja, o wireframe do colaborador completo. As abas `jit` e `relatorios` **continuam existindo** e funcionando. A nova aba fica atrás de um interruptor local (`?v=2` na URL ou constante `PAINEL_V2 = false`).
 

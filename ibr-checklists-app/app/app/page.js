@@ -65,6 +65,10 @@ import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../compon
 import { PainelView } from '../../components/painel/PainelView';
 import { ReportsView } from '../../components/painel/ReportsView';
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
+// Aba consolidada (Fase 3) — atrás de `?v=2`. Enquanto o interruptor estiver
+// desligado nada aqui alcança produção; reverter é apagar este import, o
+// `usePainelV2()` abaixo, o ramo do render e o próprio arquivo.
+import { PainelConsolidado, usePainelV2 } from '../../components/painel/PainelConsolidado';
 import { truncName } from '../../lib/format';
 import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
@@ -8516,6 +8520,10 @@ function AppInner() {
     unitIds: urlUnitIds,
   });
 
+  // Interruptor da aba consolidada. Precisa ficar aqui, junto dos outros hooks
+  // que antecedem os returns de carregamento/login.
+  const painelV2 = usePainelV2();
+
   // Active checklist types — dynamic when loaded, fallback to hardcoded.
   // Os tipos-padrão que NÃO existem no banco entram no fim: empresa antiga (IBR,
   // sem typeRows) que criar um tipo livre não pode perder Abertura/Intermediário/
@@ -9579,7 +9587,22 @@ function AppInner() {
         {activeTab === 'executar' && (
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
-        {activeTab === 'painel' && <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />}
+        {/* A aba consolidada (Fase 3) só entra com `?v=2`. Sem o parâmetro, a
+            `PainelView` de sempre — as três abas vivas seguem intocadas. */}
+        {activeTab === 'painel' && (painelV2 ? (
+          <PainelConsolidado
+            unit={unit} templates={templates} completions={completions} closures={closures}
+            canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES}
+            jit={jit} actionPlans={actionPlans} plansLoaded={plansLoaded}
+            onCreatePlan={handleCreatePlan} onCompletePlan={handleCompletePlan}
+            onNavigate={(targetUnitId, targetTab) => {
+              if (targetUnitId && canSwitchUnit) setUnitId(targetUnitId);
+              if (targetTab && allowedTabs.includes(targetTab)) setTab(targetTab);
+            }}
+          />
+        ) : (
+          <PainelView unit={unit} templates={templates} completions={completions} closures={closures} canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES} />
+        ))}
         {/* J.I.T. como DESTINO, não só pop-up de abertura. Mesmo componente,
             sem o overlay fixo (`asPage`) — não existe segunda implementação para
             divergir da primeira. */}
