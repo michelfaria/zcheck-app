@@ -168,6 +168,56 @@ select count(*)                       as templates,
 Enquanto isso não for respondido, **não** inventar heurística de "primeira
 execução" no app: mascararia um problema de dado.
 
+---
+
+# SEGUNDO BASELINE — depois do backfill (11/08/2026 09:12)
+
+É o baseline que a **Fase 4** exige (§E.3): o PDF gerado pela aba consolidada
+tem de bater com este, não com o de antes.
+
+Arquivos em `_baseline/`: `POS-BACKFILL Todas as lojas - 30 dias.pdf` e
+`POS-BACKFILL IBR2 - 30 dias.pdf`.
+
+| Recorte · 30 dias | Antes | Depois | |
+|---|---|---|---|
+| **Todas** — checklists | 124/**385** | 128/**180** | denominador −53% |
+| **Todas** — % do esperado | **32%** | **71%** | |
+| **IBR2** — checklists | 125/**362** | 128/**156** | denominador −57% |
+| **IBR2** — % do esperado | **35%** | **82%** | |
+
+O backfill fez exatamente o previsto: o previsto deixou de contar os ~17 dias
+anteriores à existência da empresa.
+
+## ⚠️ O primeiro reexport não mostrou nada — e isso é um achado
+
+Às 09:03, já com o banco corrigido e verificado, o relatório saiu **idêntico ao
+de antes** (IBR2 em `125/362`, o mesmo dígito). Às 09:12, depois de fechar e
+reabrir o app, saiu `128/156`.
+
+Causa: **cache do cliente**. `lib/sync.js:85` grava os templates em IndexedDB
+(`ibr_templates`), e existe `public/sw.js`. A sessão aberta seguia usando os
+templates carregados antes do backfill.
+
+Consequência prática, que vale para qualquer correção de dado daqui para frente:
+**mudar o banco não muda o que a equipe vê até a sessão dela ser reiniciada.**
+Quem for aplicar uma correção de dado em produção precisa avisar a operação para
+fechar e reabrir o app — ou aceitar que o efeito aparece aos poucos, conforme
+cada aparelho recarrega.
+
+## Nota sobre as contagens absolutas
+
+Elas **mudaram** entre os dois baselines: 125 → 128 execuções, 1154 → 1189
+tarefas, 181 → 182 fotos. Não é regressão — são nove minutos de turno da manhã
+executando checklist de verdade. Os indícios: o intervalo de datas não mudou
+(29/07 → 11/08, 12 dias), o incremento é coerente (+3 execuções, +35 tarefas ≈
+11,7 por execução, na média do parque) e os críticos pendentes seguem em 1.
+
+A regra "contagem absoluta que muda é regressão" continua valendo, mas só quando
+a comparação for **entre duas leituras do mesmo instante** — o que a Fase 4 vai
+fazer (mesma janela, aba antiga vs aba nova, lado a lado).
+
+---
+
 ## Como usar isto depois da Fase 2
 
 Reexportar os mesmos recortes e comparar linha a linha com a tabela acima.
