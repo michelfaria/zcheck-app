@@ -15,3 +15,7 @@ ibr-checklists-app-codex-update/
 # Estado local do CLI do Supabase (link do projeto). Não é código, e o
 # `supabase/` que importa é o de ibr-checklists-app/, esse sim versionado.
 /supabase/
+
+# Baseline de producao — PDFs com nomes reais de colaboradores.
+# O repositorio e PUBLICO: estes arquivos NUNCA entram no git.
+_baseline/
