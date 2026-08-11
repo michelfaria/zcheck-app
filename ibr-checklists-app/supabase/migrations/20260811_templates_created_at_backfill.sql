@@ -60,6 +60,9 @@
 --
 -- ⚠️ MOVE NÚMERO EM PRODUÇÃO. Não é aditiva. Ver o bloco de reversão no fim.
 --
+-- ✅ APLICADA EM PRODUÇÃO em 11/08/2026 (projeto rjuulamozdhssgqrzfji).
+--    Verificação pós-aplicação: total 13, ainda_nulos 0, mais_antigo 2026-07-29.
+--
 -- Aplicar em: https://supabase.com/dashboard/project/rjuulamozdhssgqrzfji/sql
 -- Idempotente (`where created_at is null`).
 -- Pré-requisito: 20260730_templates_desativar.sql
