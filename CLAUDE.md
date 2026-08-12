@@ -23,7 +23,14 @@ App de checklists multi-tenant (SaaS). Landing page + app por subdomínio de emp
 app/page.js                      → landing page (tokens; CTA = waitlist /lista)
 app/lista/page.js                → formulário do waitlist
 app/entrar/page.js               → página de código da empresa
-app/app/page.js                  → app principal (6900+ linhas)
+app/app/page.js                  → app principal (~10.200 linhas)
+components/painel/               → a aba Painel consolidada (Painel+J.I.T.+Dados)
+  PainelConsolidado.js           → a aba: Agora, Dia, Rede, faixa 7d, Período
+  ReportsView.js                 → o corpo analítico (ReportsBody) + conferência
+  useRelatorio.js                → motor de filtro/derivados + exportCSV/exportPDF
+  agora.js                       → blocos do registro AGORA (Painel E pop-up)
+  JitPanel.js                    → buildJit + o pop-up de briefing
+  shared.js, context.js, NotificationHistory.js
 app/cadastro/page.js             → pedido de PIN de colaborador (não cria empresa)
 app/onboarding/page.js           → cria empresa via /api/admin/provision (exige chave)
 app/importar/page.js             → importa CSV (exige PIN de gerência/gestão)
@@ -63,6 +70,9 @@ const EMPRESAS = {
 1. Logo unificado — landing page `height: 32px`, login `width: 200px` — alinhar tamanho
 2. Ícones dos cards de benefícios na landing page — cada um com ícone diferente
 3. Identidade visual interna — app ainda com estilo antigo; não aplicar sem cuidado (quebrou antes)
+3b. `useRelatorio` roda para todo papel (hook não pode ser condicional). Não
+   vaza — o teste de renderização prova — mas gasta cálculo em quem não vê nada.
+   A correção é um provider que sirva o AGORA e o segmento com o mesmo `rel`
 4. Login email+senha para contas de gestão
 5. Empresas no Supabase — tirar o mapeamento hardcoded de `entrar/page.js`
 6. Página `/entrar` — link no header da landing page apontando para ela (botão "Acessar" já aponta)
@@ -84,8 +94,11 @@ const EMPRESAS = {
 ## Antes de publicar
 
 ```bash
-cd ibr-checklists-app && npm run verify   # eslint --quiet && next build
+cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
+
+`verify` inclui os testes desde 11/08/2026. `npm run test` sozinho roda os dois
+de node: conferência e **renderização** (`tests/painel-render.spec.mjs`).
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
@@ -93,3 +106,11 @@ variável inexistente no array de dependências: build limpo, app inteiro fora d
 ar por ReferenceError. `verify` roda o lint antes do build; `no-undef` é erro e
 bloqueia. Aviso (`no-unused-vars`, `exhaustive-deps`) não bloqueia — veja
 `ibr-checklists-app/eslint.config.mjs` para o porquê de cada escolha.
+
+**Build limpo também não prova que a tela renderiza.** Na consolidação de abas
+(11/08/2026) três defeitos passaram por lint, build, 71 testes e pela comparação
+do PDF exportado — os três eram de RENDERIZAÇÃO, e o PDF lê o motor direto sem
+tocar no JSX. Por isso existe `tests/painel-render.spec.mjs`: ele monta os
+componentes com `renderToStaticMarkup` e afirma o que aparece **e o que não
+aparece** por papel. É lá que mora a prova de que o colaborador não vê bloco de
+gestão — mexeu em gate de acesso, rode ele.
