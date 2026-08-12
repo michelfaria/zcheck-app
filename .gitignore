@@ -19,3 +19,8 @@ ibr-checklists-app-codex-update/
 # Baseline de producao — PDFs com nomes reais de colaboradores.
 # O repositorio e PUBLICO: estes arquivos NUNCA entram no git.
 _baseline/
+
+# Binário compilado de video-colaboradores/encode.swift. É artefato de build:
+# recompila com `swiftc encode.swift -o encode`, e um Mach-O versionado só serve
+# para sujar diff e engordar clone.
+video-colaboradores/encode
