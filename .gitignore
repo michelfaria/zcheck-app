@@ -27,3 +27,14 @@ _baseline/
 # troca — o que precisa sobreviver é a fonte, e ela está aqui.
 video-colaboradores/encode
 video-colaboradores/video.html
+
+# Duplicatas de sincronia do iCloud/Finder: "arquivo 2.js", "encode 2",
+# "video 2.html". O Documents está no iCloud, e um conflito de sincronia cria a
+# cópia sozinho — em 12/08/2026 apareceram 11 delas de uma vez, incluindo 43MB
+# de MP4 que um `git add -A` teria publicado num repositório PÚBLICO.
+#
+# O contador INCREMENTA (2, 3, 4...), por isso a faixa. Consequência a saber:
+# um arquivo legitimamente chamado "Parte 2.md" também seria ignorado. Se algum
+# dia for esse o caso, `git add -f` força, ou restrinja a faixa aqui.
+* [2-9]
+* [2-9].*
