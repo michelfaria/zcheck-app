@@ -2046,7 +2046,9 @@ function ItemGuidanceEditor({ item, accent, apply }) {
   );
 }
 
-function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistType, allTemplates }) {
+// Exportado para o teste de renderização (tests/editor-item-render.spec.mjs)
+// alcançar o editor de tarefa sem sessão logada. Nada mais o importa.
+export function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistType, allTemplates }) {
   const [name, setName] = useState(template?.name || '');
   const [deadline, setDeadline] = useState(template?.deadline || '');
   const [items, setItems] = useState(template?.items || [{ id: uid(), text: '', critical: false, required: false, photoRequired: false }]);
@@ -2334,6 +2336,32 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
                   );
                 })}
               </div>
+              {/* Carryover: a tarefa não feita volta amanhã até ser feita.
+                  Opt-in porque arrastar é semântica da tarefa — "limpar a coifa"
+                  é estado do mundo e arrasta; "conferir câmaras na abertura" é
+                  momento do dia e não faz sentido cobrar depois.
+                  Ligar CARIMBA a data: sem ela, a varredura de 7 dias alcançaria
+                  ocorrências anteriores à regra e a tarefa estrearia cobrando
+                  dívida de dias em que a cobrança não existia. Desligar limpa o
+                  carimbo, para que religar depois não ressuscite o passado. */}
+              <label
+                className="flex items-center gap-1.5 mt-2"
+                style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.carryover ? unit.color : C.muted }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!item.carryover}
+                  onChange={e => updateItem(item.id, e.target.checked
+                    ? { carryover: true, carryoverSince: todayStr(tzOf(unit)) }
+                    : { carryover: false, carryoverSince: null })}
+                />
+                Se não for feita, cobrar no dia seguinte
+              </label>
+              {item.carryover && (
+                <p style={{ marginTop: 4, fontSize: 11, color: C.muted, lineHeight: 1.4 }}>
+                  Cobra a partir de {(item.carryoverSince || todayStr(tzOf(unit))).split('-').reverse().slice(0, 2).join('/')}, por até 7 dias. Dia de folga da loja não conta.
+                </p>
+              )}
             </div>
 
             {/* Aparece em — define em quais tipos de checklist este item aparece */}
@@ -2417,7 +2445,8 @@ function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistTyp
 /* ── Importar CSV — DENTRO do app (usa a sessão atual; antes era uma página
    separada que perdia o token e caía no login ao "Voltar"). ── */
 /* O CSV cobre os MESMOS campos do editor "+ Novo" (pedido 18/07): critico,
-   foto (exigir foto na execução), dias (da semana), orientacao, video, link.
+   foto (exigir foto na execução), dias (da semana), orientacao, video, link,
+   arrastar (a tarefa não feita volta no dia seguinte).
    Só fotos de referência e documentos ficam para anexar no app.
    O parser vive em lib/csvImport.js — compartilhado com a página /importar e
    tolerante ao que Excel/Numbers fazem com o arquivo (";" no lugar da vírgula,
@@ -2637,9 +2666,10 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={20} /></button>
         </div>
         <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>
-          Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, foto, dias, orientacao, video, link, deadline</strong>.
+          Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, foto, dias, orientacao, video, link, deadline, arrastar</strong>.
           A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
           {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot; (vazio = todos os dias);
+          {' '}<strong>arrastar</strong> = &quot;sim&quot; faz a tarefa não feita voltar no dia seguinte até ser executada;
           texto com vírgula vai entre aspas. Fotos de referência e documentos você anexa depois, no app.
           {' '}Aceita separador vírgula, ponto e vírgula ou tabulação — pode salvar direto do Excel, do Numbers ou do Google Sheets.
           {' '}<strong>Pode selecionar vários arquivos de uma vez.</strong>
@@ -3756,6 +3786,17 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                             );
                           })}
                         </div>
+                        {/* Mesma regra do editor do checklist existente: ligar
+                            carimba a data de ativação, desligar limpa. */}
+                        <label className="flex items-center gap-1.5" style={{ marginTop: 8, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.carryover ? unit.color : C.muted }}>
+                          <input type="checkbox" checked={!!item.carryover}
+                            onChange={e => setNovoItems(prev => prev.map(i => i.id === item.id ? {
+                              ...i,
+                              carryover: e.target.checked,
+                              carryoverSince: e.target.checked ? todayStr(tzOf(unit)) : null,
+                            } : i))} />
+                          Se não for feita, cobrar no dia seguinte
+                        </label>
                       </div>
                     )}
                     {guideOpen && (
@@ -3767,7 +3808,7 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                   </div>
                 );
               })}
-              <button onClick={() => setNovoItems(prev => [...prev, { id: uid(), text: '', critical: false, required: false, photoRequired: false, recurrence: null }])}
+              <button onClick={() => setNovoItems(prev => [...prev, { id: uid(), text: '', critical: false, required: false, photoRequired: false, recurrence: null, carryover: false }])}
                 className="flex items-center gap-2 w-full py-2"
                 style={{ borderRadius: 8, border: `2px dashed ${C.border}`, fontWeight: W.semibold, color: C.muted, background: 'none', fontSize: 13 }}>
                 <Plus size={14} /> Adicionar item
