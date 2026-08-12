@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>ZCheck — 1 minuto para colaboradores</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────────────────
+     ZCheck · vídeo vertical 1080x1920 · 60s · público: colaboradores
+     Cores vindas de lib/tokens.js (ink #063C5C, success #15803D,
+     successBright #16A34A, greenOnDark #4ADE80, inkMuted #9FB8C8).
+     Toda animação é função pura de `t` (segundos) — ver render() no fim.
+     ───────────────────────────────────────────────────────────────────────── */
+  :root {
+    --ink:#063C5C; --ink2:#04293E; --green:#4ADE80; --greenFill:#16A34A;
+    --muted:#9FB8C8; --white:#fff; --crit:#F87171; --warn:#FBBF24;
+    --cardInk:#063C5C; --cardMuted:#5B6B78; --border:#E2EAF0;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+  html,body { background:#000; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+
+  #stage {
+    position:relative; width:1080px; height:1920px; overflow:hidden;
+    background:
+      radial-gradient(1200px 900px at 50% 14%, #0A5077 0%, rgba(10,80,119,0) 62%),
+      radial-gradient(900px 700px at 78% 88%, #0B5F5A 0%, rgba(11,95,90,0) 58%),
+      linear-gradient(170deg,#063C5C 0%,#04293E 100%);
+  }
+  /* textura sutil pra não ficar "flat" em tela grande */
+  #grain { position:absolute; inset:0; opacity:.055; pointer-events:none;
+    background-image:radial-gradient(#fff 1px, transparent 1px);
+    background-size:5px 5px; }
+
+  #bar { position:absolute; left:0; top:0; height:7px; background:var(--green); width:0; z-index:50; }
+
+  .scene { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:0 88px; opacity:0; will-change:opacity,transform; }
+
+  .eyebrow { font-size:29px; font-weight:700; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--green); margin-bottom:26px; }
+  h1 { font-size:82px; line-height:1.04; font-weight:800; color:#fff; text-align:center;
+    letter-spacing:-.02em; }
+  h1.sm { font-size:72px; }
+  .sub { font-size:38px; line-height:1.35; color:var(--muted); text-align:center; font-weight:500; margin-top:26px; }
+  .cap { font-size:36px; line-height:1.4; color:var(--muted); text-align:center; font-weight:500;
+    margin-top:46px; max-width:860px; }
+  .cap b { color:#fff; font-weight:700; }
+
+  .card { background:#fff; border-radius:36px; width:100%; padding:44px;
+    box-shadow:0 40px 90px rgba(0,0,0,.34); color:var(--cardInk); }
+  .logoPill { background:#fff; border-radius:999px; padding:34px 60px; display:inline-flex;
+    box-shadow:0 30px 70px rgba(0,0,0,.3); }
+  .logoPill img { height:88px; display:block; }
+
+  .num { font-variant-numeric:tabular-nums; }
+
+  /* ── ST tour das abas ── */
+  /* altura animada no render (mesmo motivo do banner da S3): sem isso o card
+     já nasce com a altura das 3 linhas e fica um vazio branco enquanto entram. */
+  .trow { display:flex; align-items:center; gap:24px; padding:24px 0; overflow:hidden; }
+  .trow + .trow { border-top:2px solid var(--border); }
+  .tico { width:76px; height:76px; border-radius:22px; background:#F2F6F9; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; }
+  .trow .tt { font-size:38px; font-weight:800; color:#063C5C; }
+  .trow .td { font-size:29px; font-weight:600; color:var(--cardMuted); margin-top:5px; line-height:1.25; }
+  #tourNav { width:100%; display:flex; gap:12px; margin-top:32px; padding:14px;
+    background:rgba(255,255,255,.09); border:2px solid rgba(255,255,255,.16); border-radius:30px; }
+  .tnav { flex:1; border-radius:20px; padding:16px 8px; display:flex; flex-direction:column;
+    align-items:center; gap:8px; font-size:24px; font-weight:700; color:var(--muted);
+    white-space:nowrap; }
+
+  /* ── S2 PIN ── */
+  #s2 .dots { display:flex; gap:28px; justify-content:center; margin:12px 0 40px; }
+  .dot { width:34px; height:34px; border-radius:999px; background:#E2EAF0; }
+  #s2 .keys { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+  .key { height:104px; border-radius:22px; background:#F2F6F9; display:flex; align-items:center;
+    justify-content:center; font-size:42px; font-weight:700; color:#063C5C; }
+  #s2 .welcome { position:absolute; inset:0; background:#fff; border-radius:36px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; opacity:0; }
+
+  /* ── S3 checklist ── */
+  .chHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:34px; }
+  .chTitle { font-size:44px; font-weight:800; }
+  .chMeta { font-size:28px; color:var(--cardMuted); font-weight:600; margin-top:6px; }
+  .item { display:flex; align-items:center; gap:26px; padding:26px 0; border-top:2px solid var(--border); }
+  .box { width:60px; height:60px; border-radius:18px; border:3px solid #7E93A3; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; }
+  .item .txt { font-size:34px; font-weight:600; line-height:1.25; }
+  .chip { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:800;
+    letter-spacing:.08em; text-transform:uppercase; padding:8px 16px; border-radius:999px; }
+  .chip.crit { background:#FEE2E2; color:#B91C1C; }
+  .chip.photo { background:#DCFCE7; color:#15803D; }
+  /* altura controlada no render: enquanto não aparece, não reserva espaço —
+     senão o card fica com um vazio branco de 5s embaixo da lista. */
+  #s3 .done { height:0; margin-top:0; overflow:hidden; background:#DCFCE7; border-radius:22px;
+    padding:0 26px; display:flex; align-items:center; gap:18px; font-size:34px;
+    font-weight:800; color:#15803D; }
+
+  /* ── S4 pontos ── */
+  .ptRow { display:flex; align-items:center; gap:30px; background:rgba(255,255,255,.08);
+    border:2px solid rgba(255,255,255,.14); border-radius:28px; padding:30px 36px; margin-bottom:22px; }
+  .ptVal { font-size:56px; font-weight:800; color:var(--green); width:120px; }
+  .ptTxt { font-size:36px; font-weight:600; color:#fff; }
+  #s4 .total { text-align:center; margin-top:20px; }
+  #s4 .total .n { font-size:170px; font-weight:800; color:#fff; line-height:1; letter-spacing:-.04em; }
+  #s4 .total .l { font-size:34px; font-weight:700; color:var(--green); letter-spacing:.16em;
+    text-transform:uppercase; margin-top:10px; }
+
+  /* ── S5 ID ── */
+  .idTop { display:flex; align-items:center; gap:28px; }
+  .avatar { width:104px; height:104px; border-radius:999px; background:#063C5C; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:800; }
+  .idName { font-size:44px; font-weight:800; }
+  .idSub { font-size:28px; color:var(--cardMuted); font-weight:600; margin-top:4px; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:34px; }
+  .stat { background:#F2F6F9; border-radius:24px; padding:24px; text-align:center; }
+  .stat .v { font-size:52px; font-weight:800; color:#063C5C; line-height:1; }
+  .stat .k { font-size:23px; font-weight:700; color:var(--cardMuted); margin-top:10px;
+    letter-spacing:.06em; text-transform:uppercase; }
+  .lvlBar { height:20px; border-radius:999px; background:#E2EAF0; margin-top:30px; overflow:hidden; }
+  .lvlBar i { display:block; height:100%; width:0; background:var(--greenFill); border-radius:999px; }
+  .lvlTxt { display:flex; justify-content:space-between; font-size:26px; font-weight:700;
+    color:var(--cardMuted); margin-top:14px; }
+
+  /* ── S6 conquistas ── */
+  .achGrid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .ach { background:#fff; border-radius:24px; padding:26px 24px; display:flex; align-items:center;
+    gap:20px; border:3px solid var(--border); opacity:.42; }
+  .ach .t { font-size:29px; font-weight:800; color:#063C5C; line-height:1.15; }
+  .ach .d { font-size:22px; color:var(--cardMuted); font-weight:600; margin-top:6px; line-height:1.25; }
+
+  /* ── S7 ranking ── */
+  .rk { display:flex; align-items:center; gap:24px; background:#fff; border-radius:26px;
+    padding:26px 30px; margin-bottom:16px; }
+  .rk .pos { width:64px; height:64px; border-radius:999px; display:flex; align-items:center;
+    justify-content:center; font-size:32px; font-weight:800; flex:0 0 auto; }
+  .rk .nm { font-size:34px; font-weight:800; color:#063C5C; }
+  .rk .track { height:16px; border-radius:999px; background:#E2EAF0; margin-top:12px; overflow:hidden; }
+  .rk .track i { display:block; height:100%; width:0; border-radius:999px; background:var(--greenFill); }
+  .rk .pct { font-size:38px; font-weight:800; color:#063C5C; width:130px; text-align:right;
+    font-variant-numeric:tabular-nums; }
+  .you { background:#063C5C; }
+  .you .nm { color:#fff; } .you .pct { color:var(--green); }
+  .you .track { background:rgba(255,255,255,.18); }
+  .you .track i { background:var(--green); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="grain"></div>
+  <div id="bar"></div>
+
+  <!-- ══ S1 · abertura ══════════════════════════════════════════════════ -->
+  <section class="scene" id="s1">
+    <div class="logoPill" id="s1logo"><img src="__LOGO__" alt="ZCheck"></div>
+    <h1 id="s1h" style="margin-top:70px">Seu esforço<br>agora aparece.</h1>
+    <p class="sub" id="s1s">O app da sua rotina — em 1 minuto.</p>
+  </section>
+
+  <!-- ══ ST · tour das abas ═════════════════════════════════════════════
+       O colaborador vê exatamente 3 abas (ROLE_TABS.colaborador em
+       app/app/page.js): executar, painel, id. Os rótulos são os `short` da
+       BottomNav — Rotina, Painel, Meu ID. -->
+  <section class="scene" id="st">
+    <p class="eyebrow" id="ste">Por onde começar</p>
+    <h1 id="sth">O app inteiro<br>em três abas.</h1>
+    <div class="card" id="stc" style="margin-top:52px">
+      <div id="tourRows"></div>
+    </div>
+    <div id="tourNav"></div>
+    <p class="cap" id="stcap">Nada de menu escondido.<br><b>Abriu, já está na sua rotina.</b></p>
+  </section>
+
+  <!-- ══ S2 · PIN ═══════════════════════════════════════════════════════ -->
+  <section class="scene" id="s2">
+    <p class="eyebrow" id="s2e">1 · Entrar</p>
+    <h1 id="s2h">Seu PIN é sua chave.</h1>
+    <div style="position:relative;width:100%;margin-top:56px" id="s2c">
+      <div class="card">
+        <p style="font-size:30px;font-weight:700;color:var(--cardMuted);text-align:center;letter-spacing:.06em;text-transform:uppercase">Digite seu PIN</p>
+        <div class="dots">
+          <div class="dot" id="d0"></div><div class="dot" id="d1"></div>
+          <div class="dot" id="d2"></div><div class="dot" id="d3"></div>
+        </div>
+        <div class="keys">
+          <div class="key">1</div><div class="key">2</div><div class="key">3</div>
+          <div class="key">4</div><div class="key">5</div><div class="key">6</div>
+          <div class="key">7</div><div class="key">8</div><div class="key">9</div>
+        </div>
+      </div>
+      <div class="welcome" id="s2w">
+        <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <p style="font-size:52px;font-weight:800;color:#063C5C">Olá, Ana!</p>
+        <p style="font-size:32px;font-weight:600;color:var(--cardMuted)">Salão · Centro</p>
+      </div>
+    </div>
+    <p class="cap" id="s2cap">Sem e-mail, sem senha.<br><b>4 dígitos e você está dentro.</b></p>
+  </section>
+
+  <!-- ══ S3 · executar ══════════════════════════════════════════════════ -->
+  <section class="scene" id="s3">
+    <p class="eyebrow" id="s3e">2 · Executar</p>
+    <h1 class="sm" id="s3h">A rotina do seu turno,<br>numa lista só.</h1>
+    <div class="card" id="s3c" style="margin-top:52px">
+      <div class="chHead">
+        <div>
+          <p class="chTitle">Abertura</p>
+          <p class="chMeta">Salão · até 10h00</p>
+        </div>
+        <div style="position:relative;width:148px;height:148px;flex:0 0 auto">
+          <svg width="148" height="148" viewBox="0 0 148 148">
+            <circle cx="74" cy="74" r="62" fill="none" stroke="#E2EAF0" stroke-width="13"/>
+            <circle id="ring" cx="74" cy="74" r="62" fill="none" stroke="#16A34A" stroke-width="13"
+              stroke-linecap="round" transform="rotate(-90 74 74)"
+              stroke-dasharray="389.56" stroke-dashoffset="389.56"/>
+          </svg>
+          <div id="ringTxt" class="num" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;color:#063C5C">0%</div>
+        </div>
+      </div>
+      <div id="items"></div>
+      <div class="done" id="s3done" style="opacity:0">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Checklist 100% concluído
+      </div>
+    </div>
+    <p class="cap" id="s3cap">Item <b>crítico</b> pede foto — é a sua prova de que foi feito.</p>
+  </section>
+
+  <!-- ══ S4 · pontos ════════════════════════════════════════════════════ -->
+  <section class="scene" id="s4">
+    <p class="eyebrow" id="s4e">3 · Pontos</p>
+    <h1 id="s4h">Cada tarefa<br>vira ponto.</h1>
+    <div style="width:100%;margin-top:56px">
+      <div class="ptRow" id="p0"><span class="ptVal">+1</span><span class="ptTxt">tarefa concluída</span></div>
+      <div class="ptRow" id="p1"><span class="ptVal">+2</span><span class="ptTxt">tarefa crítica</span></div>
+      <div class="ptRow" id="p2"><span class="ptVal">+3</span><span class="ptTxt">checklist 100% completo</span></div>
+    </div>
+    <div class="total" id="s4t">
+      <div class="n num" id="s4n">0</div>
+      <div class="l">pontos hoje</div>
+    </div>
+    <p class="cap" id="s4cap">Você não precisa anotar nada.<br><b>O app conta sozinho.</b></p>
+  </section>
+
+  <!-- ══ S5 · Meu ID ════════════════════════════════════════════════════ -->
+  <section class="scene" id="s5">
+    <p class="eyebrow" id="s5e">4 · Meu ID</p>
+    <h1 class="sm" id="s5h">Sua carteirinha<br>operacional.</h1>
+    <div class="card" id="s5c" style="margin-top:52px">
+      <div class="idTop">
+        <div class="avatar">AS</div>
+        <div style="flex:1">
+          <p class="idName">Ana Souza</p>
+          <p class="idSub">Salão · Centro</p>
+        </div>
+        <div style="position:relative;width:140px;height:140px">
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r="60" fill="none" stroke="#E2EAF0" stroke-width="16"/>
+            <circle id="idRing" cx="70" cy="70" r="60" fill="none" stroke="#16A34A" stroke-width="16"
+              stroke-linecap="round" transform="rotate(-90 70 70)"
+              stroke-dasharray="376.99" stroke-dashoffset="376.99"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <span class="num" id="idNum" style="font-size:44px;font-weight:800;color:#063C5C">0</span>
+            <span style="font-size:19px;font-weight:800;color:var(--cardMuted);letter-spacing:.1em;text-transform:uppercase">Índice</span>
+          </div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v num" id="st0">0</div><div class="k">Nível</div></div>
+        <div class="stat"><div class="v num" id="st1">0</div><div class="k">Dias seguidos</div></div>
+        <div class="stat"><div class="v num" id="st2">0</div><div class="k">Tarefas</div></div>
+      </div>
+      <div class="lvlBar"><i id="lvlFill"></i></div>
+      <div class="lvlTxt"><span>Nível 4</span><span id="lvlTo">9 / 15 até o nível 5</span></div>
+    </div>
+    <p class="cap" id="s5cap">Índice = <b>conclusão</b> + <b>críticos em dia</b> + <b>constância</b>.</p>
+  </section>
+
+  <!-- ══ S6 · conquistas ════════════════════════════════════════════════ -->
+  <section class="scene" id="s6">
+    <p class="eyebrow" id="s6e">5 · Conquistas</p>
+    <h1 id="s6h">Desbloqueie<br>conquistas.</h1>
+    <div class="achGrid" id="achGrid" style="margin-top:52px;width:100%"></div>
+    <p class="cap" id="s6cap">Elas ficam no <b>seu</b> ID. Ninguém tira.</p>
+  </section>
+
+  <!-- ══ S7 · ranking ═══════════════════════════════════════════════════ -->
+  <section class="scene" id="s7">
+    <p class="eyebrow" id="s7e">6 · Ranking</p>
+    <h1 class="sm" id="s7h">Ranking da equipe<br><span style="color:var(--muted);font-size:44px;font-weight:600">últimos 7 dias</span></h1>
+    <div style="width:100%;margin-top:50px" id="rkWrap"></div>
+    <p class="cap" id="s7cap">O número é o mesmo pra todo mundo.<br><b>Sem preferido.</b></p>
+  </section>
+
+  <!-- ══ S8 · fecho ═════════════════════════════════════════════════════ -->
+  <section class="scene" id="s8">
+    <div class="logoPill" id="s8logo"><img src="__LOGO__" alt="ZCheck"></div>
+    <h1 id="s8h" style="margin-top:64px">Cada tarefa conta.</h1>
+    <p class="sub" id="s8s">zcheckapp.com</p>
+  </section>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Timeline. Tudo é função pura de `t` (segundos) para o render frame-a-frame
+   ser determinístico: o gerador chama window.__seek(t) e tira o screenshot.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const DUR = 60;
+// O tour entrou sem esticar o vídeo: os 8,6s vieram de encurtar as PAUSAS
+// no fim de cada cena, não a animação delas. Continua 60,0s cravados.
+const S = {
+  s1:[ 0.0, 3.8],
+  st:[ 3.8,12.6],
+  s2:[12.6,18.4],
+  s3:[18.4,28.2],
+  s4:[28.2,35.0],
+  s5:[35.0,43.4],
+  s6:[43.4,49.6],
+  s7:[49.6,56.6],
+  s8:[56.6,60.0],
+};
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a=0,b=1) => v<a?a:v>b?b:v;
+const easeOut = p => 1-Math.pow(1-p,3);
+const easeIO  = p => p<.5 ? 4*p*p*p : 1-Math.pow(-2*p+2,3)/2;
+// progresso 0..1 de um trecho que começa em `start` e dura `dur`
+const at = (u,start,dur) => easeOut(clamp((u-start)/dur));
+const lerp = (a,b,p) => a+(b-a)*p;
+
+/** entrada padrão: sobe `dy` e aparece */
+function rise(el,p,dy=44){ el.style.opacity=p; el.style.transform=`translateY(${(1-p)*dy}px)`; }
+/** pop com leve overshoot, para itens que "desbloqueiam" */
+function pop(el,p){
+  const s = p<1 ? 0.86+0.18*easeOut(p) : 1;
+  el.style.opacity = p; el.style.transform = `scale(${Math.min(s,1.04)})`;
+}
+
+/* ── conteúdo gerado ────────────────────────────────────────────────────── */
+const ITEMS = [
+  { txt:'Conferir troco disponível',        crit:false },
+  { txt:'Higienizar bancadas e utensílios', crit:false },
+  { txt:'Temperatura da câmara fria',       crit:true  },
+  { txt:'Repor guardanapos e talheres',     crit:false },
+];
+$('items').innerHTML = ITEMS.map((it,i)=>`
+  <div class="item" id="it${i}">
+    <div class="box" id="bx${i}">
+      <svg id="ck${i}" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff"
+        stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:0"><path d="M20 6 9 17l-5-5"/></svg>
+    </div>
+    <div style="flex:1">
+      <p class="txt">${it.txt}</p>
+      ${it.crit?'<div style="margin-top:12px;display:flex;gap:10px"><span class="chip crit">Crítico</span><span class="chip photo" id="photoChip" style="opacity:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>Foto enviada</span></div>':''}
+    </div>
+  </div>`).join('');
+
+// As 3 abas do colaborador. Ícone e rótulo curto saem de NAV_ITEMS /
+// BOTTOM_NAV_ORDER (components/SideNav.js) — é o que ele vê na barra de baixo.
+const TABS = [
+  ['clipcheck','Rotina','Os checklists do seu turno'],
+  ['grid',     'Painel','O dia da loja e o ranking da equipe'],
+  ['award',    'Meu ID','Seu índice, nível e conquistas'],
+];
+
+// ícones de traço, no mesmo espírito dos lucide usados no app
+const IC = {
+  clipcheck:'<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  grid:'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  award:'<path d="m15.48 12.89 1.51 8.53a.5.5 0 0 1-.81.47l-3.58-2.69a1 1 0 0 0-1.2 0l-3.58 2.69a.5.5 0 0 1-.81-.47l1.51-8.53"/><circle cx="12" cy="8" r="6"/>',
+  sprout:'<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
+  trend:'<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+  flame:'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  cal:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  star:'<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  cam:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  trophy:'<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/>',
+};
+$('tourRows').innerHTML = TABS.map(([ic,t,d],i)=>`
+  <div class="trow" id="tr${i}">
+    <div class="tico"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#16A34A"
+      stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${IC[ic]}</svg></div>
+    <div><p class="tt">${t}</p><p class="td">${d}</p></div>
+  </div>`).join('');
+$('tourNav').innerHTML = TABS.map(([ic,t],i)=>`
+  <div class="tnav" id="tn${i}">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${IC[ic]}</svg>${t}
+  </div>`).join('');
+// altura natural de cada linha, medida uma vez — o render anima de 0 até ela
+const ROW_H = TABS.map((_,i)=> $('tr'+i).offsetHeight);
+
+// as 8 conquistas reais do ID Operacional (app/app/page.js)
+const ACH = [
+  ['sprout','Primeiro passo','Concluiu o 1º checklist',      true],
+  ['trend', 'Pegando o ritmo','10 checklists concluídos',    true],
+  ['cal',   'Constância',    '5 dias seguidos em operação',  true],
+  ['star',  'Caprichoso',    'Média de conclusão ≥ 90%',     true],
+  ['shield','Guardião do crítico','Críticos ≥ 95% em dia',   true],
+  ['cam',   'Provas em dia', '20+ evidências enviadas',      true],
+  ['flame', 'Veterano',      '50 checklists concluídos',     false],
+  ['trophy','Semana perfeita','Uma semana inteira a 100%',   false],
+];
+$('achGrid').innerHTML = ACH.map(([ic,t,d],i)=>`
+  <div class="ach" id="ach${i}">
+    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#7E93A3" stroke-width="1.9"
+      stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto" id="achi${i}">${IC[ic]}</svg>
+    <div><p class="t">${t}</p><p class="d">${d}</p></div>
+  </div>`).join('');
+
+const RANK = [
+  ['Ana Souza',  96, true ],
+  ['Bruno Lima', 91, false],
+  ['Carla Melo', 87, false],
+  ['Diego Alves',79, false],
+];
+const POSBG = ['#FBBF24','#CBD5E1','#D9A066','#E2EAF0'];
+$('rkWrap').innerHTML = RANK.map(([n,p,you],i)=>`
+  <div class="rk ${you?'you':''}" id="rk${i}">
+    <div class="pos" style="background:${POSBG[i]};color:#063C5C">${i+1}</div>
+    <div style="flex:1">
+      <p class="nm">${n}${you?' <span style="font-size:22px;font-weight:800;color:#4ADE80;letter-spacing:.1em"> VOCÊ</span>':''}</p>
+      <div class="track"><i id="rkb${i}"></i></div>
+    </div>
+    <div class="pct" id="rkp${i}">0%</div>
+  </div>`).join('');
+
+/* ── render ─────────────────────────────────────────────────────────────── */
+function sceneAlpha(t,[a,b]){
+  const IN=0.5, OUT=0.42;
+  if (t < a-0.001 || t > b) return 0;
+  return Math.min(easeIO(clamp((t-a)/IN)), easeIO(clamp((b-t)/OUT)));
+}
+
+function render(t){
+  t = clamp(t,0,DUR);
+  $('bar').style.width = (t/DUR*1080)+'px';
+
+  for (const k in S){
+    const el=$(k), a=sceneAlpha(t,S[k]);
+    el.style.opacity=a;
+    el.style.visibility = a>0 ? 'visible':'hidden';
+    // leve deriva vertical dá sensação de câmera, sem distrair
+    el.style.transform = `translateY(${(1-a)*26}px)`;
+  }
+
+  // ── S1
+  { const u=t-S.s1[0];
+    pop($('s1logo'), at(u,0.05,0.8));
+    rise($('s1h'),   at(u,0.55,0.9), 50);
+    rise($('s1s'),   at(u,1.6,0.8),  36);
+  }
+
+  // ── ST · tour
+  { const u=t-S.st[0];
+    rise($('ste'), at(u,0.05,0.5), 26);
+    rise($('sth'), at(u,0.2,0.7),  44);
+    rise($('stc'), at(u,0.5,0.8),  60);
+    rise($('tourNav'), at(u,0.8,0.7), 40);
+    const ENTRA=[1.2,2.6,4.0];
+    // a aba acesa na barra de baixo acompanha a linha que acabou de entrar
+    let ativa=-1;
+    ENTRA.forEach((tp,i)=>{ if (u>=tp) ativa=i; });
+    TABS.forEach((_,i)=>{
+      const p = at(u,ENTRA[i],0.55);
+      const row = $('tr'+i);
+      rise(row, p, 30);
+      // o padding também precisa encolher: com box-sizing:border-box a altura
+      // nunca desce abaixo de padding+borda, e a linha travaria em 50px
+      row.style.height = (p*ROW_H[i])+'px';
+      row.style.paddingTop = row.style.paddingBottom = (p*24)+'px';
+      const on = i===ativa;
+      const nv = $('tn'+i);
+      nv.style.background = on ? '#fff' : 'transparent';
+      nv.style.color      = on ? '#063C5C' : 'var(--muted)';
+    });
+    rise($('stcap'), at(u,5.8,0.7), 34);
+  }
+
+  // ── S2
+  { const u=t-S.s2[0];
+    rise($('s2e'),   at(u,0.05,0.5), 26);
+    rise($('s2h'),   at(u,0.2,0.7),  44);
+    rise($('s2c'),   at(u,0.5,0.8),  60);
+    const taps=[1.15,1.55,1.95,2.35];
+    taps.forEach((tp,i)=>{
+      const p=at(u,tp,0.22);
+      const d=$('d'+i);
+      d.style.background = p>0.5 ? '#063C5C' : '#E2EAF0';
+      d.style.transform  = `scale(${lerp(1,1.18,Math.sin(Math.PI*clamp(p))) })`;
+    });
+    $('s2w').style.opacity = at(u,3.0,0.5);
+    rise($('s2cap'), at(u,3.6,0.7), 34);
+  }
+
+  // ── S3
+  { const u=t-S.s3[0];
+    rise($('s3e'),  at(u,0.05,0.5), 26);
+    rise($('s3h'),  at(u,0.2,0.7),  44);
+    rise($('s3c'),  at(u,0.5,0.8),  60);
+    const checks=[1.7,2.7,4.0,5.4];
+    let done=0;
+    checks.forEach((tp,i)=>{
+      const inP = at(u,1.0+i*0.18,0.4);          // item entra na lista
+      $('it'+i).style.opacity = inP;
+      const p = at(u,tp,0.35);                    // item é marcado
+      if (p>0.5) done++;
+      const bx=$('bx'+i);
+      bx.style.background  = p>0.35 ? '#16A34A' : 'transparent';
+      bx.style.borderColor = p>0.35 ? '#16A34A' : '#7E93A3';
+      $('ck'+i).style.opacity = clamp((p-0.3)/0.4);
+      bx.style.transform = `scale(${lerp(1,1.14,Math.sin(Math.PI*clamp(p)))})`;
+    });
+    const pc = $('photoChip');
+    if (pc) pc.style.opacity = at(u,4.5,0.4);
+    // anel de progresso acompanha as marcações
+    const rp = clamp(done/4);
+    $('ring').setAttribute('stroke-dashoffset', 389.56*(1-rp));
+    $('ringTxt').textContent = Math.round(rp*100)+'%';
+    const dp = at(u,6.2,0.5);
+    const dn = $('s3done');
+    dn.style.opacity = dp; dn.style.height = (dp*92)+'px'; dn.style.marginTop = (dp*30)+'px';
+    rise($('s3cap'), at(u,7.4,0.7), 34);
+  }
+
+  // ── S4
+  { const u=t-S.s4[0];
+    rise($('s4e'), at(u,0.05,0.5), 26);
+    rise($('s4h'), at(u,0.2,0.7),  44);
+    [0,1,2].forEach(i=> rise($('p'+i), at(u,0.7+i*0.42,0.6), 40));
+    const p=at(u,2.6,1.5);
+    $('s4t').style.opacity = at(u,2.5,0.5);
+    $('s4n').textContent = Math.round(p*27);
+    $('s4n').style.transform = `scale(${lerp(0.82,1,at(u,2.5,0.7))})`;
+    rise($('s4cap'), at(u,4.6,0.7), 34);
+  }
+
+  // ── S5
+  { const u=t-S.s5[0];
+    rise($('s5e'), at(u,0.05,0.5), 26);
+    rise($('s5h'), at(u,0.2,0.7),  44);
+    rise($('s5c'), at(u,0.5,0.8),  60);
+    const p=at(u,1.0,1.5);
+    $('idRing').setAttribute('stroke-dashoffset', 376.99*(1-p*0.92));
+    $('idNum').textContent = Math.round(p*92);
+    const sv=[4,12,214];
+    [0,1,2].forEach(i=>{
+      const q=at(u,1.6+i*0.3,0.9);
+      $('st'+i).textContent = Math.round(q*sv[i]);
+    });
+    $('lvlFill').style.width = (at(u,2.6,1.1)*(9/15)*100)+'%';
+    rise($('s5cap'), at(u,5.4,0.7), 34);
+  }
+
+  // ── S6
+  { const u=t-S.s6[0];
+    rise($('s6e'), at(u,0.05,0.5), 26);
+    rise($('s6h'), at(u,0.2,0.7),  44);
+    ACH.forEach((a,i)=>{
+      const el=$('ach'+i), p=at(u,0.75+i*0.2,0.45);
+      const earned=a[3];
+      el.style.opacity = p*(earned?1:0.42);
+      const sc = 0.9+0.1*p;
+      el.style.transform=`scale(${sc})`;
+      el.style.borderColor = earned && p>0.6 ? 'rgba(21,128,61,.55)' : '#E2EAF0';
+      $('achi'+i).setAttribute('stroke', earned && p>0.6 ? '#15803D' : '#7E93A3');
+    });
+    rise($('s6cap'), at(u,3.9,0.7), 34);
+  }
+
+  // ── S7
+  { const u=t-S.s7[0];
+    rise($('s7e'), at(u,0.05,0.5), 26);
+    rise($('s7h'), at(u,0.2,0.7),  44);
+    RANK.forEach(([n,pct],i)=>{
+      const el=$('rk'+i);
+      rise(el, at(u,0.7+i*0.3,0.6), 40);
+      const p=at(u,1.1+i*0.3,1.1);
+      $('rkb'+i).style.width = (p*pct)+'%';
+      $('rkp'+i).textContent = Math.round(p*pct)+'%';
+    });
+    rise($('s7cap'), at(u,4.8,0.7), 34);
+  }
+
+  // ── S8
+  { const u=t-S.s8[0];
+    pop($('s8logo'), at(u,0.05,0.7));
+    rise($('s8h'),   at(u,0.5,0.8), 44);
+    rise($('s8s'),   at(u,1.2,0.7), 30);
+  }
+}
+
+window.__seek = t => { render(t); return true; };
+window.__DUR = DUR;
+
+// preview no navegador: ?play=1 roda em tempo real e repete
+if (location.search.includes('play')) {
+  let t0=null;
+  const loop = ts => { if(t0===null) t0=ts; render(((ts-t0)/1000)%DUR); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+} else {
+  render(0);
+}
+</script>
+</body>
+</html>
