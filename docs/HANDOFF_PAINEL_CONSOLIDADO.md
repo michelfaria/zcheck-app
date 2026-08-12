@@ -1,7 +1,8 @@
 # HANDOFF — Painel consolidado (Painel + J.I.T. + Dados)
 
 > Ponto de partida para uma sessão nova sobre a aba Painel. Autossuficiente.
-> Última atualização: **12/08/2026**. `main` = `5e106be`, empurrado e **em produção**.
+> Última atualização: **12/08/2026**. `main` = `f6dfac1`, empurrado e **em produção**,
+> com o layout de 5 cartões aprovado pelo dono do produto.
 
 ---
 
