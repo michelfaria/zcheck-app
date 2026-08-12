@@ -475,13 +475,52 @@ const menuItem = {
 
 const WEEKDAY_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
-export function PainelConsolidado({
+/**
+ * A aba, e a decisão de QUEM paga o motor analítico.
+ *
+ * `useRelatorio` deriva `filtered`, `summary`, `groups`, `collaborators` e a
+ * produtividade da empresa inteira. Hook não pode ser condicional, então
+ * chamá-lo no corpo da aba fazia esse cálculo rodar a cada render **para todo
+ * papel** — inclusive para o colaborador, que não vê um único número dele. Não
+ * era vazamento (nada renderiza fora do gate, e `tests/painel-render.spec.mjs`
+ * prova isso a cada commit); era conta paga no aparelho de quem não pediu, e o
+ * custo cresce com o tamanho do tenant.
+ *
+ * A regra "hook não pode ser condicional" vale DENTRO de um componente. Um
+ * componente inteiro pode ser renderizado condicionalmente — e é isso aqui: o
+ * hook mudou de endereço para um componente que só monta para MANAGER_ROLES.
+ * Para o colaborador, `rel` chega `null` e nenhum dos dois consumidores existe.
+ */
+export function PainelConsolidado(props) {
+  return MANAGER_ROLES.includes(props.currentUser?.role)
+    ? <PainelComRelatorio {...props} />
+    : <PainelCorpo {...props} rel={null} relProps={null} />;
+}
+
+/** Só monta para gestão — é aqui, e só aqui, que o motor analítico roda. */
+function PainelComRelatorio(props) {
+  const {
+    unit, templates, completions, closures, users, canSeeAllUnits,
+    allUnitsSelected = false, currentUser, onReview, disputes = [], onResolveDispute,
+    activeTypes = CHECKLIST_TYPE_ORDER,
+  } = props;
+  const relProps = {
+    unit, templates, completions, closures, users, canSeeAllUnits,
+    allUnitsSelected, currentUser, onReview, disputes, onResolveDispute, activeTypes,
+  };
+  const rel = useRelatorio(relProps);
+  return <PainelCorpo {...props} rel={rel} relProps={relProps} />;
+}
+
+function PainelCorpo({
   unit, templates, completions, closures, canSeeAllUnits, currentUser, users,
   activeTypes = CHECKLIST_TYPE_ORDER,
   // Registro AGORA — tudo vem do mesmo `buildJit` que alimenta a aba J.I.T.
   jit, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate,
   // Segmento analítico — os mesmos contratos que a aba Dados recebe hoje.
   allUnitsSelected = false, onReview, disputes = [], onResolveDispute,
+  // Vêm de `PainelComRelatorio`; `null` para quem não é gestão.
+  rel, relProps,
 }) {
   const units = useUnits();
   const sectorRows = useSectors();
@@ -497,18 +536,6 @@ export function PainelConsolidado({
    * dado que ele não tem hoje, porque um dia esse dado passa a existir.
    */
   const isManager = MANAGER_ROLES.includes(currentUser?.role);
-
-  /**
-   * O motor da aba Dados, compartilhado. O hook roda para TODO papel porque não
-   * pode ser condicional — mas nada do que ele devolve é renderizado fora do
-   * `{isManager && …}` da seção 5, e a fila de Conferir tem gate próprio
-   * (`canReview`, que o hook já calcula com `MANAGER_ROLES`).
-   */
-  const relProps = {
-    unit, templates, completions, closures, users, canSeeAllUnits,
-    allUnitsSelected, currentUser, onReview, disputes, onResolveDispute, activeTypes,
-  };
-  const rel = useRelatorio(relProps);
 
   const sectors = currentUser?.sectorId
     ? visibleSectors(unit, currentUser.sectorId, sectorRows)

@@ -70,9 +70,6 @@ const EMPRESAS = {
 1. Logo unificado — landing page `height: 32px`, login `width: 200px` — alinhar tamanho
 2. Ícones dos cards de benefícios na landing page — cada um com ícone diferente
 3. Identidade visual interna — app ainda com estilo antigo; não aplicar sem cuidado (quebrou antes)
-3b. `useRelatorio` roda para todo papel (hook não pode ser condicional). Não
-   vaza — o teste de renderização prova — mas gasta cálculo em quem não vê nada.
-   A correção é um provider que sirva o AGORA e o segmento com o mesmo `rel`
 4. Login email+senha para contas de gestão
 5. Empresas no Supabase — tirar o mapeamento hardcoded de `entrar/page.js`
 6. Página `/entrar` — link no header da landing page apontando para ela (botão "Acessar" já aponta)
@@ -97,8 +94,17 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` sozinho roda os dois
-de node: conferência e **renderização** (`tests/painel-render.spec.mjs`).
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os quatro de node:
+
+| Teste | O que prova |
+|---|---|
+| `conferencia.spec.mjs` | ordem da fila de conferência |
+| `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — é a prova da fronteira de acesso, e conta que o motor analítico não roda para colaborador |
+| `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
+| `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
+
+Os três últimos montam componentes de verdade (jsdom + esbuild) e **não precisam
+de sessão logada** — que é o que impede o Playwright de cobrir tela logada.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
