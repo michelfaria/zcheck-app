@@ -147,7 +147,7 @@ monta a tela inteira, que é como o teste verifica que a fatia não escondeu nad
 
 ```bash
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
-npx playwright test tests/dates.spec.js tests/rounds.spec.js --reporter=line
+npx playwright test tests/dates.spec.js tests/rounds.spec.js tests/checklists.spec.js --reporter=line
 ```
 
 | Teste | O que prova |
@@ -156,7 +156,7 @@ npx playwright test tests/dates.spec.js tests/rounds.spec.js --reporter=line
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — a fronteira de acesso, e que o motor não roda para colaborador |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
-| dates + rounds (Playwright) | 71 casos de fuso e de rodada |
+| dates + rounds + checklists (Playwright) | 92 casos de fuso, de rodada e de pendência arrastada |
 
 Os três de renderização/DOM montam componentes de verdade (jsdom + esbuild) e
 **não precisam de sessão logada** — que é o que impede o Playwright de cobrir
