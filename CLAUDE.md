@@ -84,6 +84,14 @@ const EMPRESAS = {
   usa o fuso de quem abriu o painel, não o da loja que executou
 - `globals.css` deve ter `@tailwind` — se quebrar, restaurar com `git show HEAD:ibr-checklists-app/app/globals.css`
 - git root está em `/Users/michelfaria/Documents/Site ZCheck` — não em `ibr-checklists-app/`
+- **Nunca `git add -A` nem `git add .`** — estagiar sempre por caminho. A raiz
+  guarda material que não é código (`video-colaboradores/` com 43MB de MP4,
+  `_baseline/` com PDFs de desempenho de gente real) e o repositório é PÚBLICO.
+  Em 11/08/2026 um `git add -A` varreu 43MB de vídeo untracked para dois commits;
+  só foi pego lendo o resumo do merge, antes do push. Binário em git é
+  permanente: `git rm` depois não tira do histórico nem encolhe o clone.
+  Antes de publicar, conferir o que sai:
+  `git diff --name-only origin/main..main`
 - Não mexer em `borderRadius` globalmente — quebra o layout dos cards
 - Deploy: `cd ibr-checklists-app && npx vercel --prod`
 - `ibr-checklists-app-codex-update/` é uma cópia paralela — o projeto ativo é `ibr-checklists-app/`
