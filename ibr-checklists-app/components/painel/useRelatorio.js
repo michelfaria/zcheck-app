@@ -26,7 +26,7 @@
 import { useState, useEffect } from 'react';
 import { todayStr, tzOf } from '../../lib/dates';
 import { latestPerRound, roundKey } from '../../lib/rounds';
-import { CHECKLIST_TYPE_ORDER, isUnitClosed } from '../../lib/checklists';
+import { CHECKLIST_TYPE_ORDER, completeRoundChecker, isUnitClosed } from '../../lib/checklists';
 import {
   PERIODS, periodDates, filterCompletions, countApplicableTemplatesOnDate,
   summarizeCompletions, collaboratorStats, groupStats, computeProductivity,
@@ -140,6 +140,26 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
   const expectedChecklists = openDates.reduce((sum, d) => sum + countApplicableTemplatesOnDate(templates, reportFilter, d), 0);
   const numDays = effectiveDates.length;
   const checklistRate = expectedChecklists ? (summary.checklists / expectedChecklists) * 100 : null;
+
+  /**
+   * "Checklists 100%" — o terceiro nome do Conjunto A (§B.6), que até 12/08/2026
+   * não tinha onde morar.
+   *
+   * `summary.checklists` é `filtered.length`: rodadas ENTREGUES, completas ou
+   * parciais. Um checklist aberto e submetido pela metade conta ali. Então
+   * `checklistRate` responde "quanto do previsto foi entregue", e NÃO "quanto do
+   * previsto foi terminado" — duas perguntas que o mesmo cartão vinha
+   * respondendo como se fossem uma.
+   *
+   * `completeRoundChecker` é o MESMO predicado que o `buildJit` usa para separar
+   * `yDone` de `yPartial`. Usá-lo aqui é o que faz este número ser o irmão de
+   * período do `yAdherence` que o registro AGORA já mostra para ontem — se
+   * fossem contas diferentes, as duas partes da mesma tela se contradiriam, que
+   * é o defeito que a consolidação inteira existiu para eliminar.
+   */
+  const ehCompleta = completeRoundChecker(templates);
+  const checklistsCompletos = filtered.filter(ehCompleta).length;
+  const taxaCompletos = expectedChecklists ? (checklistsCompletos / expectedChecklists) * 100 : null;
 
   // IBR1 uses sector groups (Salão/Cozinha); IBR2/IBR3 use individual sectors.
   // Sem loja selecionada (rede inteira), a lista é a UNIÃO dos setores — senão
@@ -311,7 +331,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
   .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: white; background: ${unitColor}; }
 
   /* Summary cards */
-  .cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 28px; }
+  .cards { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 28px; }
   .card { border: 1.5px solid #E2EAF0; border-radius: 10px; padding: 14px 12px; }
   .card-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: #6B8299; font-weight: 700; }
   .card-value { font-size: 28px; font-weight: 800; color: #063C5C; margin: 6px 0 2px; line-height: 1; }
@@ -358,14 +378,19 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
   <!-- Summary cards -->
   <div class="cards">
     <div class="card highlight">
-      <div class="card-label">Realização geral</div>
+      <div class="card-label">Feito do entregue</div>
       <div class="card-value">${summary.rate.toFixed(0)}%</div>
-      <div class="card-sub">${summary.doneItems} de ${summary.totalItems} tarefas</div>
+      <div class="card-sub">${summary.doneItems} de ${summary.totalItems} tarefas entregues</div>
     </div>
     <div class="card">
-      <div class="card-label">Checklists</div>
+      <div class="card-label">Checklists entregues</div>
       <div class="card-value">${summary.checklists}${expectedChecklists > 0 ? `<span style="font-size:14px;color:#6B8299">/${expectedChecklists}</span>` : ''}</div>
-      <div class="card-sub">${checklistRate != null ? checklistRate.toFixed(0) + '% do esperado' : 'concluídos'}</div>
+      <div class="card-sub">${checklistRate != null ? checklistRate.toFixed(0) + '% do previsto' : 'entregues'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Checklists 100%</div>
+      <div class="card-value">${checklistsCompletos}${expectedChecklists > 0 ? `<span style="font-size:14px;color:#6B8299">/${expectedChecklists}</span>` : ''}</div>
+      <div class="card-sub">${taxaCompletos != null ? taxaCompletos.toFixed(0) + '% do previsto, sem pendência' : 'terminados'}</div>
     </div>
     <div class="card" style="${summary.criticalPending > 0 ? 'border-color:#D1462F' : ''}">
       <div class="card-label">Críticos pend.</div>
@@ -453,6 +478,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
 
   return {
     canReview, checklistRate, collaborators, customFrom, customTo, dates, execPage,
+    checklistsCompletos, taxaCompletos,
     expectedChecklists, exportCSV, exportPDF, filterSector, filterUnitId, filterUserId,
     filtered, groupBy, groups, numDays, period, prod, prodCollabs, prodSectors, prodUnits,
     reexecucoes, reportTz, reviewing, sectorOptions, selectedMonth, setCustomFrom, setCustomTo,

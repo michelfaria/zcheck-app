@@ -864,7 +864,8 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
  */
 export function ReportsBody({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, disputes = [], onResolveDispute, activeTypes = CHECKLIST_TYPE_ORDER, rel, segment = null, embedded = false }) {
   const {
-    canReview, checklistRate, collaborators, customFrom, customTo, execPage,
+    canReview, checklistRate, checklistsCompletos, taxaCompletos,
+    collaborators, customFrom, customTo, execPage,
     expectedChecklists, exportCSV, exportPDF, filterSector, filterUnitId, filterUserId,
     filtered, groupBy, groups, numDays, period, prod, prodCollabs, prodSectors, prodUnits,
     reexecucoes, reportTz, reviewing, sectorOptions, selectedMonth, setCustomFrom, setCustomTo,
@@ -997,11 +998,23 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
       })()}
 
       {emAnalise && (<>
-      {seg('tendencia') && (<div className="grid grid-cols-2 gap-2">
+      {seg('tendencia') && (<div className="grid grid-cols-2 gap-2 zc-stats-5">
+        {/* "Entregues", não "concluídos": este número conta rodada submetida,
+            completa OU parcial. O rótulo antigo dizia concluído para checklist
+            entregue pela metade. O NÚMERO não mudou — só parou de mentir. */}
         <StatCard
-          label="Checklists concluídos" accent={unit.color}
+          label="Checklists entregues" accent={unit.color}
           value={expectedChecklists > 0 ? `${summary.checklists}/${expectedChecklists}` : summary.checklists}
-          sub={checklistRate != null ? `${checklistRate.toFixed(0)}% do esperado no período` : `${numDays || 0} dia(s) com registros`}
+          sub={checklistRate != null ? `${checklistRate.toFixed(0)}% do previsto no período` : `${numDays || 0} dia(s) com registros`}
+        />
+        {/* "Checklists 100%" (Conjunto A, §B.6): dos previstos, quantos foram
+            TERMINADOS. É o irmão de período do `yAdherence` que o registro AGORA
+            mostra para ontem — mesmo predicado, mesma conta. A distância entre
+            este e o de cima é o tamanho do trabalho entregue pela metade. */}
+        <StatCard
+          label="Checklists 100%" accent={unit.color}
+          value={expectedChecklists > 0 ? `${checklistsCompletos}/${expectedChecklists}` : checklistsCompletos}
+          sub={taxaCompletos != null ? `${taxaCompletos.toFixed(0)}% do previsto, sem pendência` : 'previsto do período desconhecido'}
         />
         {/* "Feito do entregue" (Conjunto A, §B.6): tarefas feitas ÷ tarefas
             SUBMETIDAS. Quase sempre perto de 100%, porque quem não abriu o

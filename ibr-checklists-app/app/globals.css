@@ -406,6 +406,10 @@ input, textarea, button, select {
   }
   /* Os 4 StatCards eram 2×2 mesmo em 1440px. */
   .zc-rep-results .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* Com o cartão "Checklists 100%" são CINCO, e a regra acima deixaria o quinto
+     órfão numa segunda linha. Classe própria em vez de mexer na de cima: a de
+     cima ainda vale para qualquer outro grid de 4 dentro dos resultados. */
+  .zc-rep-results .grid.zc-stats-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
   /* Caminhos que só existem no celular. No desktop o rail lateral já leva
      ao destino, e um segundo caminho para o mesmo lugar é ruído. */

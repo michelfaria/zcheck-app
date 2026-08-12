@@ -54,34 +54,37 @@ para quem não vê análise.
 
 ## 3. Pendências
 
-### 3.1 Decisão de produto em aberto
+### 3.1 ✅ Resolvido em 12/08/2026 — o Conjunto A está completo
 
-**"Checklists 100%" não tem onde morar.** O Conjunto A de rótulos (§B.6) previa
-três nomes; só dois foram aplicados, porque o terceiro não corresponde a nenhum
-cartão existente:
+Os três nomes de §B.6 estão na tela E no PDF:
 
-| Rótulo | Onde está |
-|---|---|
-| **Feito do previsto** | score de 56px do registro DIA ✅ |
-| **Feito do entregue** | StatCard antes "Tarefas concluídas" ✅ |
-| **Checklists 100%** | **em lugar nenhum** |
+| Rótulo | Onde | Conta |
+|---|---|---|
+| **Feito do previsto** | score de 56px do registro DIA | tarefas feitas ÷ previstas |
+| **Feito do entregue** | StatCard (era "Tarefas concluídas") | tarefas feitas ÷ submetidas |
+| **Checklists 100%** | StatCard **novo**, em Tendência | rodadas TERMINADAS ÷ previstas |
 
-Ao aplicar, descobriu-se que `summary.checklists` é `filtered.length` — rodadas
-**entregues**, completas ou parciais. O cartão `128/156` mede *entregues ÷
-previstos*, que não é "checklists 100%". Rotulá-lo assim colaria nome errado num
-número, que é o defeito que §B.6 existe para eliminar.
+O que destravou: `summary.checklists` é `filtered.length` — rodadas **entregues**,
+completas ou parciais. O cartão `128/156` sempre mediu *entregues ÷ previstos*, e
+o rótulo "Checklists concluídos" chamava de concluído o checklist entregue pela
+metade. Ele virou **"Checklists entregues"** — mesmo número, sem a mentira — e o
+estrito ganhou cartão próprio.
 
-A métrica real ("checklists 100% ÷ previstos") é o `yAdherence` do `buildJit`, e
-vive nos registros AGORA/DIA. Ou ela ganha cartão próprio — e aí é preciso
-decidir se entra no PDF, o que muda o baseline de propósito — ou o nome fica sem
-uso. **Ninguém decidiu.**
+O cartão novo usa `completeRoundChecker`, o **mesmo predicado** que o `buildJit`
+usa para separar `yDone` de `yPartial`. É o irmão de período do `yAdherence` que
+o registro AGORA já mostra para ontem; contas diferentes fariam as duas metades
+da mesma tela se contradizerem.
+
+> ⚠️ **O PDF mudou de propósito: passou de 4 para 5 cartões e dois rótulos foram
+> renomeados.** Os baselines em `_baseline/` são da era de 4 cartões e **não
+> servem mais para comparação visual** — os NÚMEROS continuam válidos. Capturar um
+> baseline novo antes da próxima mudança em `exportPDF`.
+
+A distância entre "entregues" e "100%" é o tamanho do trabalho entregue pela
+metade — número que antes não existia em lugar nenhum.
 
 ### 3.2 Dívida técnica registrada
 
-- **O rótulo do PDF não foi renomeado.** §E.3 previa que "Realização geral"
-  virasse "Feito do entregue". Não foi feito porque o PDF era o portão de
-  não-regressão da fase, e mudá-lo no mesmo commit destruiria o portão. Agora que
-  a fase fechou, é seguro — só precisa de um novo baseline depois.
 - **Sem teste de LAYOUT.** `painel-render.spec.mjs` afirma presença e ausência de
   bloco, não largura nem espaçamento. O bug do grid de 280px ele pega porque
   virou asserção sobre a classe do root; um problema visual novo passaria.

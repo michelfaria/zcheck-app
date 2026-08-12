@@ -135,6 +135,14 @@ console.log('═══ segmentos do Painel (embedded) ═══');
 
 const tendencia = render({ embedded: true, segment: 'tendencia' });
 check(tem(tendencia, 'Feito do entregue'), 'Tendência traz os StatCards');
+// Os três nomes do Conjunto A (§B.6). "Checklists entregues" conta rodada
+// submetida, completa ou parcial; "Checklists 100%" conta só as terminadas. A
+// distância entre os dois é o tamanho do trabalho entregue pela metade — e foi
+// exatamente essa distância que o rótulo antigo ("Checklists concluídos")
+// escondia, chamando de concluído o que estava pela metade.
+check(tem(tendencia, 'Checklists 100%'), 'Tendência traz o cartão "Checklists 100%"');
+check(tem(tendencia, 'Checklists entregues'), 'Tendência traz "Checklists entregues"');
+check(!tem(tendencia, 'Checklists concluídos'), 'o rótulo antigo, que chamava parcial de concluído, sumiu');
 check(tem(tendencia, 'dia da semana') || tem(tendencia, 'DESEMPENHO POR DIA'), 'Tendência traz o dia da semana');
 check(!tem(tendencia, 'Nível de realização por colaborador'), 'Tendência NÃO traz o bloco de pessoas');
 check(!tem(tendencia, 'Execuções do período'), 'Tendência NÃO traz as execuções');
@@ -234,6 +242,7 @@ check(!tem(colab, 'Tendência') && !tem(colab, 'Registros'), 'SEGMENTO: sem as t
 check(!tem(colab, 'Exportar'), 'SEGMENTO: sem exportação');
 check(!tem(colab, 'Execuções do período'), 'SEGMENTO: sem a lista de execuções');
 check(!tem(colab, 'Histórico de notificações'), 'SEGMENTO: sem histórico de notificações');
+check(!tem(colab, 'Checklists 100%'), 'SEGMENTO: sem o cartão de checklists 100%');
 check(!tem(colab, 'Conferido por') && !tem(colab, 'Conferir'), 'AGORA: sem a fila de conferência');
 
 console.log('\n═══ o motor analítico não roda para o colaborador ═══');
