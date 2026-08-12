@@ -1,7 +1,7 @@
 /**
- * Teste de RENDERIZAÇÃO do editor de tarefa — a flag de carryover.
+ * Teste de RENDERIZAÇÃO do carryover — o editor e a tela de execução.
  *
- *   cd ibr-checklists-app && node tests/editor-item-render.spec.mjs
+ *   cd ibr-checklists-app && node tests/carryover-render.spec.mjs
  *
  * Existe pela armadilha nº 1 do HANDOFF_PAINEL_CONSOLIDADO: build limpo não
  * prova que a tela renderiza. A função `pendenciasArrastadas` tem 21 casos em
@@ -34,7 +34,7 @@ await mkdir(dir, { recursive: true });
 const entry = join(dir, 'entry.js');
 const out = join(dir, 'bundle.mjs');
 await writeFile(entry, `
-  export { TemplateEditor } from '${process.cwd()}/app/app/page.js';
+  export { TemplateEditor, ExecutionScreen } from '${process.cwd()}/app/app/page.js';
 `);
 await build({
   entryPoints: [entry], outfile: out, bundle: true, format: 'esm',
@@ -43,7 +43,7 @@ await build({
   external: ['react', 'react-dom', 'react/jsx-runtime'],
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 });
-const { TemplateEditor } = await import(out);
+const { TemplateEditor, ExecutionScreen } = await import(out);
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 const unit = { id: 'u1', name: 'Loja Teste', color: '#8a2be2', sectors: ['Cozinha'], timezone: 'America/Sao_Paulo' };
@@ -83,6 +83,66 @@ const S = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 check(S.every((_, i) => ligada.includes(`>${S[i]}</button>`)), 'os sete botões de dia da semana sobreviveram');
 check(ligada.includes('Apenas: Seg, Qua, Sex'), 'o resumo da recorrência continua correto');
 check(pintar({ ...itemBase, recurrence: null }).includes('Todos os dias'), 'e o caso "todos os dias" também');
+
+/**
+ * A tela de EXECUÇÃO — onde o carryover finalmente vira trabalho.
+ *
+ * Aqui mora o defeito que nenhum teste de lógica pega: a função pode devolver
+ * a pendência certa e a linha não pintar, ou pintar sem o carimbo de origem —
+ * e aí a tarefa atrasada se confunde com a rotina do dia, que é justamente o
+ * que o carryover existe para evitar.
+ *
+ * Calendário: 2026-08-03 é SEGUNDA. A coifa é seg/qua/sex com `carryover`.
+ * `hoje` é fixado pela data do sistema, então os casos usam datas relativas a
+ * ele — o que importa é a RELAÇÃO entre os dias, não o dia do calendário.
+ */
+const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+const menosDias = (d, n) => {
+  const x = new Date(`${d}T12:00:00Z`);
+  x.setUTCDate(x.getUTCDate() - n);
+  return x.toISOString().slice(0, 10);
+};
+const ontem = menosDias(hoje, 1);
+const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+const execucao = (items, completions = []) => renderToStaticMarkup(h(ExecutionScreen, {
+  unit, currentUser: { id: 'u9', name: 'Ana' },
+  template: { id: 'limpeza', unitId: 'u1', sector: 'Cozinha', name: 'Limpeza — Cozinha', deadline: '18:00', items },
+  completions, closures: [],
+  onCancel: () => {}, onComplete: () => {}, onDone: () => {},
+}));
+
+// Diária sem flag + tarefa arrastável que era prevista ONTEM e não foi feita.
+const diaria = { id: 'chao', text: 'Lavar o chão' };
+const coifa = (over = {}) => ({
+  id: 'coifa', text: 'Limpar a coifa',
+  recurrence: [new Date(`${ontem}T12:00:00Z`).getUTCDay()],
+  carryover: true, carryoverSince: menosDias(hoje, 30), ...over,
+});
+
+console.log('\ntela de execução — a tarefa arrastada');
+
+const comDivida = execucao([diaria, coifa()]);
+check(comDivida.includes('Limpar a coifa'), 'a tarefa de ontem aparece hoje, mesmo não sendo dia dela');
+check(comDivida.includes(`Pendente desde ${ddmm(ontem)}`), 'com o carimbo de origem, em dd/mm');
+check(comDivida.indexOf('Limpar a coifa') < comDivida.indexOf('Lavar o chão'), 'e vem antes da rotina do dia');
+
+// Feita ontem: nada a cobrar — a tela volta a ser só a rotina.
+const quitada = execucao([diaria, coifa()], [{
+  id: 'c1', templateId: 'limpeza', unitId: 'u1', date: ontem,
+  completedAt: `${ontem}T20:00:00Z`, items: [{ id: 'coifa', done: true }],
+}]);
+check(!quitada.includes('Limpar a coifa'), 'executada ontem, não volta hoje');
+check(!quitada.includes('Pendente desde'), 'e nenhum carimbo sobra na tela');
+
+// Tarefa do dia não pode ganhar carimbo: ele é a marca da exceção.
+const soRotina = execucao([diaria]);
+check(soRotina.includes('Lavar o chão'), 'a rotina do dia continua aparecendo');
+check(!soRotina.includes('Pendente desde'), 'sem dívida, nenhuma linha se diz atrasada');
+
+// O contador do rodapé conta o que está na tela — se ele ignorasse a
+// arrastada, a pessoa fecharia o checklist com uma tarefa invisível pendente.
+check(comDivida.includes('0 de 2 concluídos'), 'o rodapé conta a arrastada junto com a do dia');
 
 console.log(ok ? '\n  ✅ PASSOU\n' : '\n  ❌ FALHOU\n');
 process.exit(ok ? 0 : 1);

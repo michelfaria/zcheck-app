@@ -243,6 +243,49 @@ export function pendenciasArrastadas(template, completions, closures, dateStr, t
   return out;
 }
 
+/**
+ * O que o operador executa hoje: as tarefas previstas MAIS as arrastadas.
+ *
+ * É a única fonte da lista de execução desde o carryover. `applicableItems`
+ * continua respondendo "o que o CALENDÁRIO prevê para este dia" — e é ela que
+ * a aderência usa; esta responde "o que há para fazer", que passou a ser outra
+ * coisa no dia em que a dívida de ontem virou trabalho de hoje.
+ *
+ * INSTÂNCIA ÚNICA: tarefa que já é prevista hoje E tem dívida antiga aparece
+ * UMA vez, carregando a origem mais antiga. A alternativa — duas linhas iguais,
+ * uma "de hoje" e outra "de segunda" — obrigaria o operador a escolher qual
+ * marcar para um serviço que ele faz uma vez só.
+ *
+ * `carriedFrom` (e `diasArrastado`) vão anexados ao item, não numa lista à
+ * parte: quem renderiza a linha precisa do carimbo ali, e quem grava a
+ * submissão o copia para o registro sem ter que cruzar duas estruturas.
+ *
+ * A ORDEM coloca as arrastadas primeiro. Elas são a exceção do dia, e o que se
+ * quer é que a pessoa esbarre nelas antes da rotina que já conhece de cor.
+ */
+export function itensDoDia(template, completions, closures, dateStr, teto = 7) {
+  const previstos = applicableItems(template, dateStr);
+  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto);
+  if (!dividas.length) return previstos;
+
+  const porItem = new Map(dividas.map(d => [d.itemId, d]));
+  const marcados = previstos.map(i => {
+    const d = porItem.get(i.id);
+    return d ? { ...i, carriedFrom: d.dataOriginal, diasArrastado: d.diasArrastado } : i;
+  });
+  const jaNaLista = new Set(previstos.map(i => i.id));
+  const extras = dividas
+    .filter(d => !jaNaLista.has(d.itemId))
+    .map(d => {
+      const base = template.items.find(i => i.id === d.itemId);
+      return base && { ...base, carriedFrom: d.dataOriginal, diasArrastado: d.diasArrastado };
+    })
+    .filter(Boolean);
+
+  const arrastados = i => (i.carriedFrom ? 0 : 1);
+  return [...extras, ...marcados].sort((a, b) => arrastados(a) - arrastados(b));
+}
+
 // Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de
 // só "parcial", que informa o estado mas não o tamanho do que falta.
 export function templateProgress(t, completions, today) {

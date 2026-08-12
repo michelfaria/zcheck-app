@@ -156,8 +156,8 @@ npx playwright test tests/dates.spec.js tests/rounds.spec.js tests/checklists.sp
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — a fronteira de acesso, e que o motor não roda para colaborador |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
-| `editor-item-render.spec.mjs` | o controle de carryover pinta no editor de tarefa e reflete o item — a feature fica inerte se ele não aparecer |
-| dates + rounds + checklists + csvimport (Playwright) | 101 casos de fuso, de rodada, de pendência arrastada e de importação |
+| `carryover-render.spec.mjs` | o controle de carryover pinta no editor **e** a tarefa arrastada aparece na tela de execução, com o carimbo de origem |
+| dates + rounds + checklists + csvimport (Playwright) | 111 casos de fuso, de rodada, de pendência arrastada e de importação |
 
 Os de renderização/DOM montam componentes de verdade (jsdom/SSR + esbuild) e
 **não precisam de sessão logada** — que é o que impede o Playwright de cobrir

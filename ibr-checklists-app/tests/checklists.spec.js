@@ -187,3 +187,90 @@ test.describe('pendências arrastadas', () => {
   });
 });
 
+/**
+ * A LISTA DE EXECUÇÃO — previstas do dia + arrastadas, numa coisa só.
+ *
+ * É o que a tela do operador consome. O que se trava aqui é a instância única
+ * (tarefa devida hoje E atrasada aparece uma vez, com a origem antiga) e a
+ * ordem (a exceção antes da rotina).
+ */
+test.describe('itens do dia', () => {
+  const tpl = (over = {}) => ({
+    id: 'limpeza', unitId: 'ibr1', name: 'Limpeza — Cozinha',
+    items: [
+      { id: 'chao',  text: 'Lavar o chão' },                                                          // diária, sem flag
+      { id: 'coifa', text: 'Limpar a coifa', recurrence: [1, 3, 5], carryover: true, carryoverSince: '2026-08-03' },
+    ],
+    ...over,
+  });
+  const feita = (date, itemIds) => ({
+    id: `c-${date}`, templateId: 'limpeza', unitId: 'ibr1', date,
+    completedAt: `${date}T20:00:00Z`,
+    items: [{ id: 'coifa', done: itemIds.includes('coifa') }, { id: 'chao', done: itemIds.includes('chao') }],
+  });
+
+  test('sem dívida, é exatamente o que o calendário prevê', () => {
+    // Terça: só a diária. A coifa não é prevista e não deve nada (feita na seg).
+    const r = checklists.itensDoDia(tpl(), [feita('2026-08-03', ['coifa'])], [], '2026-08-04');
+    expect(r.map(i => i.id)).toEqual(['chao']);
+    expect(r[0].carriedFrom).toBeUndefined();
+  });
+
+  test('a arrastada ENTRA num dia em que não era prevista', () => {
+    // Terça, coifa não feita na segunda: aparece, mesmo sem ser dia dela.
+    const r = checklists.itensDoDia(tpl(), [], [], '2026-08-04');
+    expect(r.map(i => i.id)).toEqual(['coifa', 'chao']);
+    expect(r[0].carriedFrom).toBe('2026-08-03');
+    expect(r[0].diasArrastado).toBe(1);
+  });
+
+  test('a arrastada vem PRIMEIRO — a exceção antes da rotina', () => {
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04')[0].id).toBe('coifa');
+  });
+
+  test('instância única: devida hoje E atrasada aparece UMA vez, com a origem', () => {
+    // Quarta é dia da coifa, e a de segunda continua devida.
+    const r = checklists.itensDoDia(tpl(), [], [], '2026-08-05');
+    expect(r.filter(i => i.id === 'coifa')).toHaveLength(1);
+    expect(r.find(i => i.id === 'coifa').carriedFrom).toBe('2026-08-03');
+    expect(r.map(i => i.id).sort()).toEqual(['chao', 'coifa']);
+  });
+
+  test('o item arrastado carrega o conteúdo original, não um esqueleto', () => {
+    const r = checklists.itensDoDia(tpl(), [], [], '2026-08-04');
+    expect(r[0].text).toBe('Limpar a coifa');
+    expect(r[0].carryover).toBe(true);
+  });
+
+  test('checklist que só existe hoje por causa da dívida não vem vazio', () => {
+    // Sem itens diários: na terça o calendário não prevê nada, mas há dívida.
+    const soPeriodico = tpl({ items: [tpl().items[1]] });
+    expect(checklists.itensDoDia(soPeriodico, [], [], '2026-08-04').map(i => i.id)).toEqual(['coifa']);
+    // E com a dívida quitada, o checklist volta a não ter o que fazer.
+    expect(checklists.itensDoDia(soPeriodico, [feita('2026-08-03', ['coifa'])], [], '2026-08-04')).toEqual([]);
+  });
+
+  test('não inventa item que saiu do checklist', () => {
+    // Dívida de um item removido do template não pode virar linha na tela.
+    const semCoifa = tpl({ items: [tpl().items[0]] });
+    expect(checklists.itensDoDia(semCoifa, [], [], '2026-08-04').map(i => i.id)).toEqual(['chao']);
+  });
+
+  test('sem nenhuma tarefa arrastável, devolve a lista prevista intocada', () => {
+    const semFlag = tpl({ items: [{ id: 'chao', text: 'Lavar o chão' }] });
+    const r = checklists.itensDoDia(semFlag, [], [], '2026-08-04');
+    expect(r).toEqual(semFlag.items);
+  });
+
+  test('entradas vazias não derrubam a tela de execução', () => {
+    // `completions`/`closures` ausentes é o estado real do primeiro carregamento.
+    expect(checklists.itensDoDia(tpl(), null, null, '2026-08-04').map(i => i.id)).toEqual(['coifa', 'chao']);
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04', 0).map(i => i.id)).toEqual(['chao']);
+  });
+
+  test('folga no dia da dívida deixa a lista igual à prevista', () => {
+    const folga = [{ unitId: 'ibr1', date: '2026-08-03' }];
+    expect(checklists.itensDoDia(tpl(), [], folga, '2026-08-04').map(i => i.id)).toEqual(['chao']);
+  });
+});
+

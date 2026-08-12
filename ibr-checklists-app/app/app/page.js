@@ -47,9 +47,12 @@ import { gravidadeDe } from '../../lib/conferencia';
 // de análise dependiam deles, e nenhuma podia sair de page.js enquanto eles
 // vivessem no escopo de módulo daqui. Ver docs/PLANO_CONSOLIDACAO_ABAS.md.
 import {
-  CHECKLIST_TYPE_ORDER, matchesShift, isItemApplicable, applicableItems,
+  // `applicableItems` saiu daqui no carryover: a tela do operador passou a
+  // pedir `itensDoDia` (previstas + arrastadas). Quem ainda quer só o que o
+  // CALENDÁRIO prevê — a aderência — chama a original de lib/checklists.
+  CHECKLIST_TYPE_ORDER, matchesShift, isItemApplicable,
   templateAtiva, completeRoundChecker, completionOnTime,
-  isUnitClosed, templateStatus, templateProgress,
+  isUnitClosed, templateStatus, templateProgress, itensDoDia,
 } from '../../lib/checklists';
 import { UNITS } from '../../lib/units';
 import { visibleSectors } from '../../lib/sectors';
@@ -64,7 +67,7 @@ import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../compon
 // As views de análise que já saíram daqui (Fase 1b).
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
 import { PainelConsolidado } from '../../components/painel/PainelConsolidado';
-import { truncName } from '../../lib/format';
+import { truncName, ddmm } from '../../lib/format';
 import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
 import {
@@ -1001,6 +1004,19 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
             )}
           </div>
 
+          {/* Arrastada de um dia anterior. O carimbo diz DESDE QUANDO: sem ele
+              a linha se confunde com a rotina do dia, e o atraso — que é a
+              única razão de ela estar aqui — some da percepção de quem
+              executa. Também é o que o turno da manhã lê para saber que a
+              noite deixou passar, sem precisar de tela de gestão. */}
+          {item.carriedFrom && (
+            <p style={{ marginTop: 4, fontSize: T.label, fontWeight: W.semibold, color: C.critical, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} aria-hidden />
+              Pendente desde {ddmm(item.carriedFrom)}
+              {item.diasArrastado > 1 ? ` · ${item.diasArrastado} dias` : ''}
+            </p>
+          )}
+
           {showDesc && hasGuidance(item) && (
             <div style={{ marginTop: 8, padding: '10px 12px', background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {item.description && (
@@ -1239,16 +1255,42 @@ function ConfirmModal({ items, onCancel, onConfirm }) {
 
 /* ---------------------------- execution screen ----------------------------- */
 
-function ExecutionScreen({ template, unit, currentUser, completions, onCancel, onComplete, onDone }) {
+// Congelado fora do componente: se fosse um literal novo a cada chamada de
+// `estadoDe`, o item sem estado receberia um objeto diferente por render.
+const ESTADO_ITEM_VAZIO = Object.freeze({ done: false, note: '', photo: null });
+
+// Exportado para o teste de renderização alcançar a tela de execução sem
+// sessão logada (o mesmo motivo do `TemplateEditor`). Nada mais o importa.
+export function ExecutionScreen({ template, unit, currentUser, completions, closures, onCancel, onComplete, onDone }) {
   const [completionRecord, setCompletionRecord] = useState(null); // shows celebration when set
   // O dia gravado na execução é o da LOJA que a executou — é ele que o prazo,
   // o relatório e a aderência usam depois.
   const today = todayStr(tzOf(unit));
-  const items = applicableItems(template, today);
+  // Previstas do dia MAIS as arrastadas de dias anteriores (ver `itensDoDia`).
+  // Memorizado porque a varredura de carryover olha até 7 dias para trás e esta
+  // lista é lida a cada render — inclusive dentro do efeito de telemetria.
+  const items = useMemo(
+    () => itensDoDia(template, completions, closures, today),
+    [template, completions, closures, today],
+  );
 
   const [itemStates, setItemStates] = useState(() =>
     Object.fromEntries(items.map(i => [i.id, { done: false, note: '', photo: null }]))
   );
+  /**
+   * A lista pode CRESCER depois da montagem.
+   *
+   * `items` passou a depender de `completions`, que chega assíncrono: uma
+   * tarefa arrastada aparece quando o histórico carrega, já com a tela montada.
+   * O estado foi semeado uma vez só, na montagem, então esse item entra sem
+   * entrada em `itemStates` — e toda leitura direta (`.done`, `.note`,
+   * `.photo`) quebraria a linha. Semear por efeito não resolve: o render que
+   * introduz o item acontece ANTES de o efeito rodar.
+   *
+   * As escritas não precisam disso porque já usam spread (`{...s[id]}`), que
+   * tolera `undefined`.
+   */
+  const estadoDe = id => itemStates[id] || ESTADO_ITEM_VAZIO;
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
 
@@ -1312,7 +1354,7 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
   }, []);
 
   // Estado efetivo de conclusão: local OU compartilhado (por um colega em tempo real).
-  const effDone = id => itemStates[id]?.done || !!liveByItem[id]?.done;
+  const effDone = id => estadoDe(id).done || !!liveByItem[id]?.done;
 
   useEffect(() => {
     const carregar = () => fetchLiveTasks(template.id, unit.id, today).then(setLiveRaw);
@@ -1394,7 +1436,7 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
       setReopenTarget(item);
       return;
     }
-    const state = itemStates[item.id];
+    const state = estadoDe(item.id);
 
     // ── Desmarcar (só local: a rodada não tem esta tarefa como concluída) ──
     if (state.done) {
@@ -1506,20 +1548,26 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
       operatorUserId: currentUser.id,
       items: items.map(i => {
         const live = liveByItem[i.id];
-        const done = itemStates[i.id].done || !!live?.done;
+        const done = estadoDe(i.id).done || !!live?.done;
         // Evidência da RODADA, não só a minha: a observação e a foto que o
         // colega anexou entram no registro de quem submete. Sem isto, executar
         // a quatro mãos produzia um registro com metade da prova.
-        const note = (itemStates[i.id].note || '').trim() || live?.note || '';
+        const note = (estadoDe(i.id).note || '').trim() || live?.note || '';
         return {
           id: i.id, text: i.text, critical: i.critical, required: !!i.required,
           done, note,
-          hasPhoto: !!itemStates[i.id].photo || !!live?.photoPath,
+          hasPhoto: !!estadoDe(i.id).photo || !!live?.photoPath,
           // Atribuição individual (execução colaborativa): quem de fato concluiu
           // cada tarefa e quando — base da contagem por tarefa e da produtividade.
           doneBy: done ? (live?.operatorUserId || currentUser.id) : null,
           doneByName: done ? (live?.operatorName || currentUser.name) : null,
           doneAt: done ? (live?.completedAt || new Date().toISOString()) : null,
+          // De que dia esta tarefa veio, quando não é do dia. A quitação NÃO
+          // depende disto (ela é derivada de `done` por dia, em
+          // `pendenciasArrastadas`) — o carimbo existe para o registro contar a
+          // história: quem lê a conclusão depois vê que a tarefa estava
+          // atrasada, e quanto. `null` no caso normal para não inchar o JSONB.
+          carriedFrom: i.carriedFrom || null,
         };
       }),
     };
@@ -1538,7 +1586,7 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
 
     // Upload photos to Supabase Storage (falls back to local cache if offline)
     for (const i of items) {
-      const photo = itemStates[i.id].photo;
+      const photo = estadoDe(i.id).photo;
       if (photo) {
         try {
           await uploadPhoto(recordId, i.id, photo);
@@ -1580,7 +1628,7 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
     // Olhar só a minha travava quem NÃO tirou a foto — a pessoa via o item
     // concluído na tela e não conseguia fechar o checklist de jeito nenhum.
     const missingPhoto = items.find(i =>
-      i.photoRequired && !itemStates[i.id].photo && !liveByItem[i.id]?.photoPath && !liveByItem[i.id]?.done);
+      i.photoRequired && !estadoDe(i.id).photo && !liveByItem[i.id]?.photoPath && !liveByItem[i.id]?.done);
     if (missingPhoto) { setError(`Anexe a foto exigida em "${missingPhoto.text}".`); return; }
     setError('');
     if (pendingCritical.length > 0) { setShowConfirm(true); return; }
@@ -1670,7 +1718,7 @@ function ExecutionScreen({ template, unit, currentUser, completions, onCancel, o
       <div className="space-y-2">
         {items.map((item, idx) => (
           <ItemRow
-            key={item.id} item={item} state={itemStates[item.id]} accent={unit.color}
+            key={item.id} item={item} state={estadoDe(item.id)} accent={unit.color}
             locked={isLocked(idx)}
             liveInfo={liveByItem[item.id]} currentUserId={currentUser.id}
             onReopen={liveByItem[item.id]?.done ? () => setReopenTarget(item) : undefined}
@@ -1753,11 +1801,32 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   const sectorRows = useSectors();
   const sectors = visibleSectors(unit, currentUser?.sectorId, sectorRows);
 
+  /**
+   * O que há para fazer hoje em cada checklist — previstas + arrastadas.
+   *
+   * Calculado UMA vez por render, não por chamada: a varredura de carryover
+   * olha até 7 dias para trás por tarefa arrastável, e a lista de nível 1
+   * consulta todos os checklists uma vez por TIPO. Sem o mapa, um bar com 20
+   * checklists refazia a varredura 60 vezes a cada render.
+   *
+   * É o que decide se o checklist EXISTE hoje: um de seg/qua/sex com dívida da
+   * segunda precisa aparecer na terça, mesmo sem nada previsto para terça —
+   * era exatamente o buraco por onde a tarefa sumia.
+   */
+  const itensPorTemplate = useMemo(() => {
+    const m = new Map();
+    (templates || []).forEach(t => {
+      if (t.unitId === unit.id) m.set(t.id, itensDoDia(t, completions, closures, today));
+    });
+    return m;
+  }, [templates, completions, closures, unit.id, today]);
+  const itensDe = t => itensPorTemplate.get(t.id) || [];
+
   if (activeTemplate) {
     return (
       <ExecutionScreen
         template={activeTemplate} unit={unit} currentUser={currentUser}
-        completions={completions}
+        completions={completions} closures={closures}
         onCancel={() => setActiveTemplate(null)}
         onComplete={record => onSaveCompletion(record)}
         onDone={() => setActiveTemplate(null)}
@@ -1808,7 +1877,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
       t.unitId === unit.id &&
       sectors.includes(t.sector) &&
       typeConfig.match(t) &&
-      applicableItems(t, today).length > 0
+      itensDe(t).length > 0
     ).sort((a, b) => a.name.localeCompare(b.name));
 
     // Group by sector for IBR1 (has praças), flat for IBR2/3
@@ -1830,7 +1899,15 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
               {ts.map(t => {
                 const status = templateStatus(t, completions, today, tzOf(unit));
                 const prog = templateProgress(t, completions, today);
-                const count = applicableItems(t, today).length;
+                const doDia = itensDe(t);
+                const count = doDia.length;
+                // As arrastadas contam como trabalho a fazer (é o que a pessoa
+                // encontra ao abrir), mas NÃO entram em `prog`, que é a régua
+                // da aderência do dia. Por isso elas aparecem como parcela
+                // própria em vez de somadas no "X de Y": o cartão e a métrica
+                // discordarem em silêncio seria pior que os dois errados.
+                const atrasadas = doDia.filter(i => i.carriedFrom).length;
+                const selo = atrasadas ? ` · ${atrasadas} atrasada${atrasadas > 1 ? 's' : ''}` : '';
                 // Extract praça name — format is "Praça — Tipo (detalhes)"
                 const displayName = t.name.includes(' — ') ? t.name.split(' — ')[0] : t.sector;
                 return (
@@ -1843,8 +1920,8 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
                             {/* No parcial, o que importa é o TAMANHO do que falta —
                                 "Parcial" sozinho não diz se falta 1 ou 7. */}
                             {status === 'partial'
-                              ? `${prog.done} de ${prog.total} feitos${t.deadline ? ` · até ${t.deadline}` : ''}`
-                              : `${count} item${count > 1 ? 's' : ''} hoje${t.deadline ? ` · até ${t.deadline}` : ''}`}
+                              ? `${prog.done} de ${prog.total} feitos${selo}${t.deadline ? ` · até ${t.deadline}` : ''}`
+                              : `${count} item${count > 1 ? 's' : ''} hoje${selo}${t.deadline ? ` · até ${t.deadline}` : ''}`}
                           </p>
                         </div>
                         <StatusBadge status={status} />
@@ -1868,7 +1945,7 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
         {activeTypes.map(({ key, label, match }) => {
           const list = templates.filter(t =>
             templateAtiva(t) &&
-            t.unitId === unit.id && match(t) && applicableItems(t, today).length > 0 &&
+            t.unitId === unit.id && match(t) && itensDe(t).length > 0 &&
             sectors.includes(t.sector)
           );
           // Um status por checklist, calculado UMA vez: `templateStatus` agora
@@ -2046,7 +2123,7 @@ function ItemGuidanceEditor({ item, accent, apply }) {
   );
 }
 
-// Exportado para o teste de renderização (tests/editor-item-render.spec.mjs)
+// Exportado para o teste de renderização (tests/carryover-render.spec.mjs)
 // alcançar o editor de tarefa sem sessão logada. Nada mais o importa.
 export function TemplateEditor({ unit, sector, template, onSave, onCancel, checklistType, allTemplates }) {
   const [name, setName] = useState(template?.name || '');
