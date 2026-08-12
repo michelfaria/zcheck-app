@@ -89,13 +89,14 @@ uso. **Ninguém decidiu.**
 
 ### 3.3 Higiene, fora do código
 
-- **`ibr-checklists-app/.env 2.local`** — duplicata de conflito do iCloud. Já
-  ignorada por `.env*`, sem risco de commit. Comparada por nome de chave:
-  **nenhuma chave exclusiva**, e a única que tem (`VERCEL_OIDC_TOKEN`) é um token
-  efêmero que a CLI reescreve. **Apagar não perde nada — ainda não foi apagada,
-  faltou confirmação.**
+- ✅ **Resolvido:** as duplicatas de sincronia do iCloud foram apagadas e o padrão
+  `* [2-9]` entrou no `.gitignore`. Eram 11 arquivos, incluindo 43MB de MP4 que um
+  `git add -A` teria publicado. O `.env 2.local` também saiu — comparado por nome
+  de chave antes, sem chave exclusiva e com um `VERCEL_OIDC_TOKEN` já expirado.
 - **Duplicatas ` 2` dentro de `.next/`, `node_modules/` e dos worktrees de outras
-  sessões** não foram tocadas. São artefato de build ou não são nossas.
+  sessões** seguem lá, de propósito: são artefato de build ou não são nossas.
+- ⚠️ **O contador do iCloud incrementa.** O `.gitignore` cobre ` 2` a ` 9`, e o
+  comentário lá avisa que isso também engoliria um `Parte 2.md` legítimo.
 
 ---
 
