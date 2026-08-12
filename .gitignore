@@ -20,7 +20,10 @@ ibr-checklists-app-codex-update/
 # O repositorio e PUBLICO: estes arquivos NUNCA entram no git.
 _baseline/
 
-# Binário compilado de video-colaboradores/encode.swift. É artefato de build:
-# recompila com `swiftc encode.swift -o encode`, e um Mach-O versionado só serve
-# para sujar diff e engordar clone.
+# Artefatos de build de video-colaboradores/. Os dois são GERADOS e os geradores
+# estão versionados: `encode` sai de `encode.swift` (swiftc encode.swift -o
+# encode) e `video.html` sai de `video.template.html` (node build.js). Versionar
+# saída de build suja o diff a cada regeração e engorda o clone sem dar nada em
+# troca — o que precisa sobreviver é a fonte, e ela está aqui.
 video-colaboradores/encode
+video-colaboradores/video.html
