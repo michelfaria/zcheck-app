@@ -75,10 +75,24 @@ usa para separar `yDone` de `yPartial`. É o irmão de período do `yAdherence` 
 o registro AGORA já mostra para ontem; contas diferentes fariam as duas metades
 da mesma tela se contradizerem.
 
-> ⚠️ **O PDF mudou de propósito: passou de 4 para 5 cartões e dois rótulos foram
-> renomeados.** Os baselines em `_baseline/` são da era de 4 cartões e **não
-> servem mais para comparação visual** — os NÚMEROS continuam válidos. Capturar um
-> baseline novo antes da próxima mudança em `exportPDF`.
+> **O PDF mudou de propósito: 4 → 5 cartões, dois rótulos renomeados.** Baseline
+> novo capturado em 12/08/2026 11:03: `_baseline/POS-CHECKLISTS100 IBR2 - 30
+> dias.pdf`. Os anteriores são da era de 4 cartões — servem para conferir número,
+> não para comparação visual.
+
+**O primeiro número que o cartão novo deu (IBR2, 30 dias, 12/08):**
+
+| | |
+|---|---|
+| Checklists entregues | 138/169 · 82% |
+| Checklists 100% | **136**/169 · 80% |
+
+Diferença de **2**. A operação praticamente não deixa checklist pela metade — o
+que falta para os 100% é checklist que **ninguém abriu** (31 de 169), não
+trabalho malfeito. São problemas diferentes, com ações diferentes, e antes os
+dois moravam dentro do mesmo `82%` sem jeito de separar. `Feito do entregue`
+marcando 100% ao lado de `Checklists 100%` em 80% não é contradição: é a
+distinção que os nomes carregam.
 
 A distância entre "entregues" e "100%" é o tamanho do trabalho entregue pela
 metade — número que antes não existia em lugar nenhum.
