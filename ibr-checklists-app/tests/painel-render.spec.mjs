@@ -68,6 +68,33 @@ await build({
   // bundle ESM o esbuild troca isso por um shim que só sabe lançar erro — a não
   // ser que exista um `require` de verdade em escopo. Este banner cria um.
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+  /**
+   * Conta quantas vezes `useRelatorio` roda, SEM tocar no código de produção.
+   *
+   * O motor deriva `filtered`, `summary`, `groups`, `collaborators` e a
+   * produtividade da empresa inteira. Ele não pode rodar para o colaborador, que
+   * não vê um número dele — e "não renderiza" não é a mesma coisa que "não
+   * calcula". Só um contador distingue as duas.
+   */
+  plugins: [{
+    name: 'conta-useRelatorio',
+    setup(b) {
+      const real = `${process.cwd()}/components/painel/useRelatorio.js`;
+      // `null` para o que vem de DENTRO do wrapper: sem isso o import dele
+      // para o módulo real é reinterceptado e a função chama a si mesma.
+      b.onResolve({ filter: /useRelatorio(\.js)?$/ }, args => (
+        args.namespace === 'conta' ? null : { path: real, namespace: 'conta' }
+      ));
+      b.onLoad({ filter: /.*/, namespace: 'conta' }, () => ({
+        contents: `import { useRelatorio as _r } from ${JSON.stringify(real)};
+          export function useRelatorio(p) {
+            globalThis.__relCalls = (globalThis.__relCalls || 0) + 1;
+            return _r(p);
+          }`,
+        resolveDir: process.cwd(),
+      }));
+    },
+  }],
 });
 const { ReportsBody, useRelatorio, PainelConsolidado, buildJit, UnitsContext } = await import(out);
 
@@ -208,6 +235,19 @@ check(!tem(colab, 'Exportar'), 'SEGMENTO: sem exportação');
 check(!tem(colab, 'Execuções do período'), 'SEGMENTO: sem a lista de execuções');
 check(!tem(colab, 'Histórico de notificações'), 'SEGMENTO: sem histórico de notificações');
 check(!tem(colab, 'Conferido por') && !tem(colab, 'Conferir'), 'AGORA: sem a fila de conferência');
+
+console.log('\n═══ o motor analítico não roda para o colaborador ═══');
+// Regressão registrada como dívida da Fase 5 e paga depois: `useRelatorio`
+// vivia no corpo da aba e rodava para TODO papel, porque hook não pode ser
+// condicional. Passou para um componente que só monta para MANAGER_ROLES.
+globalThis.__relCalls = 0;
+painel(colaborador);
+check(globalThis.__relCalls === 0,
+  `useRelatorio NÃO é chamado para colaborador (foi ${globalThis.__relCalls}×)`);
+globalThis.__relCalls = 0;
+painel(gestor, { canSeeAllUnits: true });
+check(globalThis.__relCalls === 1,
+  `useRelatorio é chamado exatamente 1× para gestão (foi ${globalThis.__relCalls}×)`);
 
 console.log('\n═══ gestão vê o que o colaborador não vê ═══');
 const chefe = painel(gestor, { canSeeAllUnits: true });
