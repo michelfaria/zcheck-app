@@ -158,6 +158,7 @@ npx playwright test tests/dates.spec.js tests/rounds.spec.js tests/checklists.sp
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
 | `carryover-render.spec.mjs` | o controle de carryover pinta no editor **e** a tarefa arrastada aparece na tela de execução, com o carimbo de origem |
 | `carryover-ciclo.spec.mjs` | o CICLO com clique de verdade (jsdom): não feita ontem → cobrada hoje → executada → **não volta amanhã**. Fecha a alça alimentando a varredura com o registro que a própria tela produziu |
+| `notify-overdue/incompleto.test.mjs` | a régua de "previstas do dia" da edge function, lida do próprio `index.ts` — e que ela CONVIVE com o carryover sem alarme falso. Entrou no portão em 13/08 (rodava só à mão) |
 | dates + rounds + checklists + csvimport (Playwright) | 111 casos de fuso, de rodada, de pendência arrastada e de importação |
 
 Os de renderização/DOM montam componentes de verdade (jsdom/SSR + esbuild) e
