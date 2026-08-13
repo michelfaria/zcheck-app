@@ -101,9 +101,13 @@ const dom = new JSDOM('<!doctype html><html><body><div id="r"></div></body></htm
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
-globalThis.MouseEvent = dom.window.MouseEvent;
-globalThis.Event = dom.window.Event;
 dom.window.scrollTo = () => {};
+// `globalThis.Event`/`MouseEvent` NÃO são substituídos pelos do jsdom de
+// propósito: o cliente de realtime abre um WebSocket de verdade, e o `Event`
+// que o Node despacha nele precisa ser o do Node. Trocar o global fazia a
+// conexão morrer com "must be an instance of Event. Received an instance of
+// Event" — duas classes homônimas de mundos diferentes. Os eventos de clique
+// daqui são sempre construídos por `dom.window.MouseEvent`, então nada falta.
 
 const doc = dom.window.document;
 const texto = () => doc.body.textContent;
@@ -187,6 +191,94 @@ const aindaDevendo = amanhaSemExecucao.find(i => i.id === 'coifa');
 check(!!aindaDevendo, 'sem executar, ela continuaria voltando');
 check(aindaDevendo?.carriedFrom === ontem, 'e ainda apontando para a origem, não para ontem-de-amanhã');
 check(aindaDevendo?.diasArrastado === 2, 'com o contador de dias subindo (2 dias)');
+
+/**
+ * ── A ARRASTADA FORA DA CORRENTE DE BLOQUEIO ────────────────────────────────
+ *
+ * Regressão encontrada no aparelho em 13/08/2026, DEPOIS de passar por lint,
+ * build e todos os portões — inclusive os de renderização.
+ *
+ * "Obrigatório bloqueia avanço" é regra antiga: item obrigatório não concluído
+ * tranca tudo o que vem depois dele. As arrastadas são ordenadas primeiro (para
+ * a pessoa esbarrar nelas antes da rotina), e bastou uma delas ser obrigatória
+ * para uma dívida de ONTEM trancar o checklist inteiro de HOJE.
+ *
+ * Nenhum teste pegou porque todos usavam tarefa arrastada sem `required` — o
+ * caso não estava no espaço amostral. É o tipo de defeito que só nasce do
+ * CRUZAMENTO de duas regras, cada uma correta sozinha.
+ */
+console.log('\n═══ a arrastada não tranca a rotina do dia ═══');
+
+const LOCK = 'Conclua o item obrigatório anterior para liberar';
+// Cada cenário monta com um `id` de checklist PRÓPRIO: o canal de realtime da
+// rodada colaborativa tem tópico `live_tasks:<templateId>:<loja>:<dia>`, e o
+// cliente do Supabase reusa canal por tópico — repetir o id faz a segunda
+// montagem cair em "cannot add callbacks after subscribe()".
+let nCena = 0;
+const montar = async (items) => {
+  const alvo = doc.createElement('div');
+  doc.body.appendChild(alvo);
+  const r = createRoot(alvo);
+  await act(async () => {
+    r.render(h(ExecutionScreen, {
+      template: { ...template, id: `cena-${++nCena}`, items }, unit, currentUser,
+      completions: [], closures: [],
+      onCancel: () => {}, onDone: () => {}, onComplete: () => {},
+    }));
+  });
+  return { texto: alvo.textContent, desmontar: () => act(async () => r.unmount()) };
+};
+
+// O caso exato do print: arrastada OBRIGATÓRIA em primeiro, rotina atrás.
+{
+  const arrastadaObrigatoria = {
+    id: 'plantas', text: 'Aguar as plantas', required: true, critical: true,
+    recurrence: [diaDaSemana(ontem)], carryover: true, carryoverSince: somaDias(hoje, -30),
+  };
+  const cena = await montar([{ id: 'chao', text: 'Lavar o chão' }, arrastadaObrigatoria]);
+  check(cena.texto.includes('Aguar as plantas'), 'a arrastada obrigatória aparece');
+  check(!cena.texto.includes(LOCK),
+    'e NÃO tranca a rotina de hoje — dívida de ontem não paralisa o dia');
+  await cena.desmontar();
+}
+
+// A regra de sempre continua valendo entre tarefas DO DIA.
+{
+  const cena = await montar([
+    { id: 'caixa', text: 'Conferir caixa', required: true },
+    { id: 'chao', text: 'Lavar o chão' },
+  ]);
+  check(cena.texto.includes(LOCK),
+    'obrigatória do dia continua trancando o que vem depois — a regra antiga sobrevive');
+  await cena.desmontar();
+}
+
+/**
+ * As duas regras juntas, que é o cenário real: uma arrastada E uma obrigatória
+ * do dia, com rotina atrás dela.
+ *
+ * Ordenação final: [coifa (arrastada), caixa (obrigatória de hoje), chão].
+ * O que se prova é que a corrente foi RECORTADA, não desligada: a arrastada
+ * passa batido, e a obrigatória do dia continua trancando o que vem depois.
+ */
+{
+  const cena = await montar([
+    { id: 'caixa', text: 'Conferir caixa', required: true },
+    { id: 'chao', text: 'Lavar o chão' },
+    {
+      id: 'coifa', text: 'Limpar a coifa',
+      recurrence: [diaDaSemana(ontem)], carryover: true, carryoverSince: somaDias(hoje, -30),
+    },
+  ]);
+  check(cena.texto.includes('Limpar a coifa'), 'a arrastada aparece junto com a obrigatória do dia');
+  check(cena.texto.includes(LOCK),
+    'e a obrigatória do dia segue trancando a rotina atrás dela — a corrente foi recortada, não desligada');
+  // Uma trava só: a da obrigatória do dia sobre "Lavar o chão". Se a arrastada
+  // também estivesse trancando, apareceriam duas.
+  check((cena.texto.match(new RegExp(LOCK, 'g')) || []).length === 1,
+    'e é UMA trava só — a arrastada não acrescenta a dela');
+  await cena.desmontar();
+}
 
 // ── O editor: o carimbo chega ao objeto que vai para o banco ────────────────
 console.log('\n═══ o editor: ligar a flag carimba a data de ativação ═══');

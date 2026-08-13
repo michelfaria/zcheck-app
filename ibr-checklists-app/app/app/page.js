@@ -1397,9 +1397,29 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
   const pendingCritical = items.filter(i => i.critical && !effDone(i.id));
   progressRef.current.done = doneCount; // snapshot p/ o evento de abandono
 
+  /**
+   * "Obrigatório bloqueia avanço" — e por que a ARRASTADA fica fora da corrente.
+   *
+   * A regra existe para uma sequência DENTRO do dia: faça X antes de Y. Uma
+   * tarefa que vem de outro dia não tem relação de sequência com a lista de
+   * hoje, então não entra na corrente em nenhuma das duas pontas: não tranca as
+   * de hoje, e não é trancada por elas.
+   *
+   * Teste real de 13/08/2026 mostrou o estrago de não fazer essa distinção. As
+   * arrastadas são ordenadas primeiro (para a pessoa esbarrar nelas antes da
+   * rotina), e uma delas era obrigatória — resultado: uma dívida de ontem na
+   * posição 1 trancou o checklist inteiro de hoje. Antes do carryover isso não
+   * podia acontecer, porque a tarefa de outro dia nem aparecia na lista.
+   *
+   * Dívida de ontem paralisar a rotina de hoje é severo demais: a tarefa
+   * atrasada pode nem ser executável agora (falta insumo, falta luz do dia), e
+   * o operador ficaria sem saída.
+   */
   const isLocked = idx => {
+    if (items[idx]?.carriedFrom) return false;
     for (let j = 0; j < idx; j++) {
       const prev = items[j];
+      if (prev.carriedFrom) continue;
       if (prev.required && !effDone(prev.id)) return true;
     }
     return false;
