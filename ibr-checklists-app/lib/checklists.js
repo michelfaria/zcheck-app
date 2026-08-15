@@ -14,7 +14,7 @@
  * REGRA: este módulo não pode importar de `app/`. Só de outros `lib/`.
  */
 
-import { weekdayOf, instantAt, tzOfUnit, APP_TZ } from './dates';
+import { weekdayOf, deadlineEnd, tzOfUnit, APP_TZ } from './dates';
 import { roundIsComplete, roundProgress, statusFromProgress } from './rounds';
 
 /**
@@ -91,14 +91,17 @@ export function completeRoundChecker(templates) {
  * Antes daqui usar `instantAt`, a comparação era `new Date('...T18:00')`, hora
  * local do navegador: um fechamento pontual em Manaus aparecia atrasado para o
  * gestor em São Paulo, e a diferença crescia com o tamanho da rede.
+ *
+ * O prazo vence no FIM do seu minuto (`deadlineEnd`): entrega às 18:20:37 com
+ * prazo 18:20 é pontual. Ver o porquê em lib/dates.js.
  */
 export function completionOnTime(c, templates, index, units) {
   const deadline = index
     ? index.get(c.templateId)
     : (templates || []).find(t => t.id === c.templateId)?.deadline;
   if (!deadline || !c.date || !c.completedAt) return null;
-  const limite = instantAt(c.date, deadline, tzOfUnit(units, c.unitId));
-  return limite ? new Date(c.completedAt) <= limite : null;
+  const limite = deadlineEnd(c.date, deadline, tzOfUnit(units, c.unitId));
+  return limite ? new Date(c.completedAt) < limite : null;
 }
 
 /**

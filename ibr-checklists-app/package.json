@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "verify": "eslint . --quiet && npm run test && next build",
-    "test": "node tests/conferencia.spec.mjs && node tests/painel-render.spec.mjs && node tests/track.spec.mjs && node tests/appurl.spec.mjs && node tests/templates-sync.spec.mjs"
+    "test": "node tests/conferencia.spec.mjs && node tests/painel-render.spec.mjs && node tests/prazo-render.spec.mjs && node tests/track.spec.mjs && node tests/appurl.spec.mjs && node tests/templates-sync.spec.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { C, R, T, W } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
-import { todayStr, weekdayOf } from '../../lib/dates';
+import { todayStr, weekdayOf, deadlineEnd, tzOfUnit } from '../../lib/dates';
 import { roundKey } from '../../lib/rounds';
 import { CHECKLIST_TYPE_ORDER, completionOnTime, deadlineIndex } from '../../lib/checklists';
 // O motor destas contas mora em `useRelatorio`; aqui sobra só o rótulo do
@@ -416,7 +416,10 @@ export function DisputeCard({ dispute: d, accent, completions, onResolve }) {
   );
 }
 
-function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOpenPhoto }) {
+// Exportado para `tests/prazo-render.spec.mjs`: é aqui que a régua de prazo vira
+// texto na tela ("atrasado", "N itens concluídos fora do prazo", a tarja por
+// tarefa), e nada disso aparece no PDF nem no motor analítico.
+export function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOpenPhoto }) {
   const units = useUnits(); // o prazo é o do relógio da loja que executou
   const [note, setNote] = useState(c.reviewNote || '');
   const [busy, setBusy] = useState(false);
@@ -503,6 +506,16 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
   const tplItens = template?.items || [];
   const deadline = template?.deadline || null;
 
+  // O prazo do item é o MESMO instante do prazo do checklist: fim do minuto do
+  // deadline, no relógio da LOJA que executou. Duas correções moram nesta linha
+  // — antes ela montava `new Date('...T18:20:00')`, hora local de quem abriu o
+  // painel (a conferência de uma loja em Manaus era julgada pelo relógio de SP),
+  // e cobrava o segundo 00, marcando "fora do prazo" as 8 tarefas de um
+  // checklist entregue às 18:20 com prazo 18:20.
+  const fimDoPrazo = deadline && c.date
+    ? deadlineEnd(c.date, deadline, tzOfUnit(units, c.unitId))
+    : null;
+
   const itens = (c.items || []).map(i => {
     const tpl = tplItens.find(x => x.id === i.id);
     // Atraso POR ITEM, não do checklist: na execução colaborativa cada tarefa
@@ -510,8 +523,7 @@ function ReviewModal({ completion: c, templates, accent, onClose, onReview, onOp
     // 22h30 estava atrasado por conta própria. Sem `doneAt` (registro antigo),
     // cai no horário de entrega do checklist inteiro.
     const quando = i.doneAt || c.completedAt;
-    const atrasado = !!(i.done && deadline && c.date && quando
-      && new Date(quando) > new Date(`${c.date}T${deadline}:00`));
+    const atrasado = !!(i.done && fimDoPrazo && quando && new Date(quando) >= fimDoPrazo);
     return {
       ...i,
       texto: i.text || tpl?.text || `Item ${i.id}`,
