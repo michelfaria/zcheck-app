@@ -102,7 +102,7 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` roda os sete de node:
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os oito de node:
 
 | Teste | O que prova |
 |---|---|
@@ -113,10 +113,11 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
 | `templates-sync.spec.mjs` | os dois caminhos de leitura de `templates` devolvem objetos IDÊNTICOS — campo que só um lado mapeia derruba o teste |
+| `ativacao-loja.spec.mjs` | `units.active_from`: antes da estreia nada aparece no Executar e nada entra no previsto — **e os dois lados da fração andam juntos** (zerar só o denominador faz a aderência da estreia estourar 100%) |
 
-Os que terminam em `-render` e os dois seguintes montam componentes de verdade
-(jsdom + esbuild) e **não precisam de sessão logada** — que é o que impede o
-Playwright de cobrir tela logada.
+Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
+componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
+que é o que impede o Playwright de cobrir tela logada.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma

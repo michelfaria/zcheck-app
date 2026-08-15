@@ -22,7 +22,7 @@ import { todayStr, addDays, lastDays, weekStartStr, tzOfUnit } from '../../lib/d
 import { latestPerRound, earliestPerRound } from '../../lib/rounds';
 import {
   applicableItems, templateAtiva, templateStatus, completeRoundChecker,
-  isUnitClosed,
+  isUnitOff, isUnitActiveOn,
 } from '../../lib/checklists';
 import {
   filterCompletions, countApplicableTemplatesOnDate, summarizeCompletions,
@@ -64,7 +64,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const yFiltered = latestPerRound(filterCompletions(completions, scopeFilter([yStr])));
   const ySummary = summarizeCompletions(yFiltered);
   let yExpected = 0;
-  unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, yStr)) yExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, yStr); });
+  unitIds.forEach(uid => { if (!isUnitOff(units, closures, uid, yStr)) yExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, yStr); });
   // Só entrega COMPLETA conta como entrega (30/07/2026). O parcial vira número
   // próprio: a aderência cai, e a tela precisa poder dizer POR QUE caiu.
   const completa = completeRoundChecker(templates);
@@ -74,14 +74,14 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
 
   // ── Hoje ──
   let tExpected = 0;
-  unitIds.forEach(uid => { if (!isUnitClosed(closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
+  unitIds.forEach(uid => { if (!isUnitOff(units, closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
   const tRounds = latestPerRound(filterCompletions(completions, scopeFilter([today])));
   const tDone = tRounds.filter(completa).length;
   const tPartial = tRounds.length - tDone;
   const scopeTemplates = templates.filter(t =>
     templateAtiva(t) &&
     (!scopeUnitId || t.unitId === scopeUnitId) &&
-    !isUnitClosed(closures, t.unitId, today) &&
+    !isUnitOff(units, closures, t.unitId, today) &&
     applicableItems(t, today).length > 0);
   const overdue = scopeTemplates.filter(t => templateStatus(t, completions, today, tzOfUnit(units, t.unitId)) === 'overdue');
 
@@ -157,7 +157,11 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
     groupStats(yFiltered, 'loja', units).forEach(g => { yByStore[g.key] = Math.round(g.rate); });
 
     stores = unitIds.map(uid => {
-      const closedToday = isUnitClosed(closures, uid, today);
+      // Dois motivos para o dia não contar, e a tela precisa saber QUAL: "fechada
+      // hoje" numa loja que ainda nem estreou mandaria a gerência procurar uma
+      // folga que ninguém marcou.
+      const naoAtivaAinda = !isUnitActiveOn(units, uid, today);
+      const closedToday = isUnitOff(units, closures, uid, today);
       const overdueCount = overdue.filter(t => t.unitId === uid).length;
       // itens críticos recorrentes (≥2× em 7d) desta loja
       const criticalHotspots = [...hotspot.entries()]
@@ -168,7 +172,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
       // score de atenção: atraso pesa mais, depois crítico recorrente, depois pendência
       const score = overdueCount * 10 + criticalHotspots * 5 + pendingToday;
       return {
-        unitId: uid, name: unitName(uid), closedToday,
+        unitId: uid, name: unitName(uid), closedToday, naoAtivaAinda,
         overdue: overdueCount, criticalHotspots, pendingToday,
         expectedToday, doneToday, yAdherence: yByStore[unitName(uid)] ?? null,
         score,
@@ -253,7 +257,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const tSummary = summarizeCompletions(tAll);
   const base = {
     units: unitIds.length,
-    unitsClosed: unitIds.filter(uid => isUnitClosed(closures, uid, today)).length,
+    unitsClosed: unitIds.filter(uid => isUnitOff(units, closures, uid, today)).length,
     sectors: new Set(templates.filter(t => templateAtiva(t) && (!scopeUnitId || t.unitId === scopeUnitId)).map(t => t.sector).filter(Boolean)).size,
     templates: templates.filter(t => templateAtiva(t) && (!scopeUnitId || t.unitId === scopeUnitId)).length,
     peopleToday: new Set(tAll.map(c => c.operatorUserId || c.operatorName).filter(Boolean)).size,

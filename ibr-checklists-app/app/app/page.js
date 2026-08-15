@@ -49,7 +49,7 @@ import { gravidadeDe } from '../../lib/conferencia';
 import {
   CHECKLIST_TYPE_ORDER, matchesShift, isItemApplicable, applicableItems,
   templateAtiva, completeRoundChecker, completionOnTime,
-  isUnitClosed, templateStatus, templateProgress,
+  isUnitClosed, isUnitOff, unitActiveOn, templateStatus, templateProgress,
 } from '../../lib/checklists';
 import { UNITS } from '../../lib/units';
 import { visibleSectors } from '../../lib/sectors';
@@ -64,7 +64,7 @@ import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../compon
 // As views de análise que já saíram daqui (Fase 1b).
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
 import { PainelConsolidado } from '../../components/painel/PainelConsolidado';
-import { truncName } from '../../lib/format';
+import { truncName, fmtDataCurta } from '../../lib/format';
 import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
 import {
@@ -1762,6 +1762,26 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
         onComplete={record => onSaveCompletion(record)}
         onDone={() => setActiveTemplate(null)}
       />
+    );
+  }
+
+  // Loja ainda não ativa: a equipe não vê checklist nenhum. Vem ANTES da folga
+  // porque é o estado mais básico dos dois — uma loja que ainda não começou não
+  // tem folga a marcar. O texto diz a data e diz quem resolve: sem isso o
+  // colaborador encontra uma tela vazia e abre chamado, que é o modo de falhar
+  // desta regra inteira.
+  if (!unitActiveOn(unit, today)) {
+    return (
+      <div className="p-4 flex flex-col items-center justify-center" style={{ minHeight: 300 }}>
+        <Calendar size={40} color={C.mutedLight} />
+        <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(18px * var(--zc-t-scale))', color: C.ink, textAlign: 'center', marginTop: 16 }}>
+          {unit.name} começa em {fmtDataCurta(unit.activeFrom)}
+        </p>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 8, textAlign: 'center', maxWidth: 320 }}>
+          Os checklists desta loja já estão cadastrados, mas só entram no ar nesse dia.
+          Até lá nada é cobrado. Se a data estiver errada, a gerência ajusta em Gerenciar › Estrutura › Lojas.
+        </p>
+      </div>
     );
   }
 
@@ -3829,6 +3849,9 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
       await onSaveUnit?.({
         id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(),
         color: editUnit.color, timezone: editUnit.timezone || APP_TZ,
+        // String vazia é enviada de propósito — `saveUnit` a converte em NULL,
+        // que é como se desfaz uma ativação errada. Ver lib/sync.js.
+        activeFrom: editUnit.activeFrom || '',
       });
       flash('Loja atualizada!'); setEditUnit(null);
     }
@@ -4077,6 +4100,38 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
                       Agora são {new Date().toLocaleTimeString('pt-BR', { timeZone: editUnit.timezone || APP_TZ, hour: '2-digit', minute: '2-digit' })} lá.
                     </span>
                   </label>
+                  {/* Ativa desde — o corte entre montar e operar. Vem depois do
+                      fuso de propósito: a data só faz sentido depois que o
+                      relógio da loja está certo, porque é nele que ela vale. */}
+                  <label className="block">
+                    <span style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      Ativa desde
+                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <input
+                        type="date"
+                        value={editUnit.activeFrom || ''}
+                        onChange={e => setEditUnit(p => ({ ...p, activeFrom: e.target.value }))}
+                        className="flex-1 px-2 py-2"
+                        style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, background: 'white', borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', minWidth: 0 }}
+                      />
+                      {/* Limpar é parte da função, não um extra: errar a data é o
+                          erro mais provável desta tela, e sem este botão o
+                          `<input type="date">` do celular não devolve o campo ao
+                          vazio — a correção viraria chamado de suporte. */}
+                      {editUnit.activeFrom && (
+                        <button onClick={() => setEditUnit(p => ({ ...p, activeFrom: '' }))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 12, fontWeight: W.semibold, flexShrink: 0 }}>
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, color: C.muted, display: 'block', marginTop: 4 }}>
+                      {editUnit.activeFrom
+                        ? `Antes de ${fmtDataCurta(editUnit.activeFrom)} os checklists não aparecem para a equipe e não contam como execução, atraso ou não-execução. Serve para o período entre cadastrar e começar a usar.`
+                        : 'Em branco, a loja conta desde sempre. Preencha com o dia em que a equipe começou (ou vai começar) a usar o ZCheck, para o período de cadastro não entrar no Painel como dia perdido.'}
+                    </span>
+                  </label>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -4091,8 +4146,19 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
                         {TIMEZONES.find(t => t.id === tzOf(u))?.label || tzOf(u)}
                       </p>
                     )}
+                    {/* Mesma regra da linha do fuso: só a exceção aparece. Mas
+                        aqui a loja AINDA NÃO ATIVA ganha destaque, porque é o
+                        estado em que a equipe não vê checklist nenhum — quem
+                        for procurar o motivo tem que achá-lo aqui. */}
+                    {u.activeFrom && (
+                      <p style={{ fontSize: 11, color: unitActiveOn(u, todayStr(tzOf(u))) ? C.muted : C.critical }}>
+                        {unitActiveOn(u, todayStr(tzOf(u)))
+                          ? `Ativa desde ${fmtDataCurta(u.activeFrom)}`
+                          : `Começa em ${fmtDataCurta(u.activeFrom)} — a equipe ainda não vê os checklists`}
+                      </p>
+                    )}
                   </div>
-                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color, timezone: tzOf(u) })} title="Editar"
+                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color, timezone: tzOf(u), activeFrom: u.activeFrom || '' })} title="Editar"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><Settings2 size={16} /></button>
                   {(allUnits || UNITS).length > 1 && (
                     <button onClick={() => removeUnit(u)} title="Remover"
@@ -6680,7 +6746,9 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   const completa = completeRoundChecker(templates);
   let expected = 0, doneChecklists = 0, partialChecklists = 0;
   const daily = dates.map(ds => {
-    const closed = isUnitClosed(closures, uid, ds);
+    // "Fechado" aqui é dia que não conta: folga OU anterior à ativação da loja.
+    // O dia de montagem não pode entrar no denominador — ver `unitActiveOn`.
+    const closed = isUnitClosed(closures, uid, ds) || !unitActiveOn(unit, ds);
     const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, sector ? { unitId: uid, sector } : { unitId: uid }, ds);
     const doDia = mine.filter(c => c.date === ds);
     const done = doDia.filter(completa).length;
@@ -6808,7 +6876,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
  * chegar a 100% ao mesmo tempo.
  */
 function computeLeadershipProfile({ completions, templates, closures, units, leader, periodo, today }) {
-  // `isUnitClosed` e `countApplicableTemplatesOnDate` assumem array; este cálculo
+  // `isUnitOff` e `countApplicableTemplatesOnDate` assumem array; este cálculo
   // roda num useMemo que dispara antes de templates/closures terminarem de
   // carregar, e um `undefined.some` derrubaria a aba inteira.
   const tpl = templates || [];
@@ -6863,7 +6931,7 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   const partialChecklists = team.length - team.filter(completa).length;
   let expected = 0, doneChecklists = 0;
   scopeUnits.forEach(u => dates.forEach(ds => {
-    if (isUnitClosed(clo, u.id, ds)) return;
+    if (isUnitOff(scopeUnits, clo, u.id, ds)) return;
     expected += countApplicableTemplatesOnDate(tpl, { unitId: u.id }, ds);
     doneChecklists += doneByUnitDate.get(`${u.id}|${ds}`) || 0;
   }));
@@ -8465,6 +8533,7 @@ function AppInner() {
         if (units.length) {
           setDynamicUnits(units.map(u => ({
             id: u.id, name: u.name, color: u.color, timezone: u.timezone,
+            activeFrom: u.active_from || null,
             sectors: sectors.filter(s => s.unit_id === u.id).map(s => s.name),
           })));
         }
@@ -8567,6 +8636,42 @@ function AppInner() {
   // Active UNITS — dynamic when loaded from DB, fallback to hardcoded for IBR
   const ACTIVE_UNITS = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
 
+  /**
+   * As execuções que CONTAM — sem as anteriores à ativação da loja.
+   *
+   * O denominador já ignora esses dias (`isUnitOff`), e o numerador tinha que
+   * acompanhar: sem isto, um checklist executado durante a montagem apareceria
+   * como entrega num dia de zero previstos, e a aderência do período estouraria
+   * 100% justamente na estreia — o defeito que a regra existe para evitar,
+   * invertido de sinal.
+   *
+   * Um filtro só, no ponto em que `completions` é distribuído, em vez de um
+   * remendo em cada conta: Painel, J.I.T., relatório, exportação, ranking e
+   * índice da liderança leem daqui, então todos enxergam a mesma operação. É o
+   * mesmo motivo de `annotateReviews` viver neste ponto.
+   *
+   * Nada é apagado — o registro continua no banco. Limpar a data de ativação em
+   * Gerenciar traz tudo de volta na hora, que é o que torna esta tela segura de
+   * usar: a pior consequência de errar a data é reversível num clique.
+   *
+   * `null` (carregando) é preservado como `null`: o LoadingScreen depende dessa
+   * diferença entre "ainda não chegou" e "chegou vazio".
+   */
+  const visibleCompletions = useMemo(() => {
+    if (!completions) return completions;
+    // Sem nenhuma loja com data de ativação, devolve o MESMO array: o parque
+    // atual não paga nem uma varredura por render por causa desta regra.
+    if (!ACTIVE_UNITS.some(u => u.activeFrom)) return completions;
+    const desde = new Map(ACTIVE_UNITS.map(u => [u.id, u.activeFrom || null]));
+    return completions.filter(c => {
+      const inicio = desde.get(c.unitId);
+      // Execução de loja que não está na lista passa: some do painel por outro
+      // caminho (o filtro de loja), e descartá-la aqui seria esconder dado por
+      // um cadastro incompleto.
+      return !inicio || !c.date || c.date >= inicio;
+    });
+  }, [completions, ACTIVE_UNITS]);
+
   // Aba e loja na URL. Precisa ficar AQUI, acima dos returns antecipados de
   // carregamento (LoadingScreen, login, paywall) — hook não pode vir depois de
   // return condicional. `ready` segura a aplicação da URL até o papel existir:
@@ -8624,7 +8729,7 @@ function AppInner() {
 
   // ── Daily J.I.T. (H1) ────────────────────────────────────────────────────
   const jit = useMemo(() => {
-    if (!templates || !completions) return null;
+    if (!templates || !visibleCompletions) return null;
     const activeUnits = dynamicUnits.length > 0 ? dynamicUnits : UNITS;
     // Segue a unidade SELECIONADA no cabeçalho, não a do cadastro do usuário.
     // Antes era `currentUser.unitId`, que para gestão é sempre nulo — por isso
@@ -8634,8 +8739,8 @@ function AppInner() {
     // Escopo "rede inteira" não tem um dia único quando as lojas estão em fusos
     // diferentes; a loja em foco (ou a primeira) define o "hoje" da tela.
     const base = unitId ?? activeUnits[0]?.id ?? null;
-    return buildJit(completions, templates, closures || [], activeUnits, scope, base);
-  }, [templates, completions, closures, dynamicUnits, currentUser?.unitId, unitId]);
+    return buildJit(visibleCompletions, templates, closures || [], activeUnits, scope, base);
+  }, [templates, visibleCompletions, closures, dynamicUnits, currentUser?.unitId, unitId]);
 
   // ── Action plans (H1) — a memória do J.I.T. entre dias ──────────────────
   // Declarado ANTES do efeito de auto-abertura, que decide com base nos planos.
@@ -8922,6 +9027,7 @@ function AppInner() {
         if (units?.length) {
           setDynamicUnits(units.map(u => ({
             id: u.id, name: u.name, color: u.color, timezone: u.timezone,
+            activeFrom: u.active_from || null,
             sectors: (sectors || []).filter(s => s.unit_id === u.id).map(s => s.name),
           })));
         }
@@ -9231,11 +9337,11 @@ function AppInner() {
   const [showBriefing, setShowBriefing] = useState(false);
 
   const briefing = useMemo(() => {
-    if (!currentUser || !completions?.length) return null;
+    if (!currentUser || !visibleCompletions?.length) return null;
     return buildDailyBriefing({
-      completions, userId: currentUser.id, userName: currentUser.name, today: todayStr(appTz),
+      completions: visibleCompletions, userId: currentUser.id, userName: currentUser.name, today: todayStr(appTz),
     });
-  }, [completions, currentUser, appTz]);
+  }, [visibleCompletions, currentUser, appTz]);
 
   /**
    * Abre sozinho UMA vez por briefing. A chave guarda o DIA do briefing, não a
@@ -9316,6 +9422,10 @@ function AppInner() {
       if (newUsers.length) await dbSaveUsers(nextUsers, { changedIds: newUsers.map(u => u.id) });
 
       const simulated = generateSimulatedCompletions(templates, nextUsers, days);
+      // `completions` CRU de propósito — nunca `visibleCompletions`. Isto é um
+      // bulk save: gravar a lista filtrada apagaria do banco toda execução
+      // anterior à ativação de alguma loja, transformando um filtro de leitura
+      // em perda de dado permanente.
       const nextCompletions = [...completions, ...simulated];
       const payload = JSON.stringify(nextCompletions);
       console.log('Gravando', simulated.length, 'checklists simulados,', payload.length, 'bytes no total.');
@@ -9396,6 +9506,7 @@ function AppInner() {
           setCompany(c => ({ ...(c || {}), ...patch }));
           setDynamicUnits(us.map(u => ({
             id: u.id, name: u.name, color: u.color, timezone: u.timezone,
+            activeFrom: u.active_from || null,
             sectors: ss.filter(s => s.unitId === u.id).map(s => s.name),
           })));
           setDynamicSectors(ss.map(s => ({ id: s.id, unit_id: s.unitId, name: s.name })));
@@ -9648,13 +9759,13 @@ function AppInner() {
 
       <main id="zc-main-content" tabIndex={-1} className="zc-content" style={{ flex: 1 }} key={unitId}>
         {activeTab === 'executar' && (
-          <ExecutarView key={unitId} unit={unit} templates={templates} completions={completions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
+          <ExecutarView key={unitId} unit={unit} templates={templates} completions={visibleCompletions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
         {/* O Painel consolidado: o "agora" que era o J.I.T., o dia, a rede e o
             segmento analítico que era Relatórios, numa tela só. */}
         {activeTab === 'painel' && (
           <PainelConsolidado
-            unit={unit} templates={templates} completions={completions} closures={closures}
+            unit={unit} templates={templates} completions={visibleCompletions} closures={closures}
             canSeeAllUnits={canSwitchUnit} currentUser={currentUser} users={users} activeTypes={ACTIVE_TYPES}
             jit={jit} actionPlans={actionPlans} plansLoaded={plansLoaded}
             allUnitsSelected={unitId == null} onReview={reviewCompletionAndSync}
@@ -9666,16 +9777,16 @@ function AppInner() {
             }}
           />
         )}
-        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={completions || []} templates={templates || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
+        {activeTab === 'id' && <OperationalIdView targetUser={currentUser} viewer={currentUser} completions={visibleCompletions || []} templates={templates || []} accent={unit.color} onChangePhoto={() => setShowAvatarPicker(true)} briefing={briefing} onOpenBriefing={() => setShowBriefing(true)} />}
         {activeTab === 'unidades' && (
           <UnidadesView
-            units={ACTIVE_UNITS} templates={templates} completions={completions || []}
+            units={ACTIVE_UNITS} templates={templates} completions={visibleCompletions || []}
             closures={closures} currentUser={currentUser} canSeeAllUnits={canSwitchUnit}
             accent={unit.color}
             onBack={() => setTab('painel')}
           />
         )}
-        {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={completions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
+        {activeTab === 'equipe' && <EquipeView currentUser={currentUser} users={users || []} completions={visibleCompletions || []} templates={templates || []} closures={closures || []} accent={unit.color} canSeeAllUnits={canSwitchUnit} />}
         {activeTab === 'gerenciar' && (
           <GerenciarView key={unitId} unit={unit} templates={templates} onSaveTemplates={saveTemplates}
             closures={closures} onSaveClosures={saveClosures} canSeeAllUnits={canSwitchUnit}
