@@ -63,30 +63,51 @@ function isOnline() {
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
+/**
+ * Linha de `templates` → objeto do app. UMA função, usada por TODO caminho que
+ * lê a tabela (carga inicial E refetch do realtime).
+ *
+ * Existiam duas cópias desta conversão, e a do realtime não trazia `active`:
+ * remover um checklist gravava `active = false`, o próprio UPDATE disparava o
+ * postgres_changes, o refetch reescrevia a lista com `active` indefinido e
+ * `templateAtiva` (`t.active !== false`) devolvia true de novo — o checklist
+ * voltava para a tela em milissegundos. Só um reload duro fazia sumir, porque
+ * o reload passa por `fetchTemplates`, que mapeava certo.
+ *
+ * `createdAt`/`deactivatedAt` faltavam pelo mesmo motivo e erravam mais calado:
+ * `templateVigente` (lib/rounds.js) usa os dois para contar o passado com a
+ * configuração daquele dia. Sem eles, um checklist criado ontem passava a
+ * contar como previsto no mês inteiro assim que qualquer evento de realtime
+ * chegasse — e nada na tela dizia que a base tinha mudado.
+ */
+function mapTemplateRow(row) {
+  return {
+    id: row.id,
+    unitId: row.unit_id,
+    sector: row.sector,
+    shift: row.shift,
+    name: row.name,
+    deadline: row.deadline,
+    items: row.items || [],
+    // Checklist desativado CONTINUA vindo do banco de propósito: ele não
+    // aparece na operação, mas é o que permite contar o passado com a
+    // configuração que existia naquele dia. Quem lista para executar ou
+    // gerenciar filtra por `active` — ver `templateAtiva` em lib/checklists.js.
+    // Antes da migration 20260730 as colunas não existem: `active` cai em
+    // true e `deactivatedAt` em null, que é o comportamento de sempre.
+    active: row.active !== false,
+    deactivatedAt: row.deactivated_at ?? null,
+    createdAt: row.created_at ?? null,
+  };
+}
+
 export async function fetchTemplates(seedTemplates) {
   // Always try Supabase first — isOnline() is unreliable at mount time
   try {
     const { data, error } = await db().from('templates').select('*').order('unit_id').order('sector');
     if (error) throw error;
     if (data && data.length > 0) {
-      const mapped = data.map(row => ({
-        id: row.id,
-        unitId: row.unit_id,
-        sector: row.sector,
-        shift: row.shift,
-        name: row.name,
-        deadline: row.deadline,
-        items: row.items,
-        // Checklist desativado CONTINUA vindo do banco de propósito: ele não
-        // aparece na operação, mas é o que permite contar o passado com a
-        // configuração que existia naquele dia. Quem lista para executar ou
-        // gerenciar filtra por `active` — ver `templateAtiva` em app/app/page.js.
-        // Antes da migration 20260730 as colunas não existem: `active` cai em
-        // true e `deactivatedAt` em null, que é o comportamento de sempre.
-        active: row.active !== false,
-        deactivatedAt: row.deactivated_at ?? null,
-        createdAt: row.created_at ?? null,
-      }));
+      const mapped = data.map(mapTemplateRow);
       await cache.set('ibr_templates', mapped);
       console.log('[Supabase] Loaded', mapped.length, 'templates');
       return mapped;
@@ -331,6 +352,36 @@ export async function saveUsers(users, { changedIds = null, deleteIds = null } =
 
 // ── Completions ───────────────────────────────────────────────────────────────
 
+/**
+ * Linha de `completions` → objeto do app. UMA função, usada pela carga inicial E
+ * pelo `payload.new` do realtime — mesmo motivo de `mapTemplateRow`: a cópia que
+ * o realtime mantinha esquecia os campos de conferência. Hoje isso não morde
+ * (o canal só ouve INSERT, e execução recém-gravada não tem conferência), mas é
+ * a mesma armadilha, e ela já custou um checklist que não sumia da tela.
+ */
+function mapCompletionRow(row) {
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    templateName: row.template_name,
+    unitId: row.unit_id,
+    sector: row.sector,
+    shift: row.shift,
+    date: row.date,
+    completedAt: row.completed_at,
+    operatorName: row.operator_name,
+    operatorUserId: row.operator_user_id,
+    items: row.items,
+    // Conferência pela liderança (20260726_conferencia_lideranca.sql). O
+    // select é `*`, então antes da migration estes campos chegam undefined
+    // e viram null aqui — nenhum caminho novo precisa de fallback.
+    reviewedBy: row.reviewed_by ?? null,
+    reviewedByName: row.reviewed_by_name ?? null,
+    reviewedAt: row.reviewed_at ?? null,
+    reviewNote: row.review_note ?? null,
+  };
+}
+
 export async function fetchCompletions() {
   // Always try Supabase first — isOnline() is unreliable at mount time
   try {
@@ -342,26 +393,7 @@ export async function fetchCompletions() {
       .limit(1000);
     if (error) throw error;
     if (data) {
-      const mapped = data.map(row => ({
-        id: row.id,
-        templateId: row.template_id,
-        templateName: row.template_name,
-        unitId: row.unit_id,
-        sector: row.sector,
-        shift: row.shift,
-        date: row.date,
-        completedAt: row.completed_at,
-        operatorName: row.operator_name,
-        operatorUserId: row.operator_user_id,
-        items: row.items,
-        // Conferência pela liderança (20260726_conferencia_lideranca.sql). O
-        // select é `*`, então antes da migration estes campos chegam undefined
-        // e viram null aqui — nenhum caminho novo precisa de fallback.
-        reviewedBy: row.reviewed_by ?? null,
-        reviewedByName: row.reviewed_by_name ?? null,
-        reviewedAt: row.reviewed_at ?? null,
-        reviewNote: row.review_note ?? null,
-      }));
+      const mapped = data.map(mapCompletionRow);
       await cache.set('ibr_completions', mapped);
       console.log('[Supabase] Loaded', mapped.length, 'completions');
       return mapped;
@@ -997,14 +1029,14 @@ export function subscribeToTemplates(onUpdate) {
   templatesChannel = supabase
     .channel('templates-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'templates' }, async () => {
-      // Re-fetch all templates when any change is detected
+      // Re-fetch all templates when any change is detected.
+      // O mapeamento é o MESMO de `fetchTemplates` de propósito — ver
+      // `mapTemplateRow`. Uma cópia divergente aqui é o que ressuscitava
+      // checklist removido.
       try {
         const { data } = await db().from('templates').select('*').order('name');
         if (data) {
-          const mapped = data.map(row => ({
-            id: row.id, unitId: row.unit_id, sector: row.sector,
-            shift: row.shift, name: row.name, deadline: row.deadline, items: row.items || [],
-          }));
+          const mapped = data.map(mapTemplateRow);
           await cache.set('ibr_templates', mapped);
           onUpdate(mapped);
         }
@@ -1038,21 +1070,8 @@ export function subscribeToCompletions(unitId, onNew) {
         filter: unitId ? `unit_id=eq.${unitId}` : undefined,
       },
       payload => {
-        const row = payload.new;
-        const record = {
-          id: row.id,
-          templateId: row.template_id,
-          templateName: row.template_name,
-          unitId: row.unit_id,
-          sector: row.sector,
-          shift: row.shift,
-          date: row.date,
-          completedAt: row.completed_at,
-          operatorName: row.operator_name,
-          operatorUserId: row.operator_user_id,
-          items: row.items,
-        };
-        onNew(record);
+        // Mesmo mapeamento da carga inicial, de propósito — ver mapCompletionRow.
+        onNew(mapCompletionRow(payload.new));
       }
     )
     .subscribe();
