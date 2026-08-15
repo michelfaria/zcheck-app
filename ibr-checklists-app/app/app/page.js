@@ -4193,12 +4193,14 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
 
 /* ------------------------------- user editor -------------------------------- */
 
-function UserEditor({ user, onSave, onCancel }) {
+function UserEditor({ user, onSave, onCancel, defaultUnitId = null }) {
   const units = useUnits(); // lojas da empresa logada (antes: constante do IBR)
   const [name, setName] = useState(user?.name || '');
   const [pin, setPin] = useState(user?.pin || '');
   const [role, setRole] = useState(user?.role || 'colaborador');
-  const [unitId, setUnitId] = useState(user?.unitId ?? (units[0].id));
+  // Usuário novo nasce na loja que está selecionada no cabeçalho — quem está
+  // olhando a IBR2 e clica "Novo usuário" está cadastrando para a IBR2.
+  const [unitId, setUnitId] = useState(user?.unitId ?? defaultUnitId ?? units[0].id);
   const [sectorId, setSectorId] = useState(user?.sectorId ?? null);
   const [suspended, setSuspended] = useState(!!user?.suspended);
   const [error, setError] = useState('');
@@ -4422,8 +4424,42 @@ function SelfieViewer({ path }) {
   );
 }
 
-export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult }) {
+/**
+ * Quem aparece quando o cabeçalho está numa loja.
+ *
+ * `unitId` nulo é o "Todas" do cabeçalho — passa todo mundo. Com uma loja
+ * escolhida entram:
+ *   · quem é daquela loja (`unitId` igual);
+ *   · quem tem mais de uma loja — a gerência guarda 'a,b' num campo só (ver o
+ *     `approvalUnits.join(',')` da aprovação de cadastro) — e aquela está na lista;
+ *   · quem NÃO tem loja fixa (diretoria, e a gerência sem vínculo), porque essa
+ *     pessoa tem acesso à loja de fato; escondê-la faria a tela dizer que a loja
+ *     está sem gestão. A linha dela já se explica sozinha com "Todas as lojas".
+ */
+export const userInUnit = (u, unitId) => {
+  if (!unitId) return true;
+  if (!u?.unitId) return true;
+  return String(u.unitId).split(',').some(id => id.trim() === unitId);
+};
+
+export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult, unitId = null }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
+  // A loja escolhida no cabeçalho vale AQUI também. Antes a lista ignorava o
+  // seletor: trocar de loja não mudava uma linha da tela.
+  const unitSel = units.find(x => x.id === unitId) || null;
+  const escopo = useMemo(() => users.filter(u => userInUnit(u, unitId)), [users, unitId]);
+  /**
+   * O rótulo da loja na linha da pessoa. Trata os três casos que existem:
+   * sem loja (acesso a tudo), uma loja, e o campo com várias ('a,b') da
+   * gerência — que antes caía em `find()` e não mostrava loja nenhuma.
+   */
+  const unitLabel = u => {
+    if (!u.unitId) return 'Todas as lojas';
+    const nomes = String(u.unitId).split(',')
+      .map(id => units.find(x => x.id === id.trim())?.name)
+      .filter(Boolean);
+    return nomes.length ? nomes.join(' + ') : '—';
+  };
   const [onlineUsers, setOnlineUsers] = useState(new Set());
 
   useEffect(() => {
@@ -4475,7 +4511,17 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
   const [processingId, setProcessingId] = useState(null);
   const sectorRows = useSectors(); // setores reais da empresa, para a aprovação
 
+  // Conta a empresa inteira, não o escopo: é o que protege o último usuário de
+  // Diretoria de ser removido, e filtrar por loja não muda quantos existem.
   const gestaoCount = users.filter(u => u.role === 'gestao').length;
+
+  /**
+   * A fila de aprovação também segue a loja. Solicitação sem loja (`unit_id`
+   * nulo — o /cadastro não pergunta a loja) fica visível em qualquer escopo:
+   * ela ainda não é de ninguém, e escondê-la faria pedido novo desaparecer da
+   * tela só porque a gestão estava olhando uma loja.
+   */
+  const requestsNoEscopo = requests.filter(r => !unitId || !r.unit_id || r.unit_id === unitId);
 
   // Load pending requests — only for gestao
   useEffect(() => {
@@ -4694,7 +4740,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
   };
 
   if (editing) {
-    return <UserEditor user={editing === 'new' ? null : editing} onSave={handleSave} onCancel={() => setEditing(null)} />;
+    return <UserEditor user={editing === 'new' ? null : editing} defaultUnitId={unitId} onSave={handleSave} onCancel={() => setEditing(null)} />;
   }
 
   // Approval modal
@@ -4937,16 +4983,16 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       {/* Solicitações — apenas Diretoria */}
       {currentUser?.role === 'gestao' && (
         <>
-          <Eyebrow>Solicitações pendentes {requests.length > 0 ? `(${requests.length})` : ''}</Eyebrow>
-          {requests.length === 0 ? (
+          <Eyebrow>Solicitações pendentes {requestsNoEscopo.length > 0 ? `(${requestsNoEscopo.length})` : ''}</Eyebrow>
+          {requestsNoEscopo.length === 0 ? (
             <Ticket accent={C.border}>
               <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <CheckCircle2 size={14} aria-hidden /> Nenhuma solicitação pendente
+                <CheckCircle2 size={14} aria-hidden /> Nenhuma solicitação pendente{unitSel ? ` em ${unitSel.name}` : ''}
               </p>
             </Ticket>
           ) : (
           <div className="space-y-2">
-            {requests.map(req => {
+            {requestsNoEscopo.map(req => {
               const unitObj = units.find(u => u.id === req.unit_id);
               const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
               return (
@@ -4955,7 +5001,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                   // O cadastro não pede loja (unit_id nasce nulo): o padrão tem de
                   // ser a primeira loja DESTA empresa — 'ibr1' chumbado
                   // pré-selecionava loja de outro tenant.
-                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || units[0]?.id || ''); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); }}
+                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || unitId || units[0]?.id || ''); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); }}
                   className="w-full text-left"
                   style={{ background: 'none', border: 'none', padding: 0 }}
                 >
@@ -5008,6 +5054,14 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           tenant). "Importar CSV" foi para a aba Gerenciar. */}
       {/* Users list */}
       <Eyebrow>Usuários e níveis de acesso</Eyebrow>
+      {/* O escopo tem de estar escrito: sem esta linha, uma lista curta parecia
+          equipe pequena em vez de filtro de loja ligado — e quem tem acesso a
+          todas as lojas aparece em todas, o que só não confunde se for dito. */}
+      <p style={{ fontSize: 12, color: C.muted, marginTop: -4 }}>
+        {unitSel
+          ? `${unitSel.name} · ${escopo.length} ${escopo.length === 1 ? 'pessoa' : 'pessoas'}, incluindo quem tem acesso a todas as lojas`
+          : `Todas as lojas · ${escopo.length} ${escopo.length === 1 ? 'pessoa' : 'pessoas'}`}
+      </p>
       {/* Resumo de quem não recebe alerta. Fica ANTES da lista porque o marcador
           por linha resolve "quem", e este bloco resolve "quantos e o que fazer" —
           sem ele a gestão precisaria varrer a lista para descobrir o tamanho do
@@ -5015,9 +5069,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           inscritos não ganha um aviso permanente para ignorar. */}
       {(() => {
         if (!(pushPorUsuario instanceof Map)) return null;
-        const fora = users.filter(u => !u.suspended && semPush(u));
+        // Conta o ESCOPO: com uma loja selecionada, "4 de 7" tem de ser a conta
+        // daquela loja — senão o número contradiz a lista logo abaixo.
+        const fora = escopo.filter(u => !u.suspended && semPush(u));
         if (fora.length === 0) return null;
-        const ativos = users.filter(u => !u.suspended).length;
+        const ativos = escopo.filter(u => !u.suspended).length;
         return (
           <div className="flex items-start gap-2 px-3 py-2" style={{ background: `${C.warning}14`, border: `1px solid ${C.warning}`, borderRadius: 10 }}>
             <BellOff size={16} color={C.warning} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
@@ -5036,7 +5092,14 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         );
       })()}
       <div className="space-y-2">
-        {users.map(u => {
+        {escopo.length === 0 && (
+          <Ticket accent={C.border}>
+            <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '8px 0' }}>
+              Ninguém vinculado a {unitSel?.name || 'esta loja'} ainda. Use "Novo usuário" abaixo — ou volte para "Todas" no topo para ver a equipe inteira.
+            </p>
+          </Ticket>
+        )}
+        {escopo.map(u => {
           const lastGestao = u.role === 'gestao' && gestaoCount <= 1;
           return (
             <Ticket key={u.id} accent={ROLE_COLORS[u.role]}>
@@ -5062,7 +5125,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                   </div>
                   <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
                     <span style={{ fontWeight: W.semibold, color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
-                    {' · '}{u.unitId ? units.find(x => x.id === u.unitId)?.name : 'Todas as lojas'}
+                    {' · '}{unitLabel(u)}
                     {' · PIN '}{u.pin}
                   </p>
                 </div>
@@ -9621,6 +9684,7 @@ function AppInner() {
                desktop o rail continua tendo os dois — a sub-aba some por CSS. */
             usersPanel={allowedTabs.includes('usuarios') ? (
               <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser}
+                unitId={unitId}
                 onGenerateTestData={generateTestData} generatingTestData={generatingTestData}
                 testDataResult={testDataResult} />
             ) : null}
@@ -9646,7 +9710,7 @@ function AppInner() {
           />
         )}
         {activeTab === 'usuarios' && (
-          <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser} onGenerateTestData={generateTestData} generatingTestData={generatingTestData} testDataResult={testDataResult} />
+          <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser} unitId={unitId} onGenerateTestData={generateTestData} generatingTestData={generatingTestData} testDataResult={testDataResult} />
         )}
       </main>
 
