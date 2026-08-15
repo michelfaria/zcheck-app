@@ -270,11 +270,23 @@ Deno.serve(async (req: Request) => {
       if (previstas.length === 0 && feitas) previstas = [...feitas];
       const nFeitas = previstas.filter((id: string) => feitas?.has(id)).length;
       const completo = previstas.length > 0 && nFeitas === previstas.length;
+      // A loja ainda não estreou? Então o veredito é ESSE, e não "ATRASO".
+      //
+      // Este diagnóstico é a única janela para dentro desta função (foi a
+      // ausência dele que a deixou meses respondendo "No overdue" sem ninguém
+      // notar). Deixá-lo carimbar ATRASO no que `atrasados` corretamente ignora
+      // faria ele mentir da forma mais cara possível: quem depurar vê "4 ATRASO"
+      // ao lado de "atrasados: 0" e conclui que a função quebrou de novo.
+      const inativa = !lojaAtivaEm(t.unit_id, date);
       return {
         loja: t.unit_id, checklist: t.name, setor: t.sector, prazo: t.deadline,
         dia: date, agora: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
         venceu, entregue: !!feitas, tarefas: `${nFeitas}/${previstas.length}`,
-        veredito: !feitas ? (venceu ? 'ATRASO' : 'aguardando entrega')
+        // `ativaDesde` só aparece quando explica algo — no parque sem data de
+        // ativação o diagnóstico continua idêntico ao que sempre foi.
+        ...(inativa ? { ativaDesde: ativaDesde.get(t.unit_id) } : {}),
+        veredito: inativa ? 'loja ainda não ativa — nada é cobrado'
+          : !feitas ? (venceu ? 'ATRASO' : 'aguardando entrega')
           : completo ? 'completo' : (venceu ? 'INCOMPLETO' : 'incompleto, ainda no prazo'),
         alvos: alvosDe(t),
       };
