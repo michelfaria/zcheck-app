@@ -135,7 +135,11 @@ Deno.serve(async (req: Request) => {
 
   const agora = new Date();
 
-  const { data: units, error: eUnits } = await supabase.from('units').select('id, company_id, timezone');
+  // `select('*')` pelo mesmo motivo do select de templates logo abaixo:
+  // `active_from` nasceu em 20260815_units_active_from e nomear a coluna faria a
+  // query falhar (42703) num banco sem a migration — derrubando o aviso de
+  // atraso inteiro do parque por causa de uma coluna nova.
+  const { data: units, error: eUnits } = await supabase.from('units').select('*');
   if (eUnits) return falha('units', eUnits);
   // Tupla explícita no retorno do map: sem ela o Map nasce <unknown, unknown> e
   // o fuso chega em `localParts` como unknown.
@@ -143,6 +147,18 @@ Deno.serve(async (req: Request) => {
     (units || []).map((u: any): [string, string] => [u.id, u.timezone || APP_TZ]));
   const empresaDaLoja = new Map<string, string | null>(
     (units || []).map((u: any): [string, string | null] => [u.id, u.company_id ?? null]));
+  // Dia em que a loja passa a valer (units.active_from). Antes dele o checklist
+  // existe mas não é cobrado — e "não é cobrado" tem que valer aqui também: a
+  // equipe que ainda está sendo treinada não pode receber push de atraso de uma
+  // rotina que o app dela nem mostra. Nulo = sempre ativa. Ver lib/checklists.js
+  // (`unitActiveOn`), que é a mesma regra do lado do cliente.
+  const ativaDesde = new Map<string, string | null>(
+    (units || []).map((u: any): [string, string | null] =>
+      [u.id, u.active_from ? String(u.active_from).slice(0, 10) : null]));
+  const lojaAtivaEm = (unitId: string, date: string) => {
+    const desde = ativaDesde.get(unitId);
+    return !desde || date >= desde;   // comparação por string YYYY-MM-DD, como no app
+  };
 
   // `select('*')` de propósito: `active` nasceu em 20260730_templates_desativar
   // e nomear a coluna faria a query falhar (42703) num banco sem a migration —
@@ -189,6 +205,7 @@ Deno.serve(async (req: Request) => {
 
   const atrasados = comPrazo.filter((t: any) => {
     const { date, minutes } = localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ);
+    if (!lojaAtivaEm(t.unit_id, date)) return false;
     if (feitos.has(`${t.id}|${date}`)) return false;
     if (jaAvisados.has(t.id)) return false;
     const [h, m] = t.deadline.split(':').map(Number);
@@ -212,6 +229,7 @@ Deno.serve(async (req: Request) => {
 
   const incompletos = comPrazo.map((t: any) => {
     const { date, minutes } = localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ);
+    if (!lojaAtivaEm(t.unit_id, date)) return null;
     const feitas = entregas.get(`${t.id}|${date}`);
     if (!feitas) return null;                       // não entregue = é atraso, não incompleto
     if (jaAvisadosInc.has(t.id)) return null;

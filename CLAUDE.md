@@ -102,7 +102,7 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` roda os quatro de node:
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os cinco de node:
 
 | Teste | O que prova |
 |---|---|
@@ -110,8 +110,9 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — é a prova da fronteira de acesso, e conta que o motor analítico não roda para colaborador |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
+| `ativacao-loja.spec.mjs` | `units.active_from`: antes da estreia nada aparece no Executar e nada entra no previsto — **e os dois lados da fração andam juntos** (zerar só o denominador faz a aderência da estreia estourar 100%) |
 
-Os três últimos montam componentes de verdade (jsdom + esbuild) e **não precisam
+Os quatro últimos montam componentes de verdade (jsdom + esbuild) e **não precisam
 de sessão logada** — que é o que impede o Playwright de cobrir tela logada.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o

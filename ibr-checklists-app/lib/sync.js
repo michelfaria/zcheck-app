@@ -1445,6 +1445,11 @@ export async function saveUnit(unit) {
   // Só entra no upsert quando veio: um `undefined` viraria null e a coluna é
   // NOT NULL. Quem edita só o nome da loja não pode zerar o fuso dela.
   if (unit.timezone) row.timezone = unit.timezone;
+  // A data de ativação testa `undefined`, não a verdade do valor: aqui vazio é
+  // um valor com significado ("sempre ativa"), e é assim que se desfaz uma
+  // ativação errada. Com `if (unit.activeFrom)` limpar o campo não gravaria
+  // nada e a tela mostraria a data de volta no próximo carregamento.
+  if (unit.activeFrom !== undefined) row.active_from = unit.activeFrom || null;
   await upsertRow('units', row, `a loja "${unit.name}"`);
 }
 

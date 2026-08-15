@@ -118,6 +118,45 @@ export const isUnitClosed = (closures, unitId, dateStr) =>
   closures.some(c => c.unitId === unitId && c.date === dateStr);
 
 /**
+ * A loja já estava ATIVA naquele dia?
+ *
+ * Existe por causa do intervalo entre cadastrar e começar a usar. Quem monta a
+ * operação no ZCheck cria as lojas, digita os checklists e treina a equipe ao
+ * longo de dias ou semanas — e até 15/08/2026 esse período inteiro contava como
+ * operação real: os checklists já apareciam no Executar de quem ainda não tinha
+ * sido treinado, e cada dia de montagem entrava no Painel como um dia de 0% de
+ * aderência. A empresa estreava no app com um histórico de fracasso que ela
+ * nunca viveu.
+ *
+ * É o irmão de loja do `templateExistedOn` (lib/rounds.js), que resolve o mesmo
+ * problema no nível do checklist: nenhum dos dois deixa o passado ser reescrito
+ * por um cadastro feito hoje.
+ *
+ * `activeFrom` ausente = "sempre esteve ativa", de propósito. É o que as lojas
+ * já gravadas significam, e é o que mantém o parque existente idêntico ao que
+ * era. A comparação é por STRING de data (YYYY-MM-DD) porque o dia de operação
+ * já chega resolvido no fuso da loja — converter para Date aqui reintroduziria
+ * o bug de UTC que lib/dates.js existe para fechar.
+ */
+export const unitActiveOn = (unit, dateStr) =>
+  !unit?.activeFrom || !dateStr || dateStr >= String(unit.activeFrom).slice(0, 10);
+
+/** Idem, resolvendo a loja pelo id dentro de uma lista — igual a `tzOfUnit`. */
+export const isUnitActiveOn = (units, unitId, dateStr) =>
+  unitActiveOn((units || []).find(u => u.id === unitId), dateStr);
+
+/**
+ * A loja NÃO opera nesse dia — por folga ou por ainda não ter sido ativada.
+ *
+ * Os dois casos são a mesma coisa para quem CONTA: o dia sai do denominador de
+ * previstos, e nada nele vira atraso ou não-execução. São coisas diferentes só
+ * para quem EXPLICA na tela ("Fechada" ≠ "ainda não ativa"), e é por isso que
+ * os dois predicados continuam existindo separados.
+ */
+export const isUnitOff = (units, closures, unitId, dateStr) =>
+  isUnitClosed(closures || [], unitId, dateStr) || !isUnitActiveOn(units, unitId, dateStr);
+
+/**
  * Status do checklist no dia. Devolve 'done' | 'partial' | 'overdue' | 'pending'.
  *
  * `partial` existe porque "concluído" aqui sempre quis dizer só "foi submetido".

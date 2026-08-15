@@ -41,8 +41,9 @@ import { todayStr, addDays, lastDays, weekdayOf, tzOf } from '../../lib/dates';
 import { latestPerRound, roundProgress } from '../../lib/rounds';
 import {
   CHECKLIST_TYPE_ORDER, applicableItems, templateAtiva, templateStatus,
-  templateProgress, isUnitClosed,
+  templateProgress, isUnitClosed, isUnitOff, unitActiveOn,
 } from '../../lib/checklists';
+import { fmtDataCurta } from '../../lib/format';
 import { sectorLabelFor, visibleSectors } from '../../lib/sectors';
 import {
   RANKED_ROLES, RANKING_PERIOD_DEFAULT, rankingPeriod, collabIndexSentence,
@@ -100,12 +101,16 @@ function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last
   if ((units || []).length < 2) return null;
 
   const comEscopo = units.map(u => {
-    const fechada = isUnitClosed(closures, u.id, viewDate);
+    // `inativa` é separado de `fechada` só para o rótulo: para a CONTA os dois
+    // fazem a mesma coisa — a loja sai do ranking em vez de entrar com 0% e
+    // puxar a rede para baixo por um dia que ela não operou.
+    const inativa = !unitActiveOn(u, viewDate);
+    const fechada = inativa || isUnitClosed(closures, u.id, viewDate);
     const rate = fechada ? null : calcRate(viewDate, u.id, u.sectors);
     const last7u = last7.map(d => calcRate(d, u.id, u.sectors));
     const validos = last7u.filter(v => v !== null);
     const avg = validos.length ? Math.round(validos.reduce((a, b) => a + b, 0) / validos.length) : null;
-    return { u, fechada, rate, last7u, avg, trend: rate !== null && avg !== null ? rate - avg : null };
+    return { u, fechada, inativa, rate, last7u, avg, trend: rate !== null && avg !== null ? rate - avg : null };
   });
   // Uma ordenação só, calculada uma vez. A versão do Painel de hoje reordenava
   // a lista inteira DENTRO do map — uma vez por loja, com `calcRate` rodando de
@@ -117,7 +122,7 @@ function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last
     <>
       <Eyebrow>Comparativo entre lojas — {dateLabel}</Eyebrow>
       <div className="flex flex-col gap-3">
-        {comEscopo.map(({ u, fechada, rate, last7u, avg, trend }) => {
+        {comEscopo.map(({ u, fechada, inativa, rate, last7u, avg, trend }) => {
           const pos = posDe(u.id);
           const sinais = viewDate === today ? sinaisPorLoja[u.id] : null;
           const rateYest = calcRate(yesterday, u.id, u.sectors);
@@ -130,7 +135,9 @@ function SecaoRede({ units, calcRate, closures, viewDate, today, yesterday, last
                     {pos >= 0 && <RankBadge pos={pos + 1} size={20} />}
                   </div>
                   {fechada
-                    ? <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Fechada</p>
+                    ? <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                        {inativa ? `Ativa a partir de ${fmtDataCurta(u.activeFrom)}` : 'Fechada'}
+                      </p>
                     : <p className="font-display" style={{ fontSize: 'calc(36px * var(--zc-t-scale))', fontWeight: W.bold, color: C.ink, lineHeight: 1, marginTop: 4 }}>{rate ?? '—'}%</p>
                   }
                   {rateYest !== null && !fechada && (
@@ -560,7 +567,10 @@ function PainelCorpo({
    * `PainelView`, que continua servindo a aba viva. A Fase 5 apaga o original.
    */
   const calcRate = (date, unitId, filterSectors) => {
-    if (isUnitClosed(closures, unitId, date)) return null;
+    // `null` = dia sem taxa, não dia com 0%. É o que tira o dia da faixa de 7d e
+    // da média — vale para folga e, desde 15/08/2026, para o período anterior à
+    // ativação da loja. Sem isso a estreia vinha com uma semana de zeros atrás.
+    if (isUnitOff(units, closures, unitId, date)) return null;
     const dayTemplates = templates.filter(t =>
       templateAtiva(t) &&
       t.unitId === unitId &&
@@ -674,7 +684,7 @@ function PainelCorpo({
    * (a ressalva de §A.1 P4b some por construção).
    */
   const turnoRate = (u, shift) => {
-    if (isUnitClosed(closures, u.id, viewDate)) return null;
+    if (isUnitOff(units, closures, u.id, viewDate)) return null;
     const doTurno = templates.filter(t =>
       templateAtiva(t) &&
       t.unitId === u.id &&
@@ -705,7 +715,8 @@ function PainelCorpo({
     const out = {};
     for (const s of (jit?.stores || [])) {
       const partes = [];
-      if (s.closedToday) partes.push('fechada hoje');
+      if (s.naoAtivaAinda) partes.push('ainda não ativa');
+      else if (s.closedToday) partes.push('fechada hoje');
       else {
         if (s.overdue > 0) partes.push(`${s.overdue} atrasado${s.overdue > 1 ? 's' : ''}`);
         if (s.criticalHotspots > 0) partes.push(`${s.criticalHotspots} crítico${s.criticalHotspots > 1 ? 's' : ''} recorrente${s.criticalHotspots > 1 ? 's' : ''}`);
@@ -727,7 +738,8 @@ function PainelCorpo({
   };
   const rating = getRating(rateToday);
 
-  const diaFechado = isUnitClosed(closures, unit.id, viewDate);
+  const diaInativo = !unitActiveOn(unit, viewDate);
+  const diaFechado = diaInativo || isUnitClosed(closures, unit.id, viewDate);
 
   return (
     <div className="zc-view space-y-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}>
@@ -788,7 +800,11 @@ function PainelCorpo({
         <Ticket accent={C.muted}>
           <div className="flex items-center gap-2">
             <Calendar size={18} color={C.muted} />
-            <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.muted }}>Loja fechada — nenhum checklist necessário.</p>
+            <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.muted }}>
+              {diaInativo
+                ? `Loja ativa a partir de ${fmtDataCurta(unit.activeFrom)} — antes disso nada é cobrado.`
+                : 'Loja fechada — nenhum checklist necessário.'}
+            </p>
           </div>
         </Ticket>
       ) : (
