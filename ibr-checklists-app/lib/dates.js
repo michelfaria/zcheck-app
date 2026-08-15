@@ -124,6 +124,33 @@ export function instantAt(dateStr, timeStr, tz = APP_TZ) {
   return new Date(ts);
 }
 
+/** Um minuto, em ms — a granularidade em que o prazo é escrito e cobrado. */
+const UM_MINUTO = 60_000;
+
+/**
+ * O instante em que o prazo REALMENTE vence: o fim do minuto do prazo.
+ *
+ * O prazo é escrito em minutos ("18:20"), então tem que ser cobrado em minutos.
+ * `instantAt` devolve 18:20:00, e comparar a entrega contra ele fazia de
+ * 18:20:37 um atraso — um checklist entregue às 18:20 no relógio da loja, com o
+ * painel exibindo "prazo 18:20" logo ao lado, aparecia como "atrasado" e todas
+ * as suas tarefas ganhavam a tarja "fora do prazo". A pessoa cumpriu o minuto
+ * combinado e foi punida pelos segundos, que ela não vê em lugar nenhum.
+ *
+ * A regra passa a ser: só é atraso a partir do MINUTO SEGUINTE ao do prazo. O
+ * limite é aberto — `entrega < deadlineEnd` é pontual, `>=` é atraso — de modo
+ * que 18:20:59.999 ainda cumpre e 18:21:00.000 não.
+ *
+ * É a mesma régua que `supabase/functions/notify-overdue` sempre usou para
+ * disparar o alerta de atraso (compara minutos inteiros, `minutes > h*60+m`).
+ * Até aqui o cliente era mais severo que o servidor: existia a faixa de 60
+ * segundos em que o painel dizia "atrasado" sem que nenhum alerta tivesse saído.
+ */
+export function deadlineEnd(dateStr, timeStr, tz = APP_TZ) {
+  const inicio = instantAt(dateStr, timeStr, tz);
+  return inicio ? new Date(inicio.getTime() + UM_MINUTO) : null;
+}
+
 /** Dia da semana (0=Dom … 6=Sáb) de um dia de operação. */
 export const weekdayOf = dateStr => new Date(`${dateStr}T12:00:00Z`).getUTCDay();
 
