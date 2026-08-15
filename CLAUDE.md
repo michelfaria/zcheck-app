@@ -102,12 +102,13 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` roda os quatro de node:
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os cinco de node:
 
 | Teste | O que prova |
 |---|---|
 | `conferencia.spec.mjs` | ordem da fila de conferência |
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — é a prova da fronteira de acesso, e conta que o motor analítico não roda para colaborador |
+| `usuarios-render.spec.mjs` | a aba Usuários obedece à loja do cabeçalho — e quem alcança a loja (diretoria, gerência multi-loja) não some do filtro |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
 
