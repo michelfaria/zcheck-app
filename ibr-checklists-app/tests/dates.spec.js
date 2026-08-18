@@ -68,10 +68,10 @@ test.describe('dia de operação', () => {
 });
 
 test.describe('prazo do Fechamento', () => {
-  // A regra de `completionOnTime` (app/app/page.js): no prazo se `completedAt`
-  // <= o instante em que o relógio DA LOJA marca o deadline naquele dia.
+  // A regra de `completionOnTime` (lib/checklists.js): no prazo se `completedAt`
+  // cai ANTES do fim do minuto do deadline, no relógio DA LOJA.
   const noPrazo = (date, completedAt, deadline, tz) =>
-    new Date(completedAt) <= dates.instantAt(date, deadline, tz);
+    new Date(completedAt) < dates.deadlineEnd(date, deadline, tz);
 
   test('Fechamento entregue depois do prazo conta como atrasado', () => {
     const entrega = '2026-07-27T00:16:00Z'; // 26/07 21:16 BRT
@@ -89,6 +89,42 @@ test.describe('prazo do Fechamento', () => {
     const dia = dates.dateStrOf(new Date(entrega));
     expect(dia).toBe('2026-07-26');
     expect(noPrazo(dia, entrega, '21:00', 'America/Sao_Paulo')).toBe(true);
+  });
+
+  /**
+   * O prazo é cobrado no MINUTO, não no segundo.
+   *
+   * Caso real de 15/08/2026: "Fechamento Sala", prazo 18:20, entregue 18:20 —
+   * e o painel dizia "atrasado", com as 8 tarefas marcadas "fora do prazo".
+   * O relógio da tela mostra minutos; cobrar o segundo 00 pune quem cumpriu
+   * exatamente o combinado, por uma diferença que ninguém consegue ver.
+   */
+  test('entrega dentro do minuto do prazo é pontual; o atraso começa no minuto seguinte', () => {
+    const tz = 'America/Sao_Paulo';
+    const dia = '2026-08-14';
+    // 18:20 BRT = 21:20Z.
+    expect(noPrazo(dia, '2026-08-14T21:20:00Z', '18:20', tz)).toBe(true);      // 18:20:00
+    expect(noPrazo(dia, '2026-08-14T21:20:37Z', '18:20', tz)).toBe(true);      // 18:20:37 — o caso da tela
+    expect(noPrazo(dia, '2026-08-14T21:20:59.999Z', '18:20', tz)).toBe(true);  // último instante do minuto
+    expect(noPrazo(dia, '2026-08-14T21:21:00Z', '18:20', tz)).toBe(false);     // 18:21:00 — aí sim
+  });
+
+  test('deadlineEnd é o instantAt do prazo mais um minuto, em qualquer fuso', () => {
+    for (const tz of ['America/Sao_Paulo', 'America/Manaus', 'America/Noronha']) {
+      expect(dates.deadlineEnd('2026-07-26', '22:00', tz).getTime()
+        - dates.instantAt('2026-07-26', '22:00', tz).getTime()).toBe(60_000);
+    }
+    // Hora ilegível não vira prazo nenhum — quem chama trata o null e conta o
+    // checklist como "sem prazo", nem pontual nem atrasado.
+    expect(dates.deadlineEnd('2026-07-26', 'às seis', 'America/Sao_Paulo')).toBe(null);
+    expect(dates.deadlineEnd('', '18:20', 'America/Sao_Paulo')).toBe(null);
+  });
+
+  test('a virada da meia-noite continua valendo com a folga do minuto', () => {
+    const tz = 'America/Sao_Paulo';
+    // Prazo 23:59: 23:59:40 ainda cumpre, 00:00 do dia seguinte não.
+    expect(noPrazo('2026-07-26', '2026-07-27T02:59:40Z', '23:59', tz)).toBe(true);
+    expect(noPrazo('2026-07-26', '2026-07-27T03:00:00Z', '23:59', tz)).toBe(false);
   });
 });
 
@@ -138,7 +174,7 @@ test.describe('fuso por loja', () => {
     const dia = dates.dateStrOf(new Date(entrega), 'America/Manaus');
     expect(dia).toBe('2026-07-26');
 
-    const noPrazo = tz => new Date(entrega) <= dates.instantAt(dia, '23:00', tz);
+    const noPrazo = tz => new Date(entrega) < dates.deadlineEnd(dia, '23:00', tz);
     expect(noPrazo('America/Manaus')).toBe(true);       // certo
     expect(noPrazo('America/Sao_Paulo')).toBe(false);   // o erro que se evitou
   });

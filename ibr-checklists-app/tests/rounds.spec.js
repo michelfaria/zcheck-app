@@ -482,6 +482,19 @@ test.describe('status do checklist', () => {
     expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ deadline: '23:30' }), instante('2026-07-31T03:10:00Z'))).toBe('overdue');
   });
 
+  /**
+   * Só é atraso a partir do MINUTO SEGUINTE ao do prazo (ver lib/dates.js).
+   * Enquanto o relógio da loja ainda marca 16:50, o prazo "16:50" está sendo
+   * cumprido — o checklist não pode aparecer como atrasado na mesma tela que
+   * anuncia "prazo 16:50".
+   */
+  test('durante o minuto do prazo ainda é pending; o overdue começa no minuto seguinte', () => {
+    // 16:50 em Brasília = 19:50Z.
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx(), instante('2026-07-30T19:50:00Z'))).toBe('pending');
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx(), instante('2026-07-30T19:50:59.999Z'))).toBe('pending');
+    expect(rounds.statusFromProgress(prog(0, 0, 8), ctx(), instante('2026-07-30T19:51:00Z'))).toBe('overdue');
+  });
+
   test('checklist SEM prazo nunca é atrasado', () => {
     expect(rounds.statusFromProgress(prog(0, 0, 8), ctx({ deadline: null }), instante('2027-01-01T00:00:00Z'))).toBe('pending');
   });

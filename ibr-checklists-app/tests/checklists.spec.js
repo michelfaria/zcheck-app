@@ -272,5 +272,27 @@ test.describe('itens do dia', () => {
     const folga = [{ unitId: 'ibr1', date: '2026-08-03' }];
     expect(checklists.itensDoDia(tpl(), [], folga, '2026-08-04').map(i => i.id)).toEqual(['chao']);
   });
+
+  /**
+   * O período de MONTAGEM não gera dívida.
+   *
+   * `units.active_from` chegou na main em 15/08/2026 para o intervalo entre
+   * cadastrar a loja e começar a usar de verdade: até então cada dia de
+   * montagem entrava no Painel como 0% de aderência, e a empresa estreava com
+   * um histórico de fracasso que nunca viveu. O carryover cairia na mesma
+   * armadilha por outro caminho — cobrando amanhã as tarefas de dias em que a
+   * loja nem operava.
+   */
+  test('dia anterior à ativação da loja não vira pendência', () => {
+    const lojaNova = { id: 'ibr1', activeFrom: '2026-08-04' };
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04', 7, lojaNova).map(i => i.id)).toEqual(['chao']);
+    // Já ativa antes: a dívida de segunda continua sendo cobrada.
+    const lojaAntiga = { id: 'ibr1', activeFrom: '2026-07-01' };
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04', 7, lojaAntiga).map(i => i.id)).toEqual(['coifa', 'chao']);
+    // Sem `activeFrom` (parque existente) nada muda — "sempre esteve ativa".
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04', 7, { id: 'ibr1' }).map(i => i.id)).toEqual(['coifa', 'chao']);
+    // E sem passar a loja, o comportamento antigo é preservado.
+    expect(checklists.itensDoDia(tpl(), [], [], '2026-08-04').map(i => i.id)).toEqual(['coifa', 'chao']);
+  });
 });
 

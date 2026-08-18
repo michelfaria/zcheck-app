@@ -26,7 +26,7 @@
 import { useState, useEffect } from 'react';
 import { todayStr, tzOf } from '../../lib/dates';
 import { latestPerRound, roundKey } from '../../lib/rounds';
-import { CHECKLIST_TYPE_ORDER, completeRoundChecker, isUnitClosed } from '../../lib/checklists';
+import { CHECKLIST_TYPE_ORDER, completeRoundChecker, isUnitOff } from '../../lib/checklists';
 import {
   PERIODS, periodDates, filterCompletions, countApplicableTemplatesOnDate,
   summarizeCompletions, collaboratorStats, groupStats, computeProductivity,
@@ -132,12 +132,32 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
   const summary = summarizeCompletions(filtered);
   const reportFilter = { unitId: filterUnitId, sector: filterSector, shift: filterShift };
   const effectiveDates = dates || [...new Set(filtered.map(c => c.date))];
-  // Exclude days when the selected unit(s) were closed
-  const openDates = effectiveDates.filter(d => {
-    if (filterUnitId) return !isUnitClosed(closures, filterUnitId, d);
-    return units.some(u => !isUnitClosed(closures, u.id, d));
-  });
-  const expectedChecklists = openDates.reduce((sum, d) => sum + countApplicableTemplatesOnDate(templates, reportFilter, d), 0);
+  /**
+   * Previstos no período, LOJA A LOJA — dia que a loja não operou sai do
+   * denominador dela, seja por folga ou por ser anterior à ativação (§
+   * `unitActiveOn`).
+   *
+   * A conta antiga era por DIA: guardava as datas em que alguém estava aberto e
+   * somava os checklists de todo o recorte em cada uma. Com uma loja só dá no
+   * mesmo; na rede inteira, não — o dia em que a loja B folga continua na lista
+   * porque a A abriu, e os checklists da B entram no previsto de um dia em que
+   * ela estava fechada. A ativação torna esse desvio grande em vez de sutil:
+   * uma loja que estreia hoje traria o mês inteiro dela para o denominador da
+   * rede, e a aderência de todo mundo cairia por causa de um cadastro.
+   *
+   * `escopo` cai na lista inteira quando o filtro aponta para uma loja que não
+   * está em `units` (contexto ainda carregando): melhor a conta antiga por um
+   * render do que um previsto zerado piscando na tela.
+   */
+  const escopo = filterUnitId
+    ? (units.some(u => u.id === filterUnitId) ? units.filter(u => u.id === filterUnitId) : [{ id: filterUnitId }])
+    : units;
+  const expectedChecklists = effectiveDates.reduce((sum, d) =>
+    sum + escopo.reduce((porLoja, u) =>
+      isUnitOff(units, closures, u.id, d)
+        ? porLoja
+        : porLoja + countApplicableTemplatesOnDate(templates, { ...reportFilter, unitId: u.id }, d),
+    0), 0);
   const numDays = effectiveDates.length;
   const checklistRate = expectedChecklists ? (summary.checklists / expectedChecklists) * 100 : null;
 

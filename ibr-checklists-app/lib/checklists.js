@@ -14,7 +14,7 @@
  * REGRA: este módulo não pode importar de `app/`. Só de outros `lib/`.
  */
 
-import { weekdayOf, instantAt, addDays, tzOfUnit, APP_TZ } from './dates';
+import { weekdayOf, deadlineEnd, addDays, tzOfUnit, APP_TZ } from './dates';
 import { roundIsComplete, roundProgress, statusFromProgress, templateExistedOn } from './rounds';
 
 /**
@@ -91,14 +91,17 @@ export function completeRoundChecker(templates) {
  * Antes daqui usar `instantAt`, a comparação era `new Date('...T18:00')`, hora
  * local do navegador: um fechamento pontual em Manaus aparecia atrasado para o
  * gestor em São Paulo, e a diferença crescia com o tamanho da rede.
+ *
+ * O prazo vence no FIM do seu minuto (`deadlineEnd`): entrega às 18:20:37 com
+ * prazo 18:20 é pontual. Ver o porquê em lib/dates.js.
  */
 export function completionOnTime(c, templates, index, units) {
   const deadline = index
     ? index.get(c.templateId)
     : (templates || []).find(t => t.id === c.templateId)?.deadline;
   if (!deadline || !c.date || !c.completedAt) return null;
-  const limite = instantAt(c.date, deadline, tzOfUnit(units, c.unitId));
-  return limite ? new Date(c.completedAt) <= limite : null;
+  const limite = deadlineEnd(c.date, deadline, tzOfUnit(units, c.unitId));
+  return limite ? new Date(c.completedAt) < limite : null;
 }
 
 /**
@@ -116,6 +119,45 @@ export function deadlineIndex(templates) {
 // Returns true if the given unit is marked as closed on the given date.
 export const isUnitClosed = (closures, unitId, dateStr) =>
   closures.some(c => c.unitId === unitId && c.date === dateStr);
+
+/**
+ * A loja já estava ATIVA naquele dia?
+ *
+ * Existe por causa do intervalo entre cadastrar e começar a usar. Quem monta a
+ * operação no ZCheck cria as lojas, digita os checklists e treina a equipe ao
+ * longo de dias ou semanas — e até 15/08/2026 esse período inteiro contava como
+ * operação real: os checklists já apareciam no Executar de quem ainda não tinha
+ * sido treinado, e cada dia de montagem entrava no Painel como um dia de 0% de
+ * aderência. A empresa estreava no app com um histórico de fracasso que ela
+ * nunca viveu.
+ *
+ * É o irmão de loja do `templateExistedOn` (lib/rounds.js), que resolve o mesmo
+ * problema no nível do checklist: nenhum dos dois deixa o passado ser reescrito
+ * por um cadastro feito hoje.
+ *
+ * `activeFrom` ausente = "sempre esteve ativa", de propósito. É o que as lojas
+ * já gravadas significam, e é o que mantém o parque existente idêntico ao que
+ * era. A comparação é por STRING de data (YYYY-MM-DD) porque o dia de operação
+ * já chega resolvido no fuso da loja — converter para Date aqui reintroduziria
+ * o bug de UTC que lib/dates.js existe para fechar.
+ */
+export const unitActiveOn = (unit, dateStr) =>
+  !unit?.activeFrom || !dateStr || dateStr >= String(unit.activeFrom).slice(0, 10);
+
+/** Idem, resolvendo a loja pelo id dentro de uma lista — igual a `tzOfUnit`. */
+export const isUnitActiveOn = (units, unitId, dateStr) =>
+  unitActiveOn((units || []).find(u => u.id === unitId), dateStr);
+
+/**
+ * A loja NÃO opera nesse dia — por folga ou por ainda não ter sido ativada.
+ *
+ * Os dois casos são a mesma coisa para quem CONTA: o dia sai do denominador de
+ * previstos, e nada nele vira atraso ou não-execução. São coisas diferentes só
+ * para quem EXPLICA na tela ("Fechada" ≠ "ainda não ativa"), e é por isso que
+ * os dois predicados continuam existindo separados.
+ */
+export const isUnitOff = (units, closures, unitId, dateStr) =>
+  isUnitClosed(closures || [], unitId, dateStr) || !isUnitActiveOn(units, unitId, dateStr);
 
 /**
  * Status do checklist no dia. Devolve 'done' | 'partial' | 'overdue' | 'pending'.
@@ -176,7 +218,8 @@ const diffDias = (a, b) =>
  *  · `dataOriginal` é a ocorrência não quitada MAIS ANTIGA dentro da janela —
  *    uma instância só por tarefa, nunca uma pilha de cópias na tela.
  *
- *  · Dia de FOLGA (`closures`) não gera dívida, e a janela de existência do
+ *  · Dia de FOLGA (`closures`) e dia anterior à ATIVAÇÃO da loja
+ *    (`unitActiveOn`) não geram dívida, e a janela de existência do
  *    checklist (`templateExistedOn`) vale para trás também — o que só passou a
  *    valer de verdade com o backfill de `templates.created_at` (11/08/2026).
  *
@@ -194,7 +237,7 @@ const diffDias = (a, b) =>
  *
  * @returns {Array<{itemId, dataOriginal, diasArrastado}>}
  */
-export function pendenciasArrastadas(template, completions, closures, dateStr, teto = 7) {
+export function pendenciasArrastadas(template, completions, closures, dateStr, teto = 7, unit = null) {
   if (!template || !dateStr || !Array.isArray(template.items) || teto <= 0) return [];
   const arrastaveis = template.items.filter(i => i && i.carryover === true);
   if (!arrastaveis.length) return [];
@@ -235,6 +278,12 @@ export function pendenciasArrastadas(template, completions, closures, dateStr, t
     for (let d = piso; d < dateStr; d = addDays(d, 1)) {
       if (!templateExistedOn(template, d)) continue;
       if (isUnitClosed(closures || [], template.unitId, d)) continue;
+      // Dia anterior à ativação da loja não gera dívida: é o período de
+      // montagem, em que a equipe ainda estava sendo treinada. Sem isto, uma
+      // empresa que ativa hoje estrearia amanhã com tarefas "atrasadas" de
+      // dias em que ela nem operava — o mesmo histórico de fracasso que
+      // `unitActiveOn` existe para não inventar.
+      if (unit && !unitActiveOn(unit, d)) continue;
       if (!aplicaEm(d).has(item.id)) continue;
       out.push({ itemId: item.id, dataOriginal: d, diasArrastado: diffDias(dateStr, d) });
       break;
@@ -263,9 +312,9 @@ export function pendenciasArrastadas(template, completions, closures, dateStr, t
  * A ORDEM coloca as arrastadas primeiro. Elas são a exceção do dia, e o que se
  * quer é que a pessoa esbarre nelas antes da rotina que já conhece de cor.
  */
-export function itensDoDia(template, completions, closures, dateStr, teto = 7) {
+export function itensDoDia(template, completions, closures, dateStr, teto = 7, unit = null) {
   const previstos = applicableItems(template, dateStr);
-  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto);
+  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto, unit);
   if (!dividas.length) return previstos;
 
   const porItem = new Map(dividas.map(d => [d.itemId, d]));

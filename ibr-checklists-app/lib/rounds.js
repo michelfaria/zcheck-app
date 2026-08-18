@@ -19,7 +19,7 @@
  * componente React de 12 mil linhas não tem teste. Aqui tem (tests/rounds.spec.js).
  */
 
-import { instantAt, APP_TZ } from './dates';
+import { deadlineEnd, APP_TZ } from './dates';
 
 /** Chave da rodada. `templateName` é o fallback de registros antigos sem id. */
 export function roundKey(c) {
@@ -203,14 +203,18 @@ export function roundIsComplete(completion, applicableItemIds) {
  *     de agora por acaso estivesse depois do horário do prazo;
  *   · virada de meia-noite: prazo 23:30 contra 00:10 dava "no prazo".
  *
+ * O prazo vence no FIM do seu minuto (`deadlineEnd`): com prazo 18:20, o
+ * checklist só vira `overdue` às 18:21 — enquanto o relógio da loja ainda marca
+ * 18:20, o minuto combinado está sendo cumprido. Ver lib/dates.js.
+ *
  * `agora` é injetável para o teste poder fixar o instante.
  */
 export function statusFromProgress(progress, { deadline, date, tz = APP_TZ } = {}, agora = new Date()) {
   const p = progress || { submissions: 0, done: 0, total: 0 };
   if (p.submissions > 0) return p.total > 0 && p.done >= p.total ? 'done' : 'partial';
   if (deadline && date) {
-    const limite = instantAt(date, deadline, tz);
-    if (limite && agora > limite) return 'overdue';
+    const limite = deadlineEnd(date, deadline, tz);
+    if (limite && agora >= limite) return 'overdue';
   }
   return 'pending';
 }
