@@ -147,7 +147,7 @@ monta a tela inteira, que é como o teste verifica que a fatia não escondeu nad
 
 ```bash
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
-npx playwright test tests/dates.spec.js tests/rounds.spec.js --reporter=line
+npx playwright test tests/dates.spec.js tests/rounds.spec.js tests/checklists.spec.js tests/csvimport.spec.js --reporter=line
 ```
 
 | Teste | O que prova |
@@ -156,9 +156,12 @@ npx playwright test tests/dates.spec.js tests/rounds.spec.js --reporter=line
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — a fronteira de acesso, e que o motor não roda para colaborador |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
-| dates + rounds (Playwright) | 71 casos de fuso e de rodada |
+| `carryover-render.spec.mjs` | o controle de carryover pinta no editor **e** a tarefa arrastada aparece na tela de execução, com o carimbo de origem |
+| `carryover-ciclo.spec.mjs` | o CICLO com clique de verdade (jsdom): não feita ontem → cobrada hoje → executada → **não volta amanhã**. Fecha a alça alimentando a varredura com o registro que a própria tela produziu |
+| `notify-overdue/incompleto.test.mjs` | a régua de "previstas do dia" da edge function, lida do próprio `index.ts` — e que ela CONVIVE com o carryover sem alarme falso. Entrou no portão em 13/08 (rodava só à mão) |
+| dates + rounds + checklists + csvimport (Playwright) | 111 casos de fuso, de rodada, de pendência arrastada e de importação |
 
-Os três de renderização/DOM montam componentes de verdade (jsdom + esbuild) e
+Os de renderização/DOM montam componentes de verdade (jsdom/SSR + esbuild) e
 **não precisam de sessão logada** — que é o que impede o Playwright de cobrir
 tela logada (`tests/visual-baseline.spec.js:15`).
 

@@ -14,8 +14,8 @@
  * REGRA: este módulo não pode importar de `app/`. Só de outros `lib/`.
  */
 
-import { weekdayOf, deadlineEnd, tzOfUnit, APP_TZ } from './dates';
-import { roundIsComplete, roundProgress, statusFromProgress } from './rounds';
+import { weekdayOf, deadlineEnd, addDays, tzOfUnit, APP_TZ } from './dates';
+import { roundIsComplete, roundProgress, statusFromProgress, templateExistedOn } from './rounds';
 
 /**
  * Os três tipos de checklist da operação, na ordem em que o dia acontece.
@@ -177,6 +177,162 @@ export function templateStatus(t, completions, today, tz = APP_TZ) {
   // A regra (e o porquê do prazo ser um INSTANTE no relógio da loja, não uma
   // comparação com o relógio de quem olha) está em lib/rounds.js, com teste.
   return statusFromProgress(p, { deadline: t.deadline, date: today, tz });
+}
+
+/** Dias inteiros entre dois dias de operação (a − b), sem passar por fuso. */
+const diffDias = (a, b) =>
+  Math.round((new Date(`${a}T12:00:00Z`) - new Date(`${b}T12:00:00Z`)) / 86400000);
+
+/**
+ * CARRYOVER — tarefas periódicas que vazaram de dias anteriores.
+ *
+ * Uma tarefa de seg/qua/sex não feita na segunda deixava de existir na terça:
+ * virava push de atraso, número na aderência do dia, e sumia. Esta função é a
+ * memória que faltava — ela responde "o que este checklist deve a `dateStr`?"
+ * varrendo os dias anteriores por ocorrências previstas e nunca quitadas.
+ *
+ * Mora aqui, e não em `rounds.js`, porque a pergunta é do domínio do CHECKLIST
+ * ("quais itens valem hoje"), não da rodada. É também o que evita o ciclo de
+ * import: quem precisa de `applicableItems` tem que estar deste lado.
+ *
+ * As regras, decididas em conselho (10/08/2026):
+ *
+ *  · SÓ tarefa com `carryover: true` arrasta. Arrastar é propriedade semântica
+ *    da tarefa — "limpar a coifa" (estado do mundo) arrasta; "conferir câmaras
+ *    na abertura" (momento do dia) não faz sentido cobrar depois. Quem sabe a
+ *    diferença é quem cria o checklist, então a flag é opt-in por tarefa.
+ *
+ *  · CORTE DE RETROATIVIDADE em `carryoverSince` (YYYY-MM-DD), carimbado por
+ *    quem liga a flag. A flag nascer desligada NÃO basta: no instante em que
+ *    alguém a liga numa terça, a varredura alcançaria a sexta anterior e a
+ *    tarefa estrearia cobrando dívida de dias em que a regra não existia. Com o
+ *    corte, a janela começa no dia da ativação. Sem o campo (registro antigo,
+ *    import sem a coluna) vale a janela cheia — comportamento explícito, não
+ *    acidente: quem gravou a flag sem data pediu a regra sem corte.
+ *
+ *  · QUITAÇÃO: a tarefa feita (união das submissões do dia, como em
+ *    `roundProgress`) em QUALQUER dia quita tudo até ali — fazer na quarta paga
+ *    a dívida de segunda. Submeter o checklist sem fazer a tarefa NÃO quita: a
+ *    régua é a de `roundIsComplete`, tarefa não feita é pendência.
+ *
+ *  · `dataOriginal` é a ocorrência não quitada MAIS ANTIGA dentro da janela —
+ *    uma instância só por tarefa, nunca uma pilha de cópias na tela.
+ *
+ *  · Dia de FOLGA (`closures`) e dia anterior à ATIVAÇÃO da loja
+ *    (`unitActiveOn`) não geram dívida, e a janela de existência do
+ *    checklist (`templateExistedOn`) vale para trás também — o que só passou a
+ *    valer de verdade com o backfill de `templates.created_at` (11/08/2026).
+ *
+ *  · TETO de 7 dias por padrão. Não é tuning, é condição de correção: pendência
+ *    é derivada da AUSÊNCIA de conclusão, e o cliente só carrega 90 dias / 1000
+ *    linhas de `completions` (sync.js) — varrer além do horizonte de dados
+ *    transformaria "dado não carregado" em cobrança indevida.
+ *
+ * `dateStr` já chega resolvido no relógio da loja (`todayStr(tzOf(unit))`);
+ * daqui para trás é aritmética de string (`addDays`), sem fuso.
+ *
+ * A aderência NÃO usa esta função: o arrastado aparece na lista do operador mas
+ * não entra no denominador do dia novo — senão o mesmo esquecimento derrubaria
+ * a métrica de segunda, terça e quarta.
+ *
+ * @returns {Array<{itemId, dataOriginal, diasArrastado}>}
+ */
+export function pendenciasArrastadas(template, completions, closures, dateStr, teto = 7, unit = null) {
+  if (!template || !dateStr || !Array.isArray(template.items) || teto <= 0) return [];
+  const arrastaveis = template.items.filter(i => i && i.carryover === true);
+  if (!arrastaveis.length) return [];
+
+  const inicio = addDays(dateStr, -teto);
+
+  // date → Set(itemIds feitos), união das submissões de cada dia da janela.
+  const feitasPorDia = new Map();
+  (completions || []).forEach(c => {
+    if (!c || c.templateId !== template.id || c.unitId !== template.unitId) return;
+    if (!c.date || c.date < inicio || c.date > dateStr) return;
+    let set = feitasPorDia.get(c.date);
+    if (!set) feitasPorDia.set(c.date, set = new Set());
+    (c.items || []).forEach(i => { if (i?.done) set.add(i.id); });
+  });
+
+  // Previstas de cada dia pela MESMA régua da tela (`applicableItems`), em cache
+  // porque a janela revisita os mesmos dias uma vez por tarefa arrastável.
+  const previstasEm = new Map();
+  const aplicaEm = d => {
+    let s = previstasEm.get(d);
+    if (!s) previstasEm.set(d, s = new Set(applicableItems(template, d).map(i => i.id)));
+    return s;
+  };
+
+  const out = [];
+  arrastaveis.forEach(item => {
+    // A última vez que foi feita quita tudo até ali (inclusive hoje).
+    let ultimaFeita = null;
+    for (let d = dateStr; d >= inicio; d = addDays(d, -1)) {
+      if (feitasPorDia.get(d)?.has(item.id)) { ultimaFeita = d; break; }
+    }
+    // A ocorrência prevista mais antiga depois da quitação — e antes de hoje.
+    // O corte de ativação nunca deixa a varredura passar do dia em que a flag
+    // foi ligada, mesmo com a janela do teto aberta antes dele.
+    const desde = ultimaFeita ? addDays(ultimaFeita, 1) : inicio;
+    const piso = item.carryoverSince && item.carryoverSince > desde ? item.carryoverSince : desde;
+    for (let d = piso; d < dateStr; d = addDays(d, 1)) {
+      if (!templateExistedOn(template, d)) continue;
+      if (isUnitClosed(closures || [], template.unitId, d)) continue;
+      // Dia anterior à ativação da loja não gera dívida: é o período de
+      // montagem, em que a equipe ainda estava sendo treinada. Sem isto, uma
+      // empresa que ativa hoje estrearia amanhã com tarefas "atrasadas" de
+      // dias em que ela nem operava — o mesmo histórico de fracasso que
+      // `unitActiveOn` existe para não inventar.
+      if (unit && !unitActiveOn(unit, d)) continue;
+      if (!aplicaEm(d).has(item.id)) continue;
+      out.push({ itemId: item.id, dataOriginal: d, diasArrastado: diffDias(dateStr, d) });
+      break;
+    }
+  });
+  return out;
+}
+
+/**
+ * O que o operador executa hoje: as tarefas previstas MAIS as arrastadas.
+ *
+ * É a única fonte da lista de execução desde o carryover. `applicableItems`
+ * continua respondendo "o que o CALENDÁRIO prevê para este dia" — e é ela que
+ * a aderência usa; esta responde "o que há para fazer", que passou a ser outra
+ * coisa no dia em que a dívida de ontem virou trabalho de hoje.
+ *
+ * INSTÂNCIA ÚNICA: tarefa que já é prevista hoje E tem dívida antiga aparece
+ * UMA vez, carregando a origem mais antiga. A alternativa — duas linhas iguais,
+ * uma "de hoje" e outra "de segunda" — obrigaria o operador a escolher qual
+ * marcar para um serviço que ele faz uma vez só.
+ *
+ * `carriedFrom` (e `diasArrastado`) vão anexados ao item, não numa lista à
+ * parte: quem renderiza a linha precisa do carimbo ali, e quem grava a
+ * submissão o copia para o registro sem ter que cruzar duas estruturas.
+ *
+ * A ORDEM coloca as arrastadas primeiro. Elas são a exceção do dia, e o que se
+ * quer é que a pessoa esbarre nelas antes da rotina que já conhece de cor.
+ */
+export function itensDoDia(template, completions, closures, dateStr, teto = 7, unit = null) {
+  const previstos = applicableItems(template, dateStr);
+  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto, unit);
+  if (!dividas.length) return previstos;
+
+  const porItem = new Map(dividas.map(d => [d.itemId, d]));
+  const marcados = previstos.map(i => {
+    const d = porItem.get(i.id);
+    return d ? { ...i, carriedFrom: d.dataOriginal, diasArrastado: d.diasArrastado } : i;
+  });
+  const jaNaLista = new Set(previstos.map(i => i.id));
+  const extras = dividas
+    .filter(d => !jaNaLista.has(d.itemId))
+    .map(d => {
+      const base = template.items.find(i => i.id === d.itemId);
+      return base && { ...base, carriedFrom: d.dataOriginal, diasArrastado: d.diasArrastado };
+    })
+    .filter(Boolean);
+
+  const arrastados = i => (i.carriedFrom ? 0 : 1);
+  return [...extras, ...marcados].sort((a, b) => arrastados(a) - arrastados(b));
 }
 
 // Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de

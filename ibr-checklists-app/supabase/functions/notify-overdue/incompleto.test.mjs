@@ -100,5 +100,76 @@ const feitasTudo = new Set(['a', 'b']);
 check(previstas.filter(id => !feitasTudo.has(id)).length === 0,
   'entregue 2 de 2: nenhum alerta, mesmo com item de outro dia no checklist');
 
-console.log(`  ${ok ? '✅ PASSOU' : '❌ FALHOU'}`);
+/**
+ * ── CARRYOVER: o guarda-corpo da fronteira app ↔ edge function ──────────────
+ *
+ * O app passou a cobrar tarefa atrasada de dias anteriores (`itensDoDia` em
+ * lib/checklists.js). Esta função NÃO sabe disso: `previstasDoDia` só conhece o
+ * calendário, e é assim de propósito — o conselho adiou o push de carryover.
+ *
+ * O que se trava aqui é que as duas réguas CONVIVEM. A consequência aceita é
+ * silêncio (a pendência arrastada não vira push); a consequência inaceitável
+ * seria ALARME FALSO — o gestor recebendo "entregue incompleto" por uma tarefa
+ * que nem era prevista, ou deixando de receber por uma que era.
+ *
+ * Sem este teste, uma edição futura aqui dentro — ou o dia em que alguém
+ * implementar a v2 — pode cruzar as duas réguas sem ninguém notar.
+ */
+console.log('\n═══ carryover: as duas réguas convivem ═══');
+
+// Item arrastável, previsto às segundas (1). 2026-07-30 é quinta (4).
+const arrastavel = { id: 'coifa', recurrence: [1], carryover: true, carryoverSince: '2026-07-01' };
+const comArrastavel = t([{ id: 'a' }, arrastavel]);
+
+check(
+  previstasDoDia(comArrastavel, '2026-07-30').join() === 'a',
+  'a tarefa arrastada NÃO entra nas previstas de hoje — o push não a cobra (silêncio, não alarme)',
+);
+check(
+  previstasDoDia(t([{ id: 'a', carryover: true, carryoverSince: '2026-07-01' }]), '2026-07-30').join() === 'a',
+  'os campos novos são inertes aqui: item diário com a flag segue previsto normalmente',
+);
+
+// A tarefa arrastada EXECUTADA hoje entra no registro. Ela não pode fazer uma
+// entrega completa parecer incompleta, nem mascarar uma pendência de verdade.
+{
+  const previstas = previstasDoDia(comArrastavel, '2026-07-30');   // só 'a'
+  const feitas = new Set(['a', 'coifa']);                          // fez a do dia E a atrasada
+  check(previstas.filter(id => !feitas.has(id)).length === 0,
+    'entrega com a arrastada feita não dispara "incompleto"');
+}
+{
+  const previstas = previstasDoDia(comArrastavel, '2026-07-30');
+  const feitas = new Set(['coifa']);                               // fez SÓ a atrasada
+  check(previstas.filter(id => !feitas.has(id)).join() === 'a',
+    'e a pendência real do dia continua sendo cobrada — a arrastada não a mascara');
+}
+
+/**
+ * O caso que só existe por causa do carryover: um checklist cujo trabalho de
+ * hoje é INTEIRAMENTE dívida antiga. `previstasDoDia` devolve vazio, e o
+ * index.ts cai no fallback `previstas = [...feitas]` (ver o bloco de
+ * incompletos). Sem esse fallback bem-comportado, a entrega viraria alarme.
+ */
+{
+  const soArrastada = t([arrastavel]);
+  let previstas = previstasDoDia(soArrastada, '2026-07-30');
+  check(previstas.length === 0, 'checklist só com tarefa de outro dia não prevê nada hoje');
+  const feitas = new Set(['coifa']);
+  if (previstas.length === 0) previstas = [...feitas];             // espelha o index.ts
+  check(previstas.filter(id => !feitas.has(id)).length === 0,
+    'entregue com a arrastada feita: o fallback não inventa pendência');
+}
+{
+  // Entregue sem fazer nada: `feitas` vazio. O fallback devolve vazio também, e
+  // o index.ts sai por `pendentes.length === 0`. Continua sem alarme falso.
+  const soArrastada = t([arrastavel]);
+  let previstas = previstasDoDia(soArrastada, '2026-07-30');
+  const feitas = new Set();
+  if (previstas.length === 0) previstas = [...feitas];
+  check(previstas.filter(id => !feitas.has(id)).length === 0,
+    'entregue vazio nesse checklist também não vira alarme');
+}
+
+console.log(`\n  ${ok ? '✅ PASSOU' : '❌ FALHOU'}`);
 if (!ok) process.exitCode = 1;
