@@ -500,7 +500,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
     canReview, checklistRate, collaborators, customFrom, customTo, dates, execPage,
     checklistsCompletos, taxaCompletos,
     expectedChecklists, exportCSV, exportPDF, filterSector, filterUnitId, filterUserId,
-    filtered, groupBy, groups, numDays, period, prod, prodCollabs, prodSectors, prodUnits,
+    filtered, groupBy, groups, numDays, period, periodLabel, prod, prodCollabs, prodSectors, prodUnits,
     reexecucoes, reportTz, reviewing, sectorOptions, selectedMonth, setCustomFrom, setCustomTo,
     setExecPage, setFilterSector, setFilterUserId, setGroupBy, setPeriod, setReviewing,
     setSelectedMonth, setSoPendentes, setViewingPhoto, setVista, soPendentes,

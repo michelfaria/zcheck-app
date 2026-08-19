@@ -31,7 +31,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle, ArrowLeft, Calendar, Camera, CheckCircle2, ChevronRight,
-  Download, ThumbsUp, TrendingUp, Trophy,
+  ClipboardCheck, Download, ThumbsUp, TrendingUp, Trophy,
   // J14 nomeia o item que reincide — o ícone carrega a natureza do alerta.
   AlertOctagon,
 } from 'lucide-react';
@@ -53,7 +53,7 @@ import { PERIODS, PUNCTUALITY_PERIODS, PUNCTUALITY_GROUPS } from '../../lib/stat
 import { track } from '../../lib/track';
 import { useRelatorio } from './useRelatorio';
 import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades, AgoraBase } from './agora';
-import { ReportsBody, ConferenceQueue, DisputeCard } from './ReportsView';
+import { ReportsBody, ConferenceQueue, DisputeCard, useFilaConferencia } from './ReportsView';
 import { NotificationHistory } from './NotificationHistory';
 import {
   MANAGER_ROLES, ROLE_LABELS, Eyebrow, Ticket, StarRating, Avatar, RatingLabel,
@@ -752,8 +752,6 @@ function PainelCorpo({
             actionPlans={actionPlans} plansLoaded={plansLoaded}
             onCreatePlan={onCreatePlan} onCompletePlan={onCompletePlan}
             onNavigate={onNavigate} completions={completions}
-            rel={rel} templates={templates} units={units}
-            disputes={disputes} onResolveDispute={onResolveDispute}
           />
         ) : (
           /* Sair de hoje colapsa o AGORA (§C.2). Números ao vivo ao lado de uma
@@ -768,6 +766,16 @@ function PainelCorpo({
             </button>
           </div>
         )
+      )}
+
+      {/* ═══ 1b · CONFERÊNCIA — a fila de trabalho de quem confere ═══════════
+          Logo abaixo do AGORA e ANTES do dia: é a única coisa desta tela em que
+          alguém está esperando resposta. Não depende da data do navegador. */}
+      {isManager && rel?.canReview && (
+        <SecaoConferencia
+          rel={rel} templates={templates} units={units} accent={unit.color}
+          completions={completions} disputes={disputes} onResolveDispute={onResolveDispute}
+        />
       )}
 
       {/* ═══ 2 · DIA ══════════════════════════════════════════════════════ */}
@@ -1137,7 +1145,7 @@ function PainelCorpo({
  * Todo evento daqui leva `ui: 2` no metadata, para separar as duas eras sem
  * tocar em `action_source`.
  */
-function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate, completions, rel, templates, units, disputes, onResolveDispute }) {
+function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCreatePlan, onCompletePlan, onNavigate, completions }) {
   const [actioned, setActioned] = useState(() =>
     Object.fromEntries((actionPlans || []).map(p => [p.recId, true])));
   const [planAnswers, setPlanAnswers] = useState({});
@@ -1267,40 +1275,115 @@ function SecaoAgora({ jit, accent, currentUser, actionPlans, plansLoaded, onCrea
       )}
 
       <AgoraBase base={jit.base} scopeLabel={jit.scopeLabel} />
+    </section>
+  );
+}
 
-      {/* ── A fila de Conferir ──
-          Mudança de arquitetura que §C não previu e §B.7 descobriu: conferir é
-          fila de TRABALHO, não análise. Alguém está esperando resposta. Na aba
-          Dados ela vive atrás do seletor Conferir/Análise, ao lado de
-          produtividade e exportação; aqui ela sobe para o AGORA, junto das
-          prioridades — que é a outra coisa desta tela em que o gestor AGE, e
-          não apenas olha.
-          Gate: `canReview`, que o motor já calcula com MANAGER_ROLES. O portão
-          de verdade continua sendo a RPC `review_completion`, que confere o
-          papel pelo token. */}
-      {rel?.canReview && (
+/* ───────────────────────── Seção CONFERÊNCIA ────────────────────────────── */
+
+/**
+ * A fila de Conferir, como SEÇÃO PRÓPRIA — e não como o último bloco do AGORA.
+ *
+ * Mudança de arquitetura que §C não previu e §B.7 descobriu: conferir é fila
+ * de TRABALHO, não análise. Alguém está esperando resposta. Na aba Dados ela
+ * vive atrás do seletor Conferir/Análise; aqui ela ficava no fim do AGORA,
+ * depois de follow-up, leitura, prioridades e base — comprimida entre blocos de
+ * leitura, sem cabeçalho, sem contagem, e a linha era um chevron cinza que
+ * ninguém lia como "aprove aqui" (pedido de 18/08/2026).
+ *
+ * O que muda: (1) cartão com borda na cor da loja e um número grande — quantas
+ * rodadas esperam — que se lê antes de qualquer rolagem; (2) "Conferir próxima"
+ * abre direto a mais urgente, para trabalhar a fila sem procurar; (3) as
+ * justificativas abertas continuam PRIMEIRO, porque nelas alguém está bloqueado
+ * esperando; (4) a seção não colapsa ao navegar para outro dia — a fila é do
+ * período (últimos 7 dias por padrão), não do dia do navegador.
+ *
+ * Gate: `canReview`, que o motor já calcula com MANAGER_ROLES. O portão de
+ * verdade continua sendo a RPC `review_completion`, que confere o papel pelo
+ * token. Só monta dentro do `{isManager && …}` do corpo — para colaborador
+ * `rel` é `null` e nada aqui existe.
+ */
+function SecaoConferencia({ rel, templates, units, accent, completions, disputes, onResolveDispute }) {
+  const { totalPendente, pedindoAtencao, proxima, conferidas } = useFilaConferencia(rel.filtered, templates, units);
+  const abertas = (disputes || []).filter(d => d.status === 'aberta');
+  const tudoEmDia = totalPendente === 0 && abertas.length === 0;
+  // "7 dias" vira "últimos 7 dias"; "Hoje", "Tudo" e mês ficam como estão.
+  const periodo = /^\d+ dias$/.test(rel.periodLabel || '')
+    ? `últimos ${rel.periodLabel}`
+    : (rel.periodLabel || '').toLowerCase();
+
+  return (
+    <section aria-label="Conferência de checklists"
+      style={{
+        background: 'white', borderRadius: 14,
+        border: `1px solid ${tudoEmDia ? C.border : `${accent}55`}`,
+        borderTop: `4px solid ${tudoEmDia ? C.success : accent}`,
+        padding: '14px 14px 6px',
+      }}>
+      {/* Cabeçalho: o número, o que ele significa, e a ação. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ClipboardCheck size={14} aria-hidden /> Conferência de checklists
+          </p>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+            <span className="font-display" style={{ fontSize: 'calc(34px * var(--zc-t-scale))', fontWeight: W.bold, lineHeight: 1, color: tudoEmDia ? C.success : C.ink }}>
+              {totalPendente}
+            </span>
+            <span style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink }}>
+              {totalPendente === 1 ? 'rodada aguardando você' : 'rodadas aguardando você'}
+            </span>
+          </div>
+          <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+            {tudoEmDia
+              ? `Tudo conferido${periodo ? ` — ${periodo}` : ''}.${conferidas.length ? ` ${conferidas.length} ${conferidas.length === 1 ? 'conferida' : 'conferidas'} no período.` : ''}`
+              : <>
+                  {pedindoAtencao > 0
+                    ? <span style={{ color: C.warning, fontWeight: W.semibold }}>{pedindoAtencao} pedindo atenção</span>
+                    : <span style={{ color: C.success, fontWeight: W.semibold }}>nenhuma com sinal de problema</span>}
+                  {abertas.length > 0 && (
+                    <> · <span style={{ color: C.critical, fontWeight: W.semibold }}>{abertas.length} {abertas.length === 1 ? 'justificativa aberta' : 'justificativas abertas'}</span></>
+                  )}
+                  {periodo ? ` · ${periodo}` : ''}
+                </>}
+          </p>
+        </div>
+
+        {proxima && (
+          <button onClick={() => rel.setReviewing(proxima)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: R.sm, border: 'none', background: accent, color: 'white', fontSize: T.bodySm, fontWeight: W.semibold, cursor: 'pointer', whiteSpace: 'nowrap', alignSelf: 'center' }}>
+            Conferir próxima <ChevronRight size={16} aria-hidden />
+          </button>
+        )}
+      </div>
+
+      {/* Em dia e sem histórico no período, o cabeçalho já disse tudo — o
+          "Nada para conferir" da fila seria a mesma frase duas vezes. */}
+      {(!tudoEmDia || conferidas.length > 0) && (
         <>
+          <div style={{ height: 1, background: C.border, margin: '12px 0' }} />
+
           {/* Justificativas primeiro: é a única coisa aqui em que outra pessoa
               está bloqueada esperando por uma resposta. */}
-          {(disputes || []).some(d => d.status === 'aberta') && (
-            <div>
-              <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                Justificativas aguardando você
-              </p>
-              <div className="space-y-1.5">
-                {(disputes || []).filter(d => d.status === 'aberta').map(d => (
+          {abertas.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <Eyebrow>Justificativas aguardando você</Eyebrow>
+              <div className="space-y-2" style={{ marginTop: 8 }}>
+                {abertas.map(d => (
                   <DisputeCard key={`${d.completionId}|${d.itemId}`} dispute={d} accent={accent}
                     completions={completions} onResolve={onResolveDispute} />
                 ))}
               </div>
             </div>
           )}
+
           <ConferenceQueue
             completions={rel.filtered} templates={templates} units={units}
             accent={accent} onOpen={c => rel.setReviewing(c)}
           />
         </>
       )}
+      {tudoEmDia && conferidas.length === 0 && <div style={{ height: 8 }} />}
     </section>
   );
 }
