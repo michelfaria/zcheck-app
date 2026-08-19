@@ -61,7 +61,7 @@ self.addEventListener('push', (event) => {
     payload = { title: 'IBR Checklists', body: event.data.text() };
   }
 
-  const { title, body, unitId, checklistName, sector } = payload;
+  const { title, body, unitId, checklistName, sector, url } = payload;
 
   const options = {
     body: body || `${checklistName} — ${sector} está atrasado`,
@@ -70,7 +70,9 @@ self.addEventListener('push', (event) => {
     tag: `ibr-${unitId}-${checklistName}`,   // agrupa por checklist
     renotify: false,                           // não notifica de novo se já existe
     requireInteraction: false,
-    data: { url: '/', unitId, checklistName, sector },
+    // O destino do clique é o Painel — quem recebe aviso de atraso quer VER o
+    // atraso, não a raiz do site. Payloads antigos (sem url) caem no mesmo lugar.
+    data: { url: url || '/app?aba=painel', unitId, checklistName, sector },
     actions: [
       { action: 'open', title: 'Abrir app' },
       { action: 'dismiss', title: 'Dispensar' },
@@ -88,21 +90,26 @@ self.addEventListener('notificationclick', (event) => {
 
   if (event.action === 'dismiss') return;
 
-  const targetUrl = event.notification.data?.url || '/';
+  // A origem é a do próprio service worker — o subdomínio do tenant onde a
+  // inscrição nasceu. Domínio cravado aqui já mandou o clique para o site
+  // errado quando o app mudou de checklists.ilhabelarepublic.com.
+  const targetUrl = new URL(
+    event.notification.data?.url || '/app?aba=painel',
+    self.location.origin
+  ).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Se já tem uma aba aberta no domínio, navega para a URL correta
+      // Se já tem uma aba aberta nesta origem, navega para a URL correta
       for (const client of clientList) {
-        if ((client.url.includes('checklists.ilhabelarepublic.com') || client.url.includes('ibr-checklists')) && 'focus' in client) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           client.focus();
           if ('navigate' in client) client.navigate(targetUrl);
           return;
         }
       }
-      // Senão abre nova aba no domínio correto
-      const base = 'https://checklists.ilhabelarepublic.com';
-      if (clients.openWindow) return clients.openWindow(base + targetUrl);
+      // Senão abre aba nova na mesma origem
+      if (clients.openWindow) return clients.openWindow(targetUrl);
     })
   );
 });

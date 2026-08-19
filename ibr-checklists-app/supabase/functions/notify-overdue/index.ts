@@ -373,7 +373,13 @@ Deno.serve(async (req: Request) => {
     const corpo = tipo === 'atraso'
       ? `${t.name} (${t.sector}) — prazo: ${t.deadline}`
       : `${t.name} (${t.sector}): ${t._feitas} de ${t._total} tarefas. ${t._pendentes} pendente${t._pendentes > 1 ? 's' : ''}.`;
-    const payload = JSON.stringify({ title: titulo, body: corpo });
+    // `url` é o destino do clique no service worker: o Painel, já filtrado na
+    // loja do atraso. Quem não alcança a aba cai no default do próprio app —
+    // nunca fora dele.
+    const payload = JSON.stringify({
+      title: titulo, body: corpo,
+      url: `/app?aba=painel&loja=${encodeURIComponent(String(t.unit_id ?? ''))}`,
+    });
 
     let entregues = 0;
     for (const s of alvos) {
