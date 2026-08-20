@@ -266,6 +266,15 @@ check(tem(chefe, 'Tendência'), 'gestão tem o segmento analítico');
 check(tem(chefe, 'Exportar'), 'gestão tem a exportação');
 check(tem(chefe, 'Feito do previsto'), 'gestão também tem o score do dia');
 
+// 18/08/2026 — a fila de conferência saiu do fim do AGORA e virou seção
+// própria, com cabeçalho (contagem + "Conferir próxima"). É a superfície de
+// trabalho de quem confere; se sumir, a conferência volta a ser invisível.
+check(tem(chefe, 'Conferência de checklists'), 'gestão tem a seção CONFERÊNCIA com cabeçalho');
+check(tem(chefe, 'aguardando você'), 'o cabeçalho diz quantas rodadas esperam');
+check(tem(chefe, 'Conferir próxima'), 'e oferece "Conferir próxima" (há rodada sem conferir na fixture)');
+check(!tem(colab, 'Conferência de checklists') && !tem(colab, 'Conferir próxima'),
+  'colaborador NÃO vê a seção CONFERÊNCIA');
+
 console.log('\n═══ REDE só para quem enxerga a rede ═══');
 // Liderança é presa a uma loja: `canSeeAllUnits` é falso e a seção não existe.
 const lideranca = painel(lider);

@@ -106,12 +106,18 @@ const seloDe = f => SELOS.find(([k]) => f[k]);
  * cobertura da conferência já é 100%. Lote otimizaria a única coisa que já
  * funciona e transformaria os 30% de "conferidos" do índice da liderança em
  * velocidade de clique.
+ *
+ * (A lista em si é `ConferenceQueue`, mais abaixo; a classificação vive em
+ * `useFilaConferencia`, que o Painel também usa para o cabeçalho da seção.)
+ *
+ * A fila pronta: destaques, grupos com sinal, grupos limpos, conferidas — e a
+ * PRÓXIMA rodada a conferir (a mais urgente), para o botão "Conferir próxima"
+ * do cabeçalho da seção. Exportado porque a seção de Conferência do Painel
+ * precisa dos números ANTES da lista (para o cabeçalho), e recalcular a
+ * classificação lá seria a segunda cópia da régua.
  */
-export function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
-  const [verConferidas, setVerConferidas] = useState(false);
-  const [verLimpas, setVerLimpas] = useState(false);
-
-  const { destaques, grupos, conferidas, limpas } = useMemo(() => {
+export function useFilaConferencia(completions, templates, units) {
+  return useMemo(() => {
     const deadlines = deadlineIndex(templates || []);
     const itensDe = c => ((templates || []).find(t => t.id === c.templateId)?.items) || [];
     // `foraDoPrazo` é resolvido AQUI e entregue pronto: a régua de prazo é uma
@@ -142,107 +148,169 @@ export function ConferenceQueue({ completions, templates, units, accent, onOpen 
     const comSinal = grupos.filter(g => g.gravidade > 0);
     const semSinal = grupos.filter(g => g.gravidade === 0);
 
-    return { destaques, grupos: comSinal, conferidas, limpas: semSinal };
-  }, [completions, templates, units]);
+    const totalPendente = destaques.length
+      + comSinal.reduce((n, g) => n + g.rodadas.length, 0)
+      + semSinal.reduce((n, g) => n + g.rodadas.length, 0);
+    const pedindoAtencao = destaques.length
+      + comSinal.reduce((n, g) => n + (g.rodadas.length - g.limpas), 0);
 
-  const totalPendente = destaques.length
-    + grupos.reduce((n, g) => n + g.rodadas.length, 0)
-    + limpas.reduce((n, g) => n + g.rodadas.length, 0);
+    // A próxima a conferir segue a MESMA ordem em que a fila é desenhada: o
+    // destaque mais antigo, senão a rodada mais grave do grupo mais grave, senão
+    // a primeira sem sinal. O botão do cabeçalho e a lista nunca discordam.
+    const proxima = destaques[0]?.c
+      || comSinal[0]?.rodadas[0]?.c
+      || semSinal[0]?.rodadas[0]?.c
+      || null;
+
+    return { destaques, grupos: comSinal, conferidas, limpas: semSinal, totalPendente, pedindoAtencao, proxima };
+  }, [completions, templates, units]);
+}
+
+// Data curta com dia da semana: "seg 17/08". Na fila, "17/08" sozinho obriga a
+// contar nos dedos que dia foi; o dia da semana é como a operação se lembra.
+const fmtDiaFila = date => {
+  const d = new Date(`${date}T12:00:00`);
+  const wd = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+  return `${wd} ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
+};
+
+/**
+ * Uma rodada na fila. O CARTÃO INTEIRO é o botão (alvo grande, um toque), e o
+ * "Conferir" à direita é o rótulo visível dessa ação — antes era um chevron
+ * cinza que ninguém lia como "clique aqui para aprovar".
+ */
+function LinhaFila({ x, accent, onOpen, mostrarChecklist }) {
+  const selo = seloDe(x.f);
+  const cor = selo ? selo[2] : C.success;
+  return (
+    <button onClick={() => onOpen(x.c)}
+      aria-label={`Conferir ${x.c.templateName} de ${x.c.date}`}
+      style={{
+        width: '100%', textAlign: 'left', background: 'white',
+        border: `1px solid ${C.border}`, borderLeft: `3px solid ${cor}`,
+        borderRadius: R.sm, padding: '11px 12px 11px 14px', cursor: 'pointer', fontFamily: 'inherit',
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: T.bodySm, color: C.ink, fontWeight: W.semibold, lineHeight: 1.3 }}>
+          {mostrarChecklist ? x.c.templateName : fmtDiaFila(x.c.date)}
+        </p>
+        <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>
+          {mostrarChecklist ? `${fmtDiaFila(x.c.date)} · ` : ''}{x.c.operatorName}
+          {mostrarChecklist && x.c.sector ? ` · ${x.c.sector}` : ''}
+        </p>
+        {selo && (
+          <span style={{
+            display: 'inline-block', marginTop: 5, fontSize: 10.5, fontWeight: W.semibold,
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+            color: selo[2], background: `${selo[2]}14`, border: `1px solid ${selo[2]}44`,
+            borderRadius: R.pill, padding: '2px 8px',
+          }}>{selo[1]}</span>
+        )}
+      </div>
+      <span aria-hidden style={{
+        flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '7px 12px', borderRadius: R.sm, background: accent, color: 'white',
+        fontSize: T.label, fontWeight: W.semibold, whiteSpace: 'nowrap',
+      }}>
+        Conferir <ChevronRight size={14} />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Um checklist × setor na fila. Fechado, mostra a contagem num selo colorido à
+ * direita (o número é o que se procura de relance); aberto, lista as rodadas,
+ * cada uma com o próprio botão Conferir.
+ */
+function GrupoFila({ g, accent, onOpen, abrirDeInicio = false }) {
+  const [aberto, setAberto] = useState(abrirDeInicio);
+  const temCritico = g.rodadas.some(x => x.f.criticoPendente);
+  const cor = temCritico ? C.critical : g.gravidade > 0 ? C.warning : C.success;
+  const atencao = g.rodadas.length - g.limpas;
+  return (
+    <div style={{ background: 'white', border: `1px solid ${C.border}`, borderLeft: `4px solid ${cor}`, borderRadius: R.md, marginBottom: 8, overflow: 'hidden' }}>
+      <button onClick={() => setAberto(v => !v)} aria-expanded={aberto}
+        style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="font-display" style={{ fontSize: 'calc(15px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, lineHeight: 1.3 }}>
+            {g.titulo}
+          </p>
+          <p style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>
+            {g.setor}{g.prazo ? ` · prazo ${g.prazo}` : ' · sem prazo'}
+          </p>
+          <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
+            {atencao > 0 ? (
+              <span style={{ color: cor, fontWeight: W.semibold }}>
+                {atencao} pedindo atenção
+              </span>
+            ) : (
+              <span style={{ color: C.success, fontWeight: W.semibold }}>sem sinal de problema</span>
+            )}
+            {atencao > 0 && g.limpas > 0 && ` · ${g.limpas} sem sinal`}
+          </p>
+          {/* A faixa de dias devolve a leitura temporal que o agrupamento
+              destrói: "falhou quatro sextas seguidas" é invisível numa
+              contagem, e óbvio numa fileira. */}
+          <div style={{ display: 'flex', gap: 3, marginTop: 7, flexWrap: 'wrap' }}>
+            {g.rodadas.slice(0, 21).map(x => (
+              <span key={x.c.id} title={`${x.c.date}${seloDe(x.f) ? ' · ' + seloDe(x.f)[1] : ''}`}
+                aria-hidden="true"
+                style={{
+                  width: 9, height: 9, borderRadius: 2,
+                  background: x.f.criticoPendente ? C.critical : x.f.limpa ? C.success : C.warning,
+                }} />
+            ))}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="font-display" aria-label={`${g.rodadas.length} rodadas`}
+            style={{
+              minWidth: 32, height: 32, padding: '0 8px', borderRadius: R.pill,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: `${cor}14`, color: cor, fontSize: T.bodySm, fontWeight: W.bold,
+            }}>
+            {g.rodadas.length}
+          </span>
+          <ChevronRight size={18} color={C.mutedLight}
+            style={{ transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+        </div>
+      </button>
+      {aberto && (
+        <div className="space-y-1.5" style={{ padding: '0 12px 12px', background: C.bg, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+          {g.rodadas.map(x => <LinhaFila key={x.c.id} x={x} accent={accent} onOpen={onOpen} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const linkDobra = {
+  background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold,
+};
+
+export function ConferenceQueue({ completions, templates, units, accent, onOpen }) {
+  const [verConferidas, setVerConferidas] = useState(false);
+  const [verLimpas, setVerLimpas] = useState(false);
+
+  const { destaques, grupos, conferidas, limpas, totalPendente } = useFilaConferencia(completions, templates, units);
 
   if (!totalPendente && !conferidas.length) {
     return <EmptyState title="Nada para conferir" desc="Nenhuma execução no período com os filtros atuais." />;
   }
-
-  const Linha = ({ x, mostrarChecklist }) => {
-    const selo = seloDe(x.f);
-    return (
-      <button onClick={() => onOpen(x.c)}
-        aria-label={`Conferir ${x.c.templateName} de ${x.c.date}`}
-        style={{
-          width: '100%', textAlign: 'left', background: 'white', border: `1px solid ${C.border}`,
-          borderRadius: R.sm, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 12.5, color: C.ink, fontWeight: W.semibold }}>
-            {mostrarChecklist ? `${x.c.templateName} · ` : ''}
-            {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-            <span style={{ fontWeight: 400, color: C.muted }}> · {x.c.operatorName}</span>
-          </p>
-          {selo && (
-            <span style={{
-              display: 'inline-block', marginTop: 3, fontSize: 9.5, fontWeight: W.semibold,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              color: selo[2], background: `${selo[2]}14`, border: `1px solid ${selo[2]}44`,
-              borderRadius: R.pill, padding: '1px 6px',
-            }}>{selo[1]}</span>
-          )}
-        </div>
-        <ChevronRight size={16} color={C.mutedLight} style={{ flexShrink: 0 }} />
-      </button>
-    );
-  };
-
-  const Grupo = ({ g }) => {
-    const [aberto, setAberto] = useState(false);
-    const cor = g.rodadas.some(x => x.f.criticoPendente) ? C.critical
-      : g.gravidade > 0 ? C.warning : accent;
-    return (
-      <div style={{ background: 'white', border: `1px solid ${C.border}`, borderLeft: `3px solid ${cor}`, borderRadius: R.sm, marginBottom: 8 }}>
-        <button onClick={() => setAberto(v => !v)} aria-expanded={aberto}
-          style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="font-display" style={{ fontSize: 'calc(15px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>
-              {g.titulo}
-            </p>
-            <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
-              {g.setor}{g.prazo ? ` · prazo ${g.prazo}` : ' · sem prazo'}
-            </p>
-            <p style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>
-              {g.rodadas.length} {g.rodadas.length === 1 ? 'rodada' : 'rodadas'}
-              {g.limpas > 0 && ` · ${g.limpas} sem sinal de problema`}
-              {g.rodadas.length - g.limpas > 0 && (
-                <span style={{ color: cor, fontWeight: W.semibold }}>
-                  {' · '}{g.rodadas.length - g.limpas} pedindo atenção
-                </span>
-              )}
-            </p>
-            {/* A faixa de dias devolve a leitura temporal que o agrupamento
-                destrói: "falhou quatro sextas seguidas" é invisível numa
-                contagem, e óbvio numa fileira. */}
-            <div style={{ display: 'flex', gap: 3, marginTop: 6, flexWrap: 'wrap' }}>
-              {g.rodadas.slice(0, 21).map(x => (
-                <span key={x.c.id} title={`${x.c.date}${seloDe(x.f) ? ' · ' + seloDe(x.f)[1] : ''}`}
-                  aria-hidden="true"
-                  style={{
-                    width: 8, height: 8, borderRadius: 2,
-                    background: x.f.criticoPendente ? C.critical : x.f.limpa ? C.success : C.warning,
-                  }} />
-              ))}
-            </div>
-          </div>
-          <ChevronRight size={18} color={C.mutedLight}
-            style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-        </button>
-        {aberto && (
-          <div className="space-y-1.5" style={{ padding: '0 12px 12px' }}>
-            {g.rodadas.map(x => <Linha key={x.c.id} x={x} />)}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <>
       {destaques.length > 0 && (
         <>
           <Eyebrow>Precisa de você</Eyebrow>
-          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
+          <p style={{ fontSize: T.caption, color: C.mutedLight, margin: '2px 0 8px' }}>
             Rodadas com item crítico não executado — fora do agrupamento de propósito.
           </p>
-          <div className="space-y-1.5" style={{ marginBottom: 16 }}>
-            {destaques.map(x => <Linha key={x.c.id} x={x} mostrarChecklist />)}
+          <div className="space-y-2" style={{ marginBottom: 18 }}>
+            {destaques.map(x => <LinhaFila key={x.c.id} x={x} accent={accent} onOpen={onOpen} mostrarChecklist />)}
           </div>
         </>
       )}
@@ -250,29 +318,30 @@ export function ConferenceQueue({ completions, templates, units, accent, onOpen 
       {grupos.length > 0 && (
         <>
           <Eyebrow>Fila por checklist</Eyebrow>
-          <p style={{ fontSize: T.label, color: C.mutedLight, margin: '2px 0 8px' }}>
-            Ordenada por gravidade, não por quantidade.
+          <p style={{ fontSize: T.caption, color: C.mutedLight, margin: '2px 0 8px' }}>
+            Ordenada por gravidade, não por quantidade. Toque para abrir as rodadas.
           </p>
           <div style={{ marginBottom: 16 }}>
-            {grupos.map(g => <Grupo key={g.key} g={g} />)}
+            {/* O grupo mais grave já nasce aberto: é onde o trabalho começa, e
+                um toque a menos por visita numa fila de todo dia é o que separa
+                "prático" de "escondido atrás de um acordeão". */}
+            {grupos.map((g, i) => <GrupoFila key={g.key} g={g} accent={accent} onOpen={onOpen} abrirDeInicio={i === 0} />)}
           </div>
         </>
       )}
 
       {limpas.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <button onClick={() => setVerLimpas(v => !v)} aria-expanded={verLimpas}
-            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+          <button onClick={() => setVerLimpas(v => !v)} aria-expanded={verLimpas} style={linkDobra}>
             {verLimpas ? '▾' : '▸'} Sem sinal de problema ({limpas.reduce((n, g) => n + g.rodadas.length, 0)})
           </button>
-          {verLimpas && limpas.map(g => <Grupo key={g.key} g={g} />)}
+          {verLimpas && limpas.map(g => <GrupoFila key={g.key} g={g} accent={accent} onOpen={onOpen} />)}
         </div>
       )}
 
       {conferidas.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <button onClick={() => setVerConferidas(v => !v)} aria-expanded={verConferidas}
-            style={{ background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: T.caption, color: C.muted, fontWeight: W.semibold }}>
+          <button onClick={() => setVerConferidas(v => !v)} aria-expanded={verConferidas} style={linkDobra}>
             {verConferidas ? '▾' : '▸'} Já conferidas ({conferidas.length})
           </button>
           {verConferidas && (
@@ -282,9 +351,9 @@ export function ConferenceQueue({ completions, templates, units, accent, onOpen 
                 .slice(0, 40)
                 .map(x => (
                   <button key={x.c.id} onClick={() => onOpen(x.c)}
-                    style={{ width: '100%', textAlign: 'left', background: `${C.success}08`, border: `1px solid ${C.success}33`, borderRadius: R.sm, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <p style={{ fontSize: 12, color: C.ink }}>
-                      {x.c.templateName} · {new Date(`${x.c.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                    style={{ width: '100%', textAlign: 'left', background: `${C.success}08`, border: `1px solid ${C.success}33`, borderRadius: R.sm, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <p style={{ fontSize: T.caption, color: C.ink }}>
+                      {x.c.templateName} · {fmtDiaFila(x.c.date)}
                       <span style={{ color: C.muted }}> · {x.c.operatorName}</span>
                     </p>
                     <p style={{ fontSize: T.label, color: C.success, fontWeight: W.semibold, marginTop: 1 }}>
