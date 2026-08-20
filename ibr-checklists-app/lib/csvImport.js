@@ -22,7 +22,7 @@ export const csvNorm = (s) =>
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, ' ');
 
-export const CSV_COLUMNS = ['tipo', 'checklist', 'loja', 'setor', 'tarefa', 'critico', 'foto', 'dias', 'orientacao', 'video', 'link', 'deadline'];
+export const CSV_COLUMNS = ['tipo', 'checklist', 'loja', 'setor', 'tarefa', 'critico', 'foto', 'dias', 'orientacao', 'video', 'link', 'deadline', 'arrastar'];
 const CSV_REQUIRED = ['tipo', 'checklist', 'loja', 'setor'];
 
 // Sinônimos aceitos na coluna `tipo` (já normalizados).
@@ -80,11 +80,13 @@ export function buildModelCsv({ loja = 'Loja 1', setor = 'Salão', tipoAbertura 
   const L = q(loja), S = q(setor), A = q(tipoAbertura), F = q(tipoFechamento);
   return [
     CSV_COLUMNS.join(','),
-    `checklist,${A},${L},${S},,,,,,,,08:00`,
-    `tarefa,${A},${L},${S},Limpar mesas e cadeiras,nao,sim,,${q('Conferir rodapés, cantos e vãos')},,,`,
-    `tarefa,${A},${L},${S},Verificar caixas,sim,,seg qua sex,,,,`,
-    `checklist,${F},${L},${S},,,,,,,,18:00`,
-    `tarefa,${F},${L},${S},Fechar caixas,sim,,,,https://youtube.com/watch?v=exemplo,,`,
+    `checklist,${A},${L},${S},,,,,,,,08:00,`,
+    `tarefa,${A},${L},${S},Limpar mesas e cadeiras,nao,sim,,${q('Conferir rodapés, cantos e vãos')},,,,`,
+    // "arrastar" no exemplo periódico de propósito: é onde ele faz sentido —
+    // a tarefa de seg/qua/sex que ninguém fez volta no dia seguinte.
+    `tarefa,${A},${L},${S},Verificar caixas,sim,,seg qua sex,,,,,sim`,
+    `checklist,${F},${L},${S},,,,,,,,18:00,`,
+    `tarefa,${F},${L},${S},Fechar caixas,sim,,,,https://youtube.com/watch?v=exemplo,,,`,
   ].join('\r\n');
 }
 
@@ -187,6 +189,12 @@ export function parseImportCSV(text) {
     const item = { id: uid(), text: row.tarefa.trim(), critical: csvBool(row.critico) };
     if (csvBool(row.foto)) item.photoRequired = true;
     const days = parseCsvDays(row.dias); if (days) item.recurrence = days;
+    // Tarefa que volta no dia seguinte enquanto não for feita. Sem
+    // `carryoverSince`: o import só CRIA checklist (duplicata vira "ja-existe"),
+    // e template novo nasce com `created_at` de hoje — `templateExistedOn` já
+    // impede qualquer cobrança anterior à importação. O carimbo só é necessário
+    // no editor, onde a flag pode ser ligada num checklist antigo.
+    if (csvBool(row.arrastar)) item.carryover = true;
     if (row.orientacao) item.description = row.orientacao;
     if (row.video) item.refVideo = row.video;
     if (row.link) item.refLink = row.link;
