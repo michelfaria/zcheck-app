@@ -17,6 +17,7 @@ import { supabase, authedSupabase, getSessionToken } from './supabase';
 // `undefined is not a function` em runtime, sem pista da origem.
 import { storageGet, storageSet } from './storage';
 import { daysAgoStr } from './dates';
+import { COMPLETIONS_HORIZON, capCompletions } from './completions';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -390,7 +391,7 @@ export async function fetchCompletions() {
       .select('*')
       .gte('date', daysAgoStr(90))
       .order('completed_at', { ascending: false })
-      .limit(1000);
+      .limit(COMPLETIONS_HORIZON);
     if (error) throw error;
     if (data) {
       const mapped = data.map(mapCompletionRow);
@@ -411,8 +412,12 @@ export async function saveCompletion(record) {
   // `submit` (para as fotos terem a que apontar) e uma segunda chamada com o
   // mesmo registro duplicaria o card na lista até o próximo fetch. Idempotente
   // por id, como já é o upsert do lado do servidor.
+  //
+  // O teto corta pelo TEMPO, nunca pela posição: a lista vem do fetch do mais
+  // novo para o mais velho, e um `slice(-500)` aqui apagava as conclusões de
+  // hoje do cache offline a cada submissão. Ver lib/completions.js.
   const cached = (await cache.get('ibr_completions')) || [];
-  const next = [...cached.filter(c => c.id !== record.id), record].slice(-500);
+  const next = capCompletions([...cached.filter(c => c.id !== record.id), record]);
   await cache.set('ibr_completions', next);
 
   // 2. Push to Supabase

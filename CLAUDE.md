@@ -114,6 +114,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
 | `templates-sync.spec.mjs` | os dois caminhos de leitura de `templates` devolvem objetos IDÊNTICOS — campo que só um lado mapeia derruba o teste |
 | `ativacao-loja.spec.mjs` | `units.active_from`: antes da estreia nada aparece no Executar e nada entra no previsto — **e os dois lados da fração andam juntos** (zerar só o denominador faz a aderência da estreia estourar 100%) |
+| `completions-cap.spec.mjs` | o teto da lista de conclusões em memória corta pelo TEMPO, nunca pela posição — um `slice(-500)` numa lista que chega do mais novo para o mais velho apagava as conclusões de HOJE a cada "Concluir" (vídeo do IBR3, 11/09/2026) |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —

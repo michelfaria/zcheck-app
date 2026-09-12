@@ -34,6 +34,10 @@ import {
   requestPushPermission, hasPushPermission, fetchPushStatus,
   setCacheScope,
 } from '../../lib/sync';
+// Teto da lista de conclusões em memória — corta pelo TEMPO, nunca pela
+// posição. O `slice(-500)` que ficava nos três pontos de escrita apagava as
+// conclusões de HOJE a cada "Concluir" (ver lib/completions.js).
+import { capCompletions } from '../../lib/completions';
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
@@ -9244,7 +9248,7 @@ function AppInner() {
       setCompletions(prev => {
         if (!prev) return [record];
         if (prev.some(c => c.id === record.id)) return prev;
-        return [...prev, record].slice(-500);
+        return capCompletions([...prev, record]);
       });
     });
 
@@ -9273,7 +9277,7 @@ function AppInner() {
 
   const saveCompletion = async record => {
     // Optimistic local update first
-    setCompletions(prev => [...(prev || []), record].slice(-500));
+    setCompletions(prev => capCompletions([...(prev || []), record]));
     // Then push to Supabase (queued offline if needed)
     try { await syncSaveCompletion(record); } catch (e) { console.error('saveCompletion', e); }
 
@@ -9320,7 +9324,7 @@ function AppInner() {
   };
 
   const saveCompletionsBulk = async nextCompletions => {
-    const capped = nextCompletions.slice(-500);
+    const capped = capCompletions(nextCompletions);
     setCompletions(capped);
     // Push each to Supabase
     for (const r of capped) {
