@@ -17,6 +17,7 @@ const RULE_LABELS = {
   low_completion_rate: 'Taxa de conclusão baixa',
   activated_user_gone: 'Usuário ativado sumiu',
   abandon_streak: 'Abandonos em sequência',
+  company_without_cnpj: 'Empresa sem CNPJ',
 };
 
 // Painel de alertas — regras avaliadas de hora em hora (ou sob demanda).
@@ -125,7 +126,8 @@ export default function AlertsPage() {
 
       <p style={{ fontSize: 12, color: C.mutedLight }}>
         Regras: unidade sem checklists há 24h (crítico a 72h) · queda &gt;30% vs média de 7 dias ·
-        taxa de conclusão &lt;70% no dia · usuário ativado sem atividade há 7 dias · 3+ abandonos em 24h.
+        taxa de conclusão &lt;70% no dia · usuário ativado sem atividade há 7 dias · 3+ abandonos em 24h ·
+        empresa ativa sem CNPJ cadastrado.
         A avaliação roda sozinha quando o painel está aberto e via cron diário como backstop.
       </p>
     </div>

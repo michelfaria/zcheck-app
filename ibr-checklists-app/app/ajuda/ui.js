@@ -163,8 +163,16 @@ export function SearchBox({ autoFocus = false, initialQuery = '' }) {
 }
 
 // "Este artigo ajudou?" — registra o voto via lib/track (fila offline-safe).
+// Também registra a VISUALIZAÇÃO do artigo (este widget está em toda página de
+// artigo e é client component — o page.js é server): sinal de demanda por tema
+// que alimenta o time de gestão de IA no /admin.
 export function FeedbackWidget({ category, slug }) {
   const [voted, setVoted] = useState(null); // 'up' | 'down'
+
+  useEffect(() => {
+    try { track('help_article_viewed', { source: 'ajuda', metadata: { article: `${category}/${slug}` } }); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const vote = v => {
     if (voted) return;

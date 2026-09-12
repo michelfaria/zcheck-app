@@ -91,6 +91,7 @@ import {
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
 import { C, R, W, T, successBright, greenOnDark } from '../../lib/tokens';
+import { normalizeCnpj, formatCnpj, cnpjError } from '../../lib/cnpj';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
 import { useAppUrlState } from '../../lib/appUrlState';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
@@ -3976,6 +3977,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
   const [newTypeName, setNewTypeName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitColor, setNewUnitColor] = useState('#063C5C');
+  const [newUnitCnpj, setNewUnitCnpj] = useState('');
   const [editUnit, setEditUnit] = useState(null); // { id, name, color } em edição
   const [editType, setEditType] = useState(null);   // { id, name }
   const [editSector, setEditSector] = useState(null); // { id, name, unitId }
@@ -3986,6 +3988,9 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
 
   const saveEditUnit = async () => {
     if (!editUnit?.name.trim()) return;
+    // Obrigatório também na edição — ninguém volta a uma loja sem CNPJ.
+    const cnpjMsg = cnpjError(editUnit.cnpj || '');
+    if (cnpjMsg) { flashErro('Informe o CNPJ da loja', new Error(cnpjMsg)); return; }
     setSaving(true);
     try {
       await onSaveUnit?.({
@@ -3994,6 +3999,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
         // String vazia é enviada de propósito — `saveUnit` a converte em NULL,
         // que é como se desfaz uma ativação errada. Ver lib/sync.js.
         activeFrom: editUnit.activeFrom || '',
+        cnpj: normalizeCnpj(editUnit.cnpj || ''),
       });
       flash('Loja atualizada!'); setEditUnit(null);
     }
@@ -4092,9 +4098,16 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
 
   const addUnit = async () => {
     if (!newUnitName.trim()) return;
+    // CNPJ da loja é obrigatório: é a identidade fiscal da unidade.
+    const cnpjMsg = cnpjError(newUnitCnpj);
+    if (cnpjMsg) { flashErro('Informe o CNPJ da loja', new Error(cnpjMsg)); return; }
     setSaving(true);
-    const u = { id: uid(), companyId: company?.id || 'ibr', name: newUnitName.trim(), color: newUnitColor, sortOrder: (allUnits?.length || 0) + 1 };
-    try { await onSaveUnit?.(u); flash('Loja criada!'); setNewUnitName(''); }
+    const u = {
+      id: uid(), companyId: company?.id || 'ibr', name: newUnitName.trim(),
+      color: newUnitColor, sortOrder: (allUnits?.length || 0) + 1,
+      cnpj: normalizeCnpj(newUnitCnpj),
+    };
+    try { await onSaveUnit?.(u); flash('Loja criada!'); setNewUnitName(''); setNewUnitCnpj(''); }
     catch(e) { flashErro('Não foi possível criar a loja', e); }
     setSaving(false);
   };
@@ -4242,6 +4255,30 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
                       Agora são {new Date().toLocaleTimeString('pt-BR', { timeZone: editUnit.timezone || APP_TZ, hour: '2-digit', minute: '2-digit' })} lá.
                     </span>
                   </label>
+                  {/* CNPJ da loja — obrigatório. Cada unidade tem identidade
+                      fiscal própria (no IBR, cada loja é uma PJ distinta); é o
+                      que permite contrato e cobrança por filial. O banco recusa
+                      número com dígito verificador inválido. */}
+                  <label className="block">
+                    <span style={{ fontSize: 11, fontWeight: W.semibold, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      CNPJ da loja
+                    </span>
+                    <input
+                      value={formatCnpj(editUnit.cnpj || '')}
+                      onChange={e => setEditUnit(p => ({ ...p, cnpj: normalizeCnpj(e.target.value).slice(0, 14) }))}
+                      placeholder="00.000.000/0001-00"
+                      className="w-full px-2 py-2 mt-1"
+                      style={{
+                        fontSize: 13, color: C.ink, background: 'white', borderRadius: 8,
+                        border: `1.5px solid ${editUnit.cnpj && cnpjError(editUnit.cnpj) ? C.critical : C.border}`,
+                        outline: 'none',
+                      }}
+                    />
+                    {editUnit.cnpj && editUnit.cnpj.length === 14 && cnpjError(editUnit.cnpj) && (
+                      <span style={{ fontSize: 11, color: C.critical, fontWeight: W.semibold }}>{cnpjError(editUnit.cnpj)}</span>
+                    )}
+                  </label>
+
                   {/* Ativa desde — o corte entre montar e operar. Vem depois do
                       fuso de propósito: a data só faz sentido depois que o
                       relógio da loja está certo, porque é nele que ela vale. */}
@@ -4300,7 +4337,7 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
                       </p>
                     )}
                   </div>
-                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color, timezone: tzOf(u), activeFrom: u.activeFrom || '' })} title="Editar"
+                  <button onClick={() => setEditUnit({ id: u.id, name: u.name, color: u.color, timezone: tzOf(u), activeFrom: u.activeFrom || '', cnpj: u.cnpj || '' })} title="Editar"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, flexShrink: 0 }}><Settings2 size={16} /></button>
                   {(allUnits || UNITS).length > 1 && (
                     <button onClick={() => removeUnit(u)} title="Remover"
@@ -4310,18 +4347,30 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
               )}
             </Ticket>
           ))}
-          <div className="flex gap-2">
-            <input value={newUnitName} onChange={e => setNewUnitName(e.target.value)}
-              placeholder="Nome da loja"
-              className="flex-1 px-3 py-2"
-              style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none' }}
-              onKeyDown={e => e.key === 'Enter' && addUnit()} />
-            <input type="color" value={newUnitColor} onChange={e => setNewUnitColor(e.target.value)}
-              style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2 }} />
-            <button onClick={addUnit} disabled={saving || !newUnitName.trim()}
-              style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer' }}>
-              <Plus size={16} />
-            </button>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input value={newUnitName} onChange={e => setNewUnitName(e.target.value)}
+                placeholder="Nome da loja"
+                className="flex-1 px-3 py-2"
+                style={{ fontSize: 13, borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none' }} />
+              <input type="color" value={newUnitColor} onChange={e => setNewUnitColor(e.target.value)}
+                style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2 }} />
+            </div>
+            <div className="flex gap-2">
+              {/* CNPJ é obrigatório: sem ele a loja não tem identidade fiscal
+                  própria — e no IBR cada loja é uma PJ distinta. */}
+              <input value={formatCnpj(newUnitCnpj)}
+                onChange={e => setNewUnitCnpj(normalizeCnpj(e.target.value).slice(0, 14))}
+                placeholder="CNPJ da loja"
+                className="flex-1 px-3 py-2"
+                style={{ fontSize: 13, borderRadius: 8, outline: 'none',
+                         border: `1.5px solid ${newUnitCnpj.length === 14 && cnpjError(newUnitCnpj) ? C.critical : C.border}` }}
+                onKeyDown={e => e.key === 'Enter' && addUnit()} />
+              <button onClick={addUnit} disabled={saving || !newUnitName.trim() || !!cnpjError(newUnitCnpj)}
+                style={{ padding: '8px 16px', borderRadius: 8, background: unit.color, color: 'white', border: 'none', fontWeight: W.semibold, cursor: 'pointer', opacity: (!newUnitName.trim() || cnpjError(newUnitCnpj)) ? 0.5 : 1 }}>
+                <Plus size={16} />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -10264,6 +10313,15 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
     // Linha sem nome era descartada no fim, calada: o gestor via três lojas na
     // tela e o app abria com uma. Ou nomeia, ou tira do caminho.
     if (step === 2 && units.some(u => !u.name.trim())) { setError('Dê um nome a todas as lojas — ou remova as linhas em branco no ×.'); return; }
+    // CNPJ por loja é obrigatório: é a identidade fiscal da unidade e o que
+    // permite cobrança e contrato por filial. Mensagem nomeia a loja errada.
+    if (step === 2) {
+      const semCnpj = units.find(u => u.name.trim() && cnpjError(u.cnpj || ''));
+      if (semCnpj) {
+        setError(`Informe um CNPJ válido para "${semCnpj.name.trim()}".`);
+        return;
+      }
+    }
     if (step === 3 && sectors.some(s => !s.name.trim())) { setError('Dê um nome a todos os setores — ou remova as linhas em branco no ×.'); return; }
     if (step === 4 && !types.some(t => t.name.trim())) { setError('Adicione ao menos um tipo de checklist.'); return; }
     if (step === 4 && types.some(t => !t.name.trim())) { setError('Dê um nome a todos os tipos — ou remova as linhas em branco no ×.'); return; }
@@ -10278,8 +10336,8 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
       const now = new Date().toISOString();
       const m = await import('../../lib/sync');
 
-      const unitRows = units.filter(u => u.name.trim()).map((u, i) => ({ id: u.id, name: u.name.trim(), color: u.color, sortOrder: i }));
-      for (const u of unitRows) await m.saveUnit({ id: u.id, companyId: cid, name: u.name, color: u.color, sortOrder: u.sortOrder });
+      const unitRows = units.filter(u => u.name.trim()).map((u, i) => ({ id: u.id, name: u.name.trim(), color: u.color, sortOrder: i, cnpj: normalizeCnpj(u.cnpj || '') }));
+      for (const u of unitRows) await m.saveUnit({ id: u.id, companyId: cid, name: u.name, color: u.color, sortOrder: u.sortOrder, cnpj: u.cnpj });
 
       // Confere no BANCO o que acabou de ser gravado, antes de marcar a empresa
       // como configurada. As lojas são a espinha da operação: se alguma não
@@ -10358,18 +10416,30 @@ function OnboardingWizard({ company, currentUser, onLogout, onDone }) {
         {step === 2 && (
           <div className="space-y-4">
             <h2 style={{ fontSize: 19, fontWeight: W.semibold, color: C.ink, marginBottom: 4 }}>Suas lojas / unidades</h2>
-            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Cada loja ou unidade operacional que você acompanha.</p>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>
+              Cada loja ou unidade operacional que você acompanha. O CNPJ de cada
+              uma é obrigatório — filiais e lojas do mesmo grupo costumam ter
+              CNPJs diferentes.
+            </p>
             <div className="space-y-3">
               {units.map((u, i) => (
-                <div key={u.id} style={fieldRow}>
-                  <input type="color" value={u.color} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, color: e.target.value } : x))}
-                    style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
-                  <input value={u.name} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, name: e.target.value } : x))} placeholder={`Loja ${i + 1}`} style={inputStyle} />
-                  {units.length > 1 && <button onClick={() => rm(setUnits)(u.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 18 }}>×</button>}
+                <div key={u.id} style={{ display: 'grid', gap: 6, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={fieldRow}>
+                    <input type="color" value={u.color} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, color: e.target.value } : x))}
+                      style={{ width: 42, height: 42, borderRadius: 8, border: `1.5px solid ${C.border}`, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                    <input value={u.name} onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, name: e.target.value } : x))} placeholder={`Loja ${i + 1}`} style={inputStyle} />
+                    {units.length > 1 && <button onClick={() => rm(setUnits)(u.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 18 }}>×</button>}
+                  </div>
+                  <input
+                    value={formatCnpj(u.cnpj || '')}
+                    onChange={e => setUnits(prev => prev.map(x => x.id === u.id ? { ...x, cnpj: normalizeCnpj(e.target.value).slice(0, 14) } : x))}
+                    placeholder="CNPJ desta loja"
+                    style={{ ...inputStyle, marginLeft: 52, borderColor: u.cnpj && u.cnpj.length === 14 && cnpjError(u.cnpj) ? C.critical : C.border }}
+                  />
                 </div>
               ))}
             </div>
-            <button onClick={() => setUnits(p => [...p, { id: nid(), name: '', color: primaryColor }])} style={addBtn}>+ Adicionar loja</button>
+            <button onClick={() => setUnits(p => [...p, { id: nid(), name: '', color: primaryColor, cnpj: '' }])} style={addBtn}>+ Adicionar loja</button>
           </div>
         )}
 

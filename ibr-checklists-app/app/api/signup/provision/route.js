@@ -1,6 +1,7 @@
 import {
-  json, serviceClient, hashSecret, PROVISION_WINDOW_MS,
+  json, serviceClient, hashSecret, PROVISION_WINDOW_MS, isEmail,
 } from '../../../../lib/signupServer';
+import { normalizeCnpj, isValidCnpj, cnpjRoot } from '../../../../lib/cnpj';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,17 +51,61 @@ export async function POST(request) {
   if (cErr) { console.error('cap por e-mail falhou:', cErr.message); return json({ ok: false, reason: 'network_error' }, 502); }
   if ((count ?? 0) >= 1) return json({ ok: false, reason: 'already_provisioned' }, 409);
 
+  // ── Cadastro completo: CNPJ é a identidade, e a raiz trava o trial ────────
+  // O RPC revalida tudo (é a fronteira real); aqui a checagem existe para dar
+  // uma mensagem específica em vez do texto cru da exceção do Postgres.
+  const co = body.company || {};
+  const cnpj = normalizeCnpj(co.cnpj);
+  if (!cnpj) return json({ ok: false, reason: 'cnpj_required', message: 'Informe o CNPJ da empresa.' }, 400);
+  if (!isValidCnpj(cnpj)) return json({ ok: false, reason: 'cnpj_invalid', message: 'CNPJ inválido — confira os dígitos.' }, 400);
+  if (!String(co.legal_name || '').trim()) {
+    return json({ ok: false, reason: 'legal_name_required', message: 'Informe a razão social.' }, 400);
+  }
+  if (!String(co.contact_name || '').trim()) {
+    return json({ ok: false, reason: 'contact_required', message: 'Informe o nome do responsável.' }, 400);
+  }
+  const contactEmail = String(co.contact_email || row.email).trim();
+  if (!isEmail(contactEmail)) {
+    return json({ ok: false, reason: 'contact_email_invalid', message: 'E-mail de contato inválido.' }, 400);
+  }
+
+  const { data: dup } = await supabase.from('companies')
+    .select('id').eq('cnpj', cnpj).maybeSingle();
+  if (dup) {
+    return json({ ok: false, reason: 'cnpj_taken',
+      message: 'Este CNPJ já está cadastrado no ZCheck. Se for a sua empresa, use "Acessar" para entrar.' }, 409);
+  }
+
+  // Cada loja tem identidade fiscal própria — CNPJ por unidade é obrigatório.
+  for (const u of body.units || []) {
+    if (!String(u?.name || '').trim()) continue;
+    const uc = normalizeCnpj(u.cnpj);
+    if (!uc || !isValidCnpj(uc)) {
+      return json({ ok: false, reason: 'unit_cnpj_invalid',
+        message: `Informe um CNPJ válido para a loja "${String(u.name).trim()}".` }, 400);
+    }
+  }
+
+  const { data: used } = await supabase.from('cnpj_trial_history')
+    .select('started_at').eq('cnpj_root', cnpjRoot(cnpj)).maybeSingle();
+  if (used) {
+    return json({ ok: false, reason: 'trial_already_used',
+      message: 'Este CNPJ já utilizou o período de teste gratuito. Fale com a gente para reativar a conta.' }, 409);
+  }
+
   // Provisiona. O payload (company/units/sectors/checklist_types/admin) é montado
   // pelo cliente; provision_company revalida tudo do lado do banco. O `plan` é
   // forçado a 'trial' aqui: um cadastro público nunca pode se auto-atribuir um
   // plano pago (diferente do /onboarding da equipe, que pode definir o plano).
   const { data, error: pErr } = await supabase.rpc('provision_company', {
     p: {
-      company: { ...(body.company || {}), plan: 'trial' },
+      company: { ...co, cnpj, contact_email: contactEmail, plan: 'trial' },
       units: body.units,
       sectors: body.sectors,
       checklist_types: body.checklist_types,
       admin: body.admin,
+      // Cadastro público NUNCA reusa trial: o override é exclusivo do Core.
+      options: { require_cnpj: true, allow_trial_reuse: false },
     },
   });
 

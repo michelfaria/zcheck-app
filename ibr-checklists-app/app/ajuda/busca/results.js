@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import Fuse from 'fuse.js';
 import { FileText, ChevronRight } from 'lucide-react';
 import { C } from '../../../lib/tokens';
+import { track } from '../../../lib/track';
 import { SearchBox } from '../ui';
 
 // Busca client-side: baixa o índice estático uma vez e pesquisa com Fuse.js.
@@ -37,6 +38,16 @@ export function BuscaResults() {
   const results = useMemo(() => {
     if (!fuse || !query) return [];
     return fuse.search(query, { limit: 20 }).map(r => r.item);
+  }, [fuse, query]);
+
+  // Registra a busca COM a contagem de resultados — busca com zero resultados
+  // é o sinal mais forte de lacuna na Central (alimenta o time de gestão).
+  useEffect(() => {
+    if (!fuse || !query) return;
+    try {
+      track('help_search_results', { source: 'ajuda', metadata: { query, results: results.length } });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fuse, query]);
 
   return (

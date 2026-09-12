@@ -1,40 +1,100 @@
 'use client';
 import { useState } from 'react';
-
-// Contato da empresa — o canal que o time de agentes usa para follow-up real
-// (e-mail via Brevo) e para o link 1-clique de WhatsApp.
-function ContactEditor({ company, busy, onSave }) {
-  const [email, setEmail] = useState(company.contact_email || '');
-  const [whatsapp, setWhatsapp] = useState(company.contact_whatsapp || '');
-  const dirty = email !== (company.contact_email || '') || whatsapp !== (company.contact_whatsapp || '');
-  const input = {
-    flex: 1, minWidth: 170, padding: '8px 10px', fontSize: 13,
-    border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, outline: 'none', color: C.ink,
-  };
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        Contato
-      </span>
-      <input style={input} type="email" placeholder="email do gestor"
-             value={email} onChange={e => setEmail(e.target.value)} />
-      <input style={input} inputMode="tel" placeholder="WhatsApp (ex: 5512988017472)"
-             value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
-      <button
-        onClick={() => onSave({ contact_email: email, contact_whatsapp: whatsapp })}
-        disabled={!dirty || !!busy}
-        style={{ background: dirty ? C.ink : C.mutedLight, color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-        Salvar contato
-      </button>
-    </div>
-  );
-}
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { C } from '../../../../lib/tokens';
+import { normalizeCnpj, formatCnpj, cnpjError } from '../../../../lib/cnpj';
 import {
   useAdminData, Card, Kpi, SectionTitle, HealthDot, UpdatedAt, ErrorBox, Loading,
   Empty, ChartTip, Table, fmtDay, timeAgo,
 } from '../ui';
+
+// Dados cadastrais: CNPJ (a identidade da conta e a trava do trial), razão
+// social e o canal que o time de agentes usa para follow-up real (e-mail via
+// Brevo) e WhatsApp 1-clique.
+function ContactEditor({ company, busy, onSave }) {
+  const [cnpj, setCnpj] = useState(company.cnpj || '');
+  const [legalName, setLegalName] = useState(company.legal_name || '');
+  const [contactName, setContactName] = useState(company.contact_name || '');
+  const [email, setEmail] = useState(company.contact_email || '');
+  const [whatsapp, setWhatsapp] = useState(company.contact_whatsapp || '');
+
+  const cnpjMsg = cnpj ? cnpjError(cnpj) : null;
+  const invalid = !!cnpjMsg && cnpj.length === 14;
+  const dirty = cnpj !== (company.cnpj || '')
+    || legalName !== (company.legal_name || '')
+    || contactName !== (company.contact_name || '')
+    || email !== (company.contact_email || '')
+    || whatsapp !== (company.contact_whatsapp || '');
+
+  const input = {
+    flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 13,
+    border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, outline: 'none', color: C.ink,
+  };
+  const rotulo = {
+    fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase',
+    letterSpacing: '0.05em', flexBasis: '100%', margin: 0,
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <p style={rotulo}>Identificação</p>
+      <input style={{ ...input, maxWidth: 210, borderColor: invalid ? C.critical : C.borderStrong }}
+             placeholder="CNPJ" value={formatCnpj(cnpj)}
+             onChange={e => setCnpj(normalizeCnpj(e.target.value).slice(0, 14))} />
+      <input style={input} placeholder="razão social"
+             value={legalName} onChange={e => setLegalName(e.target.value)} />
+      {invalid && (
+        <p style={{ fontSize: 12, color: C.critical, fontWeight: 600, flexBasis: '100%', margin: 0 }}>{cnpjMsg}</p>
+      )}
+
+      <p style={{ ...rotulo, marginTop: 6 }}>Responsável</p>
+      <input style={input} placeholder="nome do responsável"
+             value={contactName} onChange={e => setContactName(e.target.value)} />
+      <input style={input} type="email" placeholder="e-mail"
+             value={email} onChange={e => setEmail(e.target.value)} />
+      <input style={input} inputMode="tel" placeholder="WhatsApp (5512988017472)"
+             value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+      <button
+        onClick={() => onSave({
+          cnpj, legal_name: legalName, contact_name: contactName,
+          contact_email: email, contact_whatsapp: whatsapp,
+        })}
+        disabled={!dirty || !!busy || invalid}
+        style={{ background: dirty && !invalid ? C.ink : C.mutedLight, color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+        Salvar cadastro
+      </button>
+    </div>
+  );
+}
+
+// CNPJ da loja — obrigatório: cada unidade tem identidade fiscal própria
+// (lojas do mesmo grupo costumam ser PJs distintas).
+function UnitCnpjEditor({ unit, busy, onSave }) {
+  const [value, setValue] = useState(unit.cnpj || '');
+  const msg = cnpjError(value);
+  const invalid = !!msg && value.length === 14;
+  const dirty = value !== (unit.cnpj || '');
+  const faltando = !unit.cnpj;
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+      <input
+        value={formatCnpj(value)}
+        onChange={e => setValue(normalizeCnpj(e.target.value).slice(0, 14))}
+        placeholder="CNPJ da loja (obrigatório)"
+        style={{ flex: 1, minWidth: 170, padding: '5px 8px', fontSize: 12, color: C.ink,
+                 border: `1px solid ${invalid || faltando ? C.critical : C.border}`, borderRadius: 6, outline: 'none' }}
+      />
+      <button
+        onClick={() => onSave(value)} disabled={!dirty || !!msg || !!busy}
+        style={{ background: 'none', border: `1px solid ${dirty && !msg ? C.ink : C.border}`,
+                 color: dirty && !msg ? C.ink : C.mutedLight, borderRadius: 6,
+                 padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+        salvar
+      </button>
+      {invalid && <span style={{ fontSize: 11, color: C.critical, flexBasis: '100%' }}>{msg}</span>}
+    </div>
+  );
+}
 
 // Empresas — gestão de tenants: drill-down (unidades → setores, usuários) e
 // ações de gestão (ativar/desativar, +7 dias de trial, deletar).
@@ -74,7 +134,9 @@ export default function CompaniesPage() {
           ok: true,
           message: action === 'extend_trial'
             ? `Trial estendido até ${new Date(data.trial_ends_at).toLocaleDateString('pt-BR')}.`
-            : action === 'set_contact' ? 'Contato salvo — o time de agentes já pode usar este canal.'
+            : action === 'set_contact' ? 'Cadastro salvo — o CNPJ ficou vinculado a este cliente.'
+            : action === 'set_unit_cnpj' ? 'CNPJ da loja salvo e vinculado ao grupo.'
+            : action === 'set_billing_mode' ? `Faturamento definido: ${data.billing_mode === 'per_unit' ? 'uma cobrança por loja' : 'uma cobrança para o grupo'}.`
             : data.active ? 'Empresa reativada — o login volta a funcionar.' : 'Empresa desativada — o login foi bloqueado.',
         });
       }
@@ -89,6 +151,8 @@ export default function CompaniesPage() {
   if (list.loading && !list.data) return <Loading />;
   if (list.error && !list.data) return <ErrorBox message={list.error} onRetry={list.refresh} />;
   const companies = list.data.companies;
+  const trialHistory = list.data.trialHistory || [];
+  const semCnpj = companies.filter(c => !c.cnpj);
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -97,10 +161,23 @@ export default function CompaniesPage() {
         <UpdatedAt updatedAt={list.updatedAt} onRefresh={list.refresh} loading={list.loading} />
       </div>
 
+      {semCnpj.length > 0 && (
+        <Card style={{ borderColor: C.warning }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: C.warning }}>
+            {semCnpj.length} empresa(s) sem CNPJ cadastrado
+          </p>
+          <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+            {semCnpj.map(c => c.name || c.company_id).join(' · ')} — cadastre o CNPJ
+            no detalhe de cada uma. Sem ele a empresa não conta na trava de teste
+            gratuito e o time de agentes não tem identidade fiscal para cobrança.
+          </p>
+        </Card>
+      )}
+
       <Card>
         <SectionTitle>Todas as empresas ({companies.length})</SectionTitle>
         <Table
-          head={['Empresa', 'Plano', 'Unidades', 'Usuários', 'Checklists 7d', '30d', 'Última atividade', '']}
+          head={['Empresa', 'CNPJ', 'Plano', 'Unidades', 'Usuários', 'Checklists 7d', '30d', 'Última atividade', '']}
           empty="Nenhuma empresa provisionada."
           rows={companies.map(c => [
             <span key="n" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -108,6 +185,9 @@ export default function CompaniesPage() {
               <strong>{c.name || c.company_id}</strong>
               <span style={{ color: C.mutedLight, fontSize: 12 }}>{c.slug}</span>
               {!c.active && <span style={{ fontSize: 10, fontWeight: 600, color: C.critical }}>INATIVA</span>}
+            </span>,
+            <span key="cn" style={{ color: c.cnpj ? C.muted : C.warning, fontSize: 12 }}>
+              {c.cnpj ? formatCnpj(c.cnpj) : 'sem CNPJ'}
             </span>,
             <span key="p" style={{ color: C.muted }}>
               {c.subscription_status === 'trialing'
@@ -209,6 +289,27 @@ export default function CompaniesPage() {
             </div>
 
             <Card style={{ padding: 12 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Faturamento
+                </span>
+                {[['group', 'Uma cobrança para o grupo'], ['per_unit', 'Uma cobrança por loja/CNPJ']].map(([mode, rotulo]) => {
+                  const ativo = (detail.data.company.billing_mode || 'group') === mode;
+                  return (
+                    <button key={mode}
+                      onClick={() => !ativo && act(selected, 'set_billing_mode', { billing_mode: mode })}
+                      disabled={!!busy}
+                      style={{ background: ativo ? C.ink : 'none', color: ativo ? 'white' : C.ink,
+                               border: `1px solid ${ativo ? C.ink : C.borderStrong}`, borderRadius: 8,
+                               padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: ativo ? 'default' : 'pointer' }}>
+                      {rotulo}
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card style={{ padding: 12 }}>
               <ContactEditor
                 key={selected + (detail.data.company.contact_email || '') + (detail.data.company.contact_whatsapp || '')}
                 company={detail.data.company}
@@ -253,6 +354,11 @@ export default function CompaniesPage() {
                             {u.sectors.join(' · ')}
                           </div>
                         )}
+                        <UnitCnpjEditor
+                          key={u.unit_id + (u.cnpj || '')}
+                          unit={u} busy={busy}
+                          onSave={cnpj => act(selected, 'set_unit_cnpj', { unit_id: u.unit_id, cnpj })}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -276,6 +382,34 @@ export default function CompaniesPage() {
           </>
         )
       )}
+
+      {/* Trava anti-reuso: o histórico sobrevive à deleção da empresa */}
+      <Card>
+        <SectionTitle right={<span style={{ fontSize: 11, color: C.mutedLight }}>um CNPJ pertence a um cliente só</span>}>
+          CNPJs vinculados a clientes ({trialHistory.length})
+        </SectionTitle>
+        <Table
+          head={['CNPJ', 'Origem', 'Cliente', 'Início', 'Situação']}
+          empty="Nenhum CNPJ vinculado ainda."
+          rows={trialHistory.map(t => [
+            <span key="c" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{formatCnpj(t.cnpj)}</span>,
+            <span key="o" style={{ fontSize: 12, color: C.muted }}>{t.source === 'unit' ? 'loja' : 'empresa'}</span>,
+            t.company_name || t.origin_company_id || '—',
+            t.started_at ? new Date(t.started_at).toLocaleDateString('pt-BR') : '—',
+            <span key="s" style={{ color: t.outcome === 'deleted' ? C.critical : C.muted, fontSize: 12 }}>
+              {t.outcome === 'deleted' ? 'empresa deletada — trava mantida'
+                : t.outcome === 'converted' ? 'converteu'
+                : t.ended_at ? 'encerrado' : 'em uso'}
+            </span>,
+          ])}
+        />
+        <p style={{ fontSize: 12, color: C.mutedLight, marginTop: 10 }}>
+          Cada CNPJ — da empresa ou de qualquer loja — fica vinculado a um cliente.
+          Tentar usar um deles para abrir outra conta é recusado, e o teste gratuito
+          é do grupo inteiro, não de cada CNPJ. Para liberar um novo teste ao mesmo
+          grupo, use a opção em Config ao criar a empresa.
+        </p>
+      </Card>
     </div>
   );
 }

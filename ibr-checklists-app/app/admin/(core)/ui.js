@@ -74,6 +74,9 @@ export const EVENT_LABELS = {
   onboarding_completed: 'concluiu o onboarding', onboarding_skipped: 'pulou o onboarding',
   template_adopted: 'adotou checklist pronto', jit_opened: 'abriu o J.I.T.',
   recognition_sent: 'enviou reconhecimento', login_success: 'fez login',
+  help_search: 'buscou na Central de Ajuda', help_search_results: 'buscou na Central de Ajuda',
+  help_article_viewed: 'leu artigo da Central', help_article_feedback: 'avaliou artigo da Central',
+  help_assistant_message: 'perguntou ao assistente de suporte',
 };
 
 // ── Blocos visuais ───────────────────────────────────────────────────────────

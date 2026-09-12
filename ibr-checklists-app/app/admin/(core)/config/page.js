@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { C } from '../../../../lib/tokens';
+import { normalizeCnpj, formatCnpj, cnpjError } from '../../../../lib/cnpj';
 import {
   useAdminData, Card, SectionTitle, UpdatedAt, ErrorBox, Loading, Empty, Table,
 } from '../ui';
@@ -20,7 +21,11 @@ export default function ConfigPage() {
   const codes = useAdminData('/api/admin/company-codes', 120000);
 
   // ── Criar empresa ─────────────────────────────────────────────────────────
-  const [form, setForm] = useState({ name: '', slug: '', adminName: '', adminPin: '' });
+  const [form, setForm] = useState({
+    name: '', slug: '', adminName: '', adminPin: '',
+    cnpj: '', legalName: '', contactName: '', contactEmail: '', contactWhatsapp: '',
+    skipCnpj: false, allowTrialReuse: false,
+  });
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(null); // { ok, message, accessUrl? }
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setCreated(null); };
@@ -37,7 +42,11 @@ export default function ConfigPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         setCreated({ ok: true, message: `Empresa criada. Gestor: ${form.adminName} (PIN escolhido). Acesso:`, accessUrl: data.accessUrl });
-        setForm({ name: '', slug: '', adminName: '', adminPin: '' });
+        setForm({
+          name: '', slug: '', adminName: '', adminPin: '',
+          cnpj: '', legalName: '', contactName: '', contactEmail: '', contactWhatsapp: '',
+          skipCnpj: false, allowTrialReuse: false,
+        });
         codes.refresh();
       } else {
         setCreated({ ok: false, message: data.message || data.reason || 'não foi possível criar' });
@@ -95,17 +104,47 @@ export default function ConfigPage() {
         <Card>
           <SectionTitle>Criar empresa</SectionTitle>
           <p style={{ fontSize: 13, color: C.muted }}>
-            Nasce com trial de 7 dias e gestor com o PIN abaixo. As lojas são
-            configuradas pelo próprio gestor no onboarding guiado do app.
+            O CNPJ é a identidade da conta e trava o teste gratuito por grupo
+            econômico. As lojas são configuradas pelo próprio gestor no
+            onboarding guiado do app.
           </p>
           <form onSubmit={handleCreate}>
+            <label style={label}>CNPJ</label>
+            <input
+              style={{ ...input, borderColor: form.skipCnpj ? C.border : (form.cnpj && cnpjError(form.cnpj) ? C.critical : C.borderStrong) }}
+              value={formatCnpj(form.cnpj)} disabled={form.skipCnpj}
+              onChange={e => set('cnpj', normalizeCnpj(e.target.value).slice(0, 14))}
+              placeholder="00.000.000/0001-00" />
+            {!form.skipCnpj && form.cnpj.length === 14 && cnpjError(form.cnpj) && (
+              <p style={{ fontSize: 12, color: C.critical, fontWeight: 600, marginTop: 4 }}>{cnpjError(form.cnpj)}</p>
+            )}
+            <label style={{ ...label, textTransform: 'none', letterSpacing: 0, fontSize: 13, fontWeight: 500, color: C.ink, display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 0' }}>
+              <input type="checkbox" checked={form.skipCnpj} onChange={e => set('skipCnpj', e.target.checked)} />
+              Criar sem CNPJ (cortesia / parceria)
+            </label>
+            <label style={{ ...label, textTransform: 'none', letterSpacing: 0, fontSize: 13, fontWeight: 500, color: C.ink, display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 0' }}>
+              <input type="checkbox" checked={form.allowTrialReuse} onChange={e => set('allowTrialReuse', e.target.checked)} />
+              Liberar novo teste para este CNPJ
+            </label>
+
+            <label style={label}>Razão social</label>
+            <input style={input} value={form.legalName} onChange={e => set('legalName', e.target.value)} placeholder="ex: Padaria Sol Comércio LTDA" />
             <label style={label}>Nome da empresa</label>
             <input style={input} value={form.name} onChange={e => set('name', e.target.value)} placeholder="ex: Padaria Sol" />
             <label style={label}>Código / subdomínio (slug)</label>
             <input style={input} value={form.slug}
                    onChange={e => set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                    placeholder="ex: padaria-sol" />
-            <label style={label}>Nome do gestor</label>
+            <label style={label}>Responsável pela conta</label>
+            <input style={input} value={form.contactName} onChange={e => set('contactName', e.target.value)} placeholder="ex: Maria Souza" />
+            <label style={label}>E-mail de contato</label>
+            <input style={input} type="email" value={form.contactEmail} onChange={e => set('contactEmail', e.target.value)} placeholder="maria@empresa.com.br" />
+            <label style={label}>WhatsApp</label>
+            <input style={input} value={form.contactWhatsapp}
+                   onChange={e => set('contactWhatsapp', e.target.value.replace(/\D/g, '').slice(0, 13))}
+                   placeholder="5511999998888" />
+
+            <label style={label}>Nome do gestor (login no app)</label>
             <input style={input} value={form.adminName} onChange={e => set('adminName', e.target.value)} placeholder="ex: Maria" />
             <label style={label}>PIN do gestor (4 dígitos)</label>
             <input style={input} value={form.adminPin} inputMode="numeric" maxLength={4}

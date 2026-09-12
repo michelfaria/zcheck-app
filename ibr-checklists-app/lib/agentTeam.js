@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { spDaysAgo } from './adminApi';
 import { todayStr, weekdayOf } from './dates';
-import { monthlyValueFor, billingState } from './plans';
+import { PRICE_PER_UNIT, TRIAL_DAYS, monthlyValueFor, billingState } from './plans';
 import { sendPlainEmail } from './email';
 
 // ============================================================================
@@ -26,8 +26,9 @@ const DAILY_CALL_LIMIT = Number(process.env.AGENT_DAILY_LIMIT || 60);
 const SHARED_CONTEXT = `
 Você faz parte do time de gestão da ZCheck — SaaS multi-tenant de checklists
 operacionais para negócios físicos (restaurantes, hotéis, varejo). Tagline:
-"Faça bem feito. Todo dia." Modelo de negócio: assinatura mensal por tiers
-(starter R$97/1 unidade, growth R$197/3, scale R$297/5), trial de 7 dias.
+"Faça bem feito. Todo dia." Modelo de negócio: preço POR LOJA — plano anual
+R$${PRICE_PER_UNIT.annual}/loja/mês (12 meses, o herói) ou mensal
+R$${PRICE_PER_UNIT.monthly}/loja/mês sem fidelidade; trial de ${TRIAL_DAYS} dias.
 Piloto: IBR Group (3 lojas em Ilhabela/SP). Fundador: Michel (único humano).
 
 Objetivo do time: escalar adoção e receita com o MÍNIMO de intervenção do
@@ -48,6 +49,10 @@ Regras inegociáveis:
   mostrar um padrão de erro ou acerto que mereça virar regra).
 - O snapshot inclui METAS ativas com o valor atual — compare sempre o realizado
   vs a meta e diga se o ritmo alcança o prazo.
+- O snapshot inclui a CENTRAL DE AJUDA (central_de_ajuda_14d): buscas sem
+  resultado = lacuna de conteúdo/produto; perguntas ao assistente = onde os
+  usuários travam, nas palavras deles; feedback negativo = artigo que não
+  resolve. Produto e CS devem tratar isso como voz do cliente.
 - Escreva em português, markdown enxuto.`;
 
 export const AGENTS = {
@@ -242,6 +247,46 @@ export async function buildSnapshot(db) {
     eventos[r.event_type] = (eventos[r.event_type] || 0) + r.events;
   }
 
+  // ── Central de Ajuda (14d): a dor dos usuários nas palavras deles ─────────
+  // Buscas sem resultado = lacuna de conteúdo; perguntas ao assistente = onde
+  // travam; feedback negativo = artigo que não resolve. Ouro p/ Produto e CS.
+  const { data: helpEvents } = await db.from('events')
+    .select('event_type, metadata, occurred_at')
+    .in('event_type', ['help_search', 'help_search_results', 'help_article_viewed', 'help_article_feedback', 'help_assistant_message'])
+    .gte('occurred_at', new Date(Date.now() - 14 * 864e5).toISOString())
+    .order('occurred_at', { ascending: false })
+    .limit(2000);
+
+  const help = {
+    buscas_14d: 0, buscas_sem_resultado: [], termos_buscados: {},
+    artigos_vistos: {}, feedback_negativo: [], perguntas_assistente: [],
+  };
+  for (const e of helpEvents || []) {
+    const m = e.metadata || {};
+    if (e.event_type === 'help_search' || e.event_type === 'help_search_results') {
+      help.buscas_14d += 1;
+      const q = (m.query || '').toLowerCase().trim();
+      if (q) help.termos_buscados[q] = (help.termos_buscados[q] || 0) + 1;
+      if (e.event_type === 'help_search_results' && m.results === 0 && q
+          && !help.buscas_sem_resultado.includes(q) && help.buscas_sem_resultado.length < 10) {
+        help.buscas_sem_resultado.push(q);
+      }
+    } else if (e.event_type === 'help_article_viewed' && m.article) {
+      help.artigos_vistos[m.article] = (help.artigos_vistos[m.article] || 0) + 1;
+    } else if (e.event_type === 'help_article_feedback' && m.helpful === false && m.article
+        && !help.feedback_negativo.includes(m.article)) {
+      help.feedback_negativo.push(m.article);
+    } else if (e.event_type === 'help_assistant_message' && m.question
+        && help.perguntas_assistente.length < 15) {
+      help.perguntas_assistente.push(m.question);
+    }
+  }
+  // Só o top de cada lista entra no snapshot (controle de tokens).
+  help.termos_buscados = Object.fromEntries(
+    Object.entries(help.termos_buscados).sort((a, b) => b[1] - a[1]).slice(0, 10));
+  help.artigos_vistos = Object.fromEntries(
+    Object.entries(help.artigos_vistos).sort((a, b) => b[1] - a[1]).slice(0, 10));
+
   const metas = await goalsWithCurrent(db);
   const usuarios = userComp.data || [];
   return {
@@ -272,6 +317,7 @@ export async function buildSnapshot(db) {
     top_usuarios: (ranking.data || []).map(u => ({
       nome: u.name, empresa: u.company_id, checklists_30d: u.completions_30d,
     })),
+    central_de_ajuda_14d: help,
   };
 }
 

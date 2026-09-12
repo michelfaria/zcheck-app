@@ -44,7 +44,9 @@ export function Chat() {
     setInput('');
     setSending(true);
     try {
-      track('help_assistant_message', { source: 'ajuda', metadata: { chars: content.length } });
+      // A pergunta em si (truncada) é o sinal mais valioso para o time de
+      // gestão: mostra ONDE os usuários travam, nas palavras deles.
+      track('help_assistant_message', { source: 'ajuda', metadata: { chars: content.length, question: content.slice(0, 300) } });
     } catch {}
     try {
       // A mensagem de boas-vindas é da UI, não da conversa — não vai à API.

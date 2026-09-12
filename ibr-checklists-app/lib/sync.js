@@ -1474,6 +1474,11 @@ export async function saveUnit(unit) {
   // ativação errada. Com `if (unit.activeFrom)` limpar o campo não gravaria
   // nada e a tela mostraria a data de volta no próximo carregamento.
   if (unit.activeFrom !== undefined) row.active_from = unit.activeFrom || null;
+  // CNPJ da loja (matriz ou filial). Mesma regra do activeFrom: testa
+  // `undefined`, porque vazio é um valor com significado ("usa o CNPJ da
+  // empresa") e é assim que se apaga um CNPJ digitado errado. O banco valida
+  // o dígito verificador — CNPJ inválido é recusado no upsert.
+  if (unit.cnpj !== undefined) row.cnpj = unit.cnpj || null;
   await upsertRow('units', row, `a loja "${unit.name}"`);
 }
 

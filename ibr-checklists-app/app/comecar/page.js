@@ -4,11 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { Check, CheckCircle2 } from 'lucide-react';
 
 import { C } from '../../lib/tokens';
-// Cadastro self-service ENXUTO. Só o mínimo para criar a conta: e-mail (OTP) →
-// nome da empresa → gestor (nome + PIN). Toda a configuração da operação (lojas,
-// setores, checklists, logo, cores) acontece DEPOIS, no onboarding guiado dentro
-// do app, onde o gestor vê o resultado enquanto configura. O provisionamento
-// segue no servidor (/api/signup/provision → provision_company).
+import { normalizeCnpj, formatCnpj, cnpjError } from '../../lib/cnpj';
+// Cadastro self-service: e-mail (OTP) → IDENTIFICAÇÃO DA EMPRESA (CNPJ, razão
+// social, responsável) → gestor (nome + PIN). A configuração da operação
+// (lojas, setores, checklists, logo, cores) continua acontecendo DEPOIS, no
+// onboarding guiado dentro do app.
+//
+// O CNPJ é a identidade da conta e a trava do teste gratuito: a RAIZ do CNPJ
+// (grupo econômico) fica registrada em cnpj_trial_history e vale mesmo se a
+// empresa for deletada — trocar de e-mail não dá outro trial. A checagem
+// acontece já no passo 3, para ninguém preencher tudo e só então descobrir.
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const slug = (name) => name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -61,6 +66,13 @@ export default function ComecarPage() {
   const [companyName, setCompanyName] = useState('');
   const [createdSlug, setCreatedSlug] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // Identificação da empresa (passo 3)
+  const [cnpj, setCnpj] = useState('');
+  const [cnpjState, setCnpjState] = useState(null); // {checking}|{ok}|{error}
+  const [legalName, setLegalName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
 
   // Gestor
   const [gestorName, setGestorName] = useState('');
@@ -146,13 +158,44 @@ export default function ComecarPage() {
     already_used: 'Este cadastro já foi usado. Recomece.',
   }[reason] || 'Não foi possível validar o código. Tente novamente.');
 
-  const goNext = () => {
+  // Consulta o CNPJ assim que ele fica completo: já cadastrado? já usou trial?
+  // Roda no blur e antes de avançar — o servidor é quem decide.
+  const checkCnpj = async (value = cnpj) => {
+    const clean = normalizeCnpj(value);
+    const localErr = cnpjError(clean);
+    if (localErr) { setCnpjState({ error: localErr }); return false; }
+    setCnpjState({ checking: true });
+    try {
+      const res = await fetch('/api/signup/check-cnpj', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signup_id: signupId, claim_token: claimToken, cnpj: clean }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) { setCnpjState(null); return true; } // servidor decide no submit
+      if (body.available) { setCnpjState({ ok: true }); return true; }
+      setCnpjState({ error: body.message || 'Este CNPJ não pode abrir conta.' });
+      return false;
+    } catch {
+      setCnpjState(null); // sem rede: não trava o cadastro; o submit revalida
+      return true;
+    }
+  };
+
+  const goNext = async () => {
     setError('');
     if (step === 1) { requestOtp(); return; }
     if (step === 2) { verifyOtp(); return; }
     if (step === 3) {
+      const cnpjErr = cnpjError(cnpj);
+      if (cnpjErr) { setCnpjState({ error: cnpjErr }); setError(cnpjErr); return; }
+      if (!legalName.trim()) { setError('Informe a razão social.'); return; }
       if (!companyName.trim()) { setError('Informe o nome da empresa.'); return; }
       if (slug(companyName).length < 3) { setError('O nome da empresa é muito curto.'); return; }
+      if (!contactName.trim()) { setError('Informe o nome do responsável.'); return; }
+      setSaving(true);
+      const livre = await checkCnpj();
+      setSaving(false);
+      if (!livre) { setError('Confira o CNPJ para continuar.'); return; }
       setStep(4); return;
     }
     if (step === 4) { submit(); return; }
@@ -173,7 +216,16 @@ export default function ComecarPage() {
         body: JSON.stringify({
           signup_id: signupId,
           claim_token: claimToken,
-          company: { id: companyId, name: companyName.trim(), slug: companySlug },
+          company: {
+            id: companyId,
+            name: companyName.trim(),
+            slug: companySlug,
+            cnpj: normalizeCnpj(cnpj),
+            legal_name: legalName.trim(),
+            contact_name: contactName.trim(),
+            contact_email: email.trim().toLowerCase(),
+            contact_whatsapp: contactPhone.replace(/\D/g, ''),
+          },
           admin: { id: uid(), name: gestorName.trim(), pin: gestorPin },
         }),
       });
@@ -186,9 +238,10 @@ export default function ComecarPage() {
   };
 
   const provisionError = (status, body) => {
+    // Mensagens de CNPJ vêm prontas do servidor — são específicas e acionáveis.
+    if (body?.message) return body.message;
     if (status === 409) return 'Este e-mail já criou uma empresa.';
     if (status === 403 || status === 410) return 'Sua sessão de cadastro expirou. Recomece pelo e-mail.';
-    if (body?.message) return body.message;
     return 'Erro ao criar empresa. Tente novamente.';
   };
 
@@ -262,15 +315,56 @@ export default function ComecarPage() {
           </div>
         )}
 
-        {/* ── STEP 3: Empresa (só o nome) ── */}
+        {/* ── STEP 3: Identificação da empresa ── */}
         {step === 3 && (
           <div className="space-y-4">
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Nome da empresa</h2>
-            <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>É como sua empresa aparece no ZCheck. As lojas e checklists você configura no primeiro acesso.</p>
-            <Input label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Ex: Padaria do João, Hotel Central..." />
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Sua empresa</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
+              O CNPJ identifica a conta e garante o teste gratuito. As lojas e checklists você configura no primeiro acesso.
+            </p>
+
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 6 }}>CNPJ</p>
+              <input
+                value={formatCnpj(cnpj)}
+                onChange={e => { setCnpj(normalizeCnpj(e.target.value).slice(0, 14)); setCnpjState(null); setError(''); }}
+                onBlur={() => { if (normalizeCnpj(cnpj).length === 14) checkCnpj(); }}
+                placeholder="00.000.000/0001-00"
+                inputMode="text"
+                aria-label="CNPJ da empresa"
+                style={{
+                  width: '100%', fontSize: 16, color: C.ink, background: 'white',
+                  padding: '11px 14px', borderRadius: 10, outline: 'none',
+                  border: `1.5px solid ${cnpjState?.error ? C.critical : cnpjState?.ok ? C.success : C.border}`,
+                }}
+              />
+              {cnpjState?.checking && <p style={{ fontSize: 12, color: C.muted, marginTop: 5 }}>Conferindo…</p>}
+              {cnpjState?.ok && (
+                <p style={{ fontSize: 12, color: C.success, fontWeight: 600, marginTop: 5, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Check size={13} aria-hidden /> CNPJ liberado para o teste gratuito
+                </p>
+              )}
+              {cnpjState?.error && (
+                <p style={{ fontSize: 12, color: C.critical, fontWeight: 600, marginTop: 5 }}>{cnpjState.error}</p>
+              )}
+            </div>
+
+            <Input label="Razão social" value={legalName} onChange={setLegalName} placeholder="Ex: Padaria do João Comércio de Alimentos LTDA" />
+            <Input label="Nome no ZCheck" value={companyName} onChange={setCompanyName} placeholder="Ex: Padaria do João" />
             {companyName.trim() && slug(companyName).length >= 3 && (
               <p style={{ fontSize: 12, color: C.muted }}>Seu endereço: <strong style={{ color: C.ink }}>{slug(companyName)}.zcheckapp.com</strong></p>
             )}
+
+            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16, marginTop: 4 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 10 }}>Responsável pela conta</p>
+              <Input label="Nome completo" value={contactName} onChange={setContactName} placeholder="Ex: João Silva" />
+              <div style={{ marginTop: 12 }}>
+                <Input label="WhatsApp" value={contactPhone} onChange={v => setContactPhone(v.replace(/\D/g, '').slice(0, 13))} placeholder="11999998888" type="tel" />
+              </div>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+                Contato: <strong style={{ color: C.ink }}>{email.trim().toLowerCase()}</strong> — o e-mail que você acabou de confirmar.
+              </p>
+            </div>
           </div>
         )}
 

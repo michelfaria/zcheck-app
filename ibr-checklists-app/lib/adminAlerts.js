@@ -18,7 +18,7 @@ export async function runAlertRules(db) {
   const yesterday = spDaysAgo(1);
   const weekKey = Math.floor(Date.parse(today) / (7 * 864e5)); // janela semanal p/ regra 4
 
-  const [units, daily, userCompletions, abandons] = await Promise.all([
+  const [units, daily, userCompletions, abandons, semCnpj] = await Promise.all([
     db.from('admin_unit_health').select('*'),
     db.from('admin_completions_daily').select('*').gte('day', spDaysAgo(9)).limit(5000),
     db.from('admin_user_completions').select('*').limit(5000),
@@ -26,6 +26,10 @@ export async function runAlertRules(db) {
       .eq('event_type', 'checklist_abandoned')
       .gte('occurred_at', new Date(Date.now() - 24 * 36e5).toISOString())
       .limit(2000),
+    // Empresas ativas sem CNPJ: cadastro incompleto — sem identidade fiscal
+    // não há cobrança nem trava de trial. `is('cnpj', null)` só funciona depois
+    // da migration; o erro é tolerado abaixo para o motor não parar.
+    db.from('companies').select('id, name').is('cnpj', null).eq('active', true),
   ]);
   const firstErr = [units, daily, userCompletions, abandons].find(r => r.error);
   if (firstErr) throw new Error(firstErr.error.message);
@@ -131,6 +135,18 @@ export async function runAlertRules(db) {
         dedupe_key: `abandon_streak|${unitId}|${today}`,
       });
     }
+  }
+
+  // ── R6: empresa ativa sem CNPJ (cadastro incompleto) ─────────────────────
+  // Uma vez por semana por empresa: é pendência de cadastro, não incêndio.
+  for (const c of semCnpj.data || []) {
+    alerts.push({
+      severity: 'info',
+      rule: 'company_without_cnpj',
+      company_id: c.id,
+      message: `${c.name || c.id} está sem CNPJ cadastrado — sem identidade fiscal não há cobrança nem trava de teste.`,
+      dedupe_key: `company_without_cnpj|${c.id}|w${weekKey}`,
+    });
   }
 
   // ── Grava (ignorando janelas já alertadas) + registra a execução ──────────
