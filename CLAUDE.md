@@ -83,7 +83,10 @@ const EMPRESAS = {
   Prazo de checklist é `instantAt(data, hora, tz)` — comparar com `new Date()`
   usa o fuso de quem abriu o painel, não o da loja que executou
 - `globals.css` deve ter `@tailwind` — se quebrar, restaurar com `git show HEAD:ibr-checklists-app/app/globals.css`
-- git root está em `/Users/michelfaria/Documents/Site ZCheck` — não em `ibr-checklists-app/`
+- git root está em `/Users/michelfaria/Projects/zcheck-app` — não em `ibr-checklists-app/`.
+  O repositório saiu do iCloud em 12/09/2026: em `~/Documents` o iCloud evictava
+  os arquivos (grep/git/build travavam) e chegou a apagar `.git/index` no meio
+  de um `git switch`. Não voltar para pasta sincronizada.
 - **Nunca `git add -A` nem `git add .`** — estagiar sempre por caminho. A raiz
   guarda material que não é código (`video-colaboradores/` com 43MB de MP4,
   `_baseline/` com PDFs de desempenho de gente real) e o repositório é PÚBLICO.
