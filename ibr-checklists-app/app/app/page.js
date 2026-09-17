@@ -18,7 +18,7 @@ import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
   fetchCompany, fetchUnits, fetchSectors, fetchChecklistTypes,
   fetchUsers, fetchPublicUsers, saveUsers as dbSaveUsers,
-  fetchCompletions, saveCompletion as syncSaveCompletion,
+  fetchCompletions, saveCompletion as syncSaveCompletion, fetchLiveMarks,
   fetchClosures, saveClosures as dbSaveClosures,
   sendRecognition, fetchRecognitions,
   fetchActionPlans, createActionPlan, completeActionPlan,
@@ -1266,7 +1266,7 @@ const ESTADO_ITEM_VAZIO = Object.freeze({ done: false, note: '', photo: null });
 
 // Exportado para o teste de renderização alcançar a tela de execução sem
 // sessão logada (o mesmo motivo do `TemplateEditor`). Nada mais o importa.
-export function ExecutionScreen({ template, unit, currentUser, completions, closures, onCancel, onComplete, onDone }) {
+export function ExecutionScreen({ template, unit, currentUser, completions, closures, marcacoes = [], onCancel, onComplete, onDone }) {
   const [completionRecord, setCompletionRecord] = useState(null); // shows celebration when set
   // O dia gravado na execução é o da LOJA que a executou — é ele que o prazo,
   // o relatório e a aderência usam depois.
@@ -1275,8 +1275,8 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
   // Memorizado porque a varredura de carryover olha até 7 dias para trás e esta
   // lista é lida a cada render — inclusive dentro do efeito de telemetria.
   const items = useMemo(
-    () => itensDoDia(template, completions, closures, today, 7, unit),
-    [template, completions, closures, today, unit],
+    () => itensDoDia(template, completions, closures, today, 7, unit, marcacoes),
+    [template, completions, closures, today, unit, marcacoes],
   );
 
   const [itemStates, setItemStates] = useState(() =>
@@ -1506,6 +1506,10 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
       source: 'checklist', checklistId: template.id, taskId: item.id, unitId: unit.id,
       metadata: { critical: !!item.critical, position: idx + 1, of: items.length, offline: !!r.offline },
     });
+    // Foi a última? Arma a conclusão automática (ver `autoConcluir`). A tarefa
+    // recém-marcada ainda não está em `itemStates` neste closure — por isso ela
+    // sai da conta aqui e o efeito confere a lista inteira no render seguinte.
+    if (!items.some(i => i.id !== item.id && !effDone(i.id))) setAutoConcluir(true);
   };
 
   const confirmReopen = async () => {
@@ -1557,11 +1561,15 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
     } catch (e) { console.error(e); }
   };
 
-  const submit = async () => {
+  const submit = async ({ auto = false } = {}) => {
     submittedRef.current = true; // desmontagem após concluir não é abandono
     const recordId = uid();
     const record = {
       id: recordId,
+      // `auto`: a última tarefa marcada fechou o checklist sozinha (ver
+      // `autoConcluir`). Não vai para a tabela — `pushCompletion` mapeia colunas
+      // explícitas — mas a telemetria e a tela de comemoração leem daqui.
+      auto,
       templateId: template.id,
       templateName: template.name,
       unitId: unit.id,
@@ -1647,7 +1655,7 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
     }
   }, [completionRecord]);
 
-  const finish = () => {
+  const finish = (opts = {}) => {
     // A foto exigida pode estar em três lugares, e qualquer um serve: comigo, na
     // rodada (colega anexou) ou implícita no item que o colega já concluiu.
     // Olhar só a minha travava quem NÃO tirou a foto — a pessoa via o item
@@ -1657,8 +1665,41 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
     if (missingPhoto) { setError(`Anexe a foto exigida em "${missingPhoto.text}".`); return; }
     setError('');
     if (pendingCritical.length > 0) { setShowConfirm(true); return; }
-    submit();
+    submit(opts);
   };
+
+  /**
+   * CONCLUSÃO AUTOMÁTICA — a última tarefa marcada fecha o checklist.
+   *
+   * Decisão do Michel (17/09/2026), depois do caso do IBR3 em 16/09: o mesmo
+   * checklist é dividido entre duas ou três pessoas, cada uma marca a sua
+   * parte, e ninguém aperta "Concluir checklist" — porque ninguém fez o
+   * checklist "inteiro". O trabalho estava feito, o registro não existia, e a
+   * aderência cobrava um checklist que a loja tinha entregue.
+   *
+   * A regra: quando a MINHA marcação deixa a rodada sem nenhuma tarefa
+   * pendente (as minhas mais as dos colegas, ao vivo), submeto na hora, pelo
+   * mesmo caminho do botão — `finish` valida a foto exigida, `submit` grava o
+   * registro com o `doneBy` de cada tarefa. Quem marca a última leva o
+   * "Perfeito!" na tela, com o aviso de que foi automático.
+   *
+   * Só a MINHA marcação arma o gatilho (`setAutoConcluir(true)` no `toggle`).
+   * A última tarefa de um colega chegando por realtime não dispara aqui: o
+   * aparelho dele submete, e dois aparelhos submetendo o mesmo checklist
+   * seria a duplicidade que `latestPerRound` existe para tolerar, não para
+   * provocar. O disparo mora num efeito, e não dentro do `toggle`, porque o
+   * estado da tarefa recém-marcada só existe no render seguinte — chamar
+   * `submit` no próprio clique gravaria o registro sem a última tarefa.
+   */
+  const [autoConcluir, setAutoConcluir] = useState(false);
+  useEffect(() => {
+    if (!autoConcluir) return;
+    if (completionRecord || submittedRef.current) { setAutoConcluir(false); return; }
+    if (!items.length || !items.every(i => effDone(i.id))) return;
+    setAutoConcluir(false);
+    finish({ auto: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConcluir, itemStates, liveRaw, items, completionRecord]);
 
   // Celebration screen after completion
   if (completionRecord) {
@@ -1685,6 +1726,11 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
         <LevelIcon size={56} color={level.color} strokeWidth={1.5} aria-hidden style={{ marginBottom: 14 }} />
         <p className="font-display" style={{ fontSize: 'calc(26px * var(--zc-t-scale))', fontWeight: W.bold, color: level.color, textAlign: 'center', marginBottom: 8 }}>{level.title}</p>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, marginBottom: 20 }}>{level.msg}</p>
+        {completionRecord.auto && (
+          <p style={{ fontSize: 12, color: C.muted, textAlign: 'center', maxWidth: 300, lineHeight: 1.5, marginTop: -10, marginBottom: 20 }}>
+            Concluído automaticamente: a última tarefa foi marcada e não sobrou nada pendente.
+          </p>
+        )}
         <div style={{ background: 'white', borderRadius: 14, padding: '16px 24px', border: `2px solid ${level.color}30`, textAlign: 'center', marginBottom: 20, minWidth: 200 }}>
           <p style={{ fontSize: 48, fontWeight: W.bold, color: level.color, lineHeight: 1 }}>{rate}%</p>
           <p style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{done} de {total} itens</p>
@@ -1826,6 +1872,20 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   const sectorRows = useSectors();
   const sectors = visibleSectors(unit, currentUser?.sectorId, sectorRows);
 
+  // Marcações ao vivo dos últimos 7 dias da loja: quitam o carryover mesmo sem
+  // "Concluir checklist" (ver `pendenciasArrastadas`). Recarrega ao abrir a
+  // lista e ao voltar da execução — os dois momentos em que uma marcação nova
+  // pode ter nascido. Falha de rede cai no cache (fetchLiveMarks).
+  const [marcacoes, setMarcacoes] = useState([]);
+  useEffect(() => {
+    if (activeTemplate) return undefined;
+    let cancelled = false;
+    fetchLiveMarks(unit.id, addDays(today, -7), today)
+      .then(m => { if (!cancelled) setMarcacoes(m); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [unit.id, today, activeTemplate]);
+
   /**
    * O que há para fazer hoje em cada checklist — previstas + arrastadas.
    *
@@ -1841,17 +1901,17 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
   const itensPorTemplate = useMemo(() => {
     const m = new Map();
     (templates || []).forEach(t => {
-      if (t.unitId === unit.id) m.set(t.id, itensDoDia(t, completions, closures, today, 7, unit));
+      if (t.unitId === unit.id) m.set(t.id, itensDoDia(t, completions, closures, today, 7, unit, marcacoes));
     });
     return m;
-  }, [templates, completions, closures, unit, unit.id, today]);
+  }, [templates, completions, closures, unit, unit.id, today, marcacoes]);
   const itensDe = t => itensPorTemplate.get(t.id) || [];
 
   if (activeTemplate) {
     return (
       <ExecutionScreen
         template={activeTemplate} unit={unit} currentUser={currentUser}
-        completions={completions} closures={closures}
+        completions={completions} closures={closures} marcacoes={marcacoes}
         onCancel={() => setActiveTemplate(null)}
         onComplete={record => onSaveCompletion(record)}
         onDone={() => setActiveTemplate(null)}
@@ -9348,6 +9408,9 @@ function AppInner() {
           done, total,
           rate: total ? Math.round((done / total) * 100) : 0,
           critical_missed: items.filter(i => i.critical && !i.done).length,
+          // Fechou sozinho (última tarefa marcada) ou pelo botão. Mede quanto
+          // da operação passa a ser concluída sem ninguém apertar "Concluir".
+          auto: !!record.auto,
         },
       });
       for (const it of items) {

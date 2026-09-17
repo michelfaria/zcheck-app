@@ -215,6 +215,17 @@ const diffDias = (a, b) =>
  *    a dívida de segunda. Submeter o checklist sem fazer a tarefa NÃO quita: a
  *    régua é a de `roundIsComplete`, tarefa não feita é pendência.
  *
+ *  · MARCAÇÃO AO VIVO também quita (decisão do Michel, 17/09/2026). O caso
+ *    real: em 16/09 a equipe do IBR3 marcou as 7 tarefas do "Rotina Sala" na
+ *    rodada (`live_tasks` com `done` e hora) e ninguém apertou "Concluir
+ *    checklist". No dia seguinte as tarefas de quarta voltaram como "pendente
+ *    desde 16/09" — serviço feito, cobrado de novo, e reportado como bug.
+ *    `marcacoes` são as linhas feitas de `live_tasks` na janela (ver
+ *    `fetchLiveMarks`, sync.js): marcada em D vale como feita em D, na mesma
+ *    união das submissões. O que NÃO muda: a aderência (Painel) segue
+ *    contando só submissões — a submissão é a entrega, a marcação é o serviço.
+ *    Marcação reaberta (`done = false`) não conta, como não contaria no registro.
+ *
  *  · `dataOriginal` é a ocorrência não quitada MAIS ANTIGA dentro da janela —
  *    uma instância só por tarefa, nunca uma pilha de cópias na tela.
  *
@@ -237,7 +248,7 @@ const diffDias = (a, b) =>
  *
  * @returns {Array<{itemId, dataOriginal, diasArrastado}>}
  */
-export function pendenciasArrastadas(template, completions, closures, dateStr, teto = 7, unit = null) {
+export function pendenciasArrastadas(template, completions, closures, dateStr, teto = 7, unit = null, marcacoes = null) {
   if (!template || !dateStr || !Array.isArray(template.items) || teto <= 0) return [];
   const arrastaveis = template.items.filter(i => i && i.carryover === true);
   if (!arrastaveis.length) return [];
@@ -252,6 +263,14 @@ export function pendenciasArrastadas(template, completions, closures, dateStr, t
     let set = feitasPorDia.get(c.date);
     if (!set) feitasPorDia.set(c.date, set = new Set());
     (c.items || []).forEach(i => { if (i?.done) set.add(i.id); });
+  });
+  // Marcações ao vivo entram na mesma união: marcada em D = feita em D.
+  (Array.isArray(marcacoes) ? marcacoes : []).forEach(m => {
+    if (!m || m.done === false || m.templateId !== template.id || m.unitId !== template.unitId) return;
+    if (!m.date || !m.itemId || m.date < inicio || m.date > dateStr) return;
+    let set = feitasPorDia.get(m.date);
+    if (!set) feitasPorDia.set(m.date, set = new Set());
+    set.add(m.itemId);
   });
 
   // Previstas de cada dia pela MESMA régua da tela (`applicableItems`), em cache
@@ -311,10 +330,13 @@ export function pendenciasArrastadas(template, completions, closures, dateStr, t
  *
  * A ORDEM coloca as arrastadas primeiro. Elas são a exceção do dia, e o que se
  * quer é que a pessoa esbarre nelas antes da rotina que já conhece de cor.
+ *
+ * `marcacoes` (opcional) são as marcações ao vivo da janela — quitam dívida
+ * como as submissões; ver `pendenciasArrastadas`.
  */
-export function itensDoDia(template, completions, closures, dateStr, teto = 7, unit = null) {
+export function itensDoDia(template, completions, closures, dateStr, teto = 7, unit = null, marcacoes = null) {
   const previstos = applicableItems(template, dateStr);
-  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto, unit);
+  const dividas = pendenciasArrastadas(template, completions, closures, dateStr, teto, unit, marcacoes);
   if (!dividas.length) return previstos;
 
   const porItem = new Map(dividas.map(d => [d.itemId, d]));

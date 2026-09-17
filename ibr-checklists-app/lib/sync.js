@@ -405,6 +405,41 @@ export async function fetchCompletions() {
   return (await cache.get('ibr_completions')) || [];
 }
 
+/**
+ * Marcações ao vivo FEITAS de uma loja numa janela de dias — o que quita o
+ * carryover além das submissões (ver `pendenciasArrastadas` em checklists.js).
+ *
+ * Responde "o que foi marcado como feito nestes dias?", não o estado de uma
+ * rodada (isso é `fetchLiveTasks`, em collab.js, por checklist e dia). Vem
+ * enxuta: só `done = true` e só as colunas que a regra lê. A janela é pequena
+ * (7 dias × checklists da loja), então uma leitura por abertura da lista de
+ * execução basta. Cache local como as conclusões: offline vale a última
+ * leitura — sem isso a tarefa marcada ontem voltaria a aparecer só porque o
+ * sinal caiu.
+ */
+export async function fetchLiveMarks(unitId, fromDate, toDate) {
+  const key = `ibr_live_marks_${unitId}`;
+  try {
+    const { data, error } = await db()
+      .from('live_tasks')
+      .select('template_id, unit_id, date, item_id, done, completed_at, operator_name')
+      .eq('unit_id', unitId)
+      .eq('done', true)
+      .gte('date', fromDate)
+      .lte('date', toDate);
+    if (error) throw error;
+    const mapped = (data || []).map(r => ({
+      templateId: r.template_id, unitId: r.unit_id, date: r.date, itemId: r.item_id,
+      done: !!r.done, completedAt: r.completed_at ?? null, operatorName: r.operator_name ?? null,
+    }));
+    await cache.set(key, mapped);
+    return mapped;
+  } catch (e) {
+    console.warn('[Supabase] fetchLiveMarks failed, using cache:', e?.message);
+    return (await cache.get(key)) || [];
+  }
+}
+
 export async function saveCompletion(record) {
   // 1. Update local cache immediately (optimistic)
   //

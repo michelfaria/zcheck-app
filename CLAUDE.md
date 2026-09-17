@@ -118,6 +118,8 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `templates-sync.spec.mjs` | os dois caminhos de leitura de `templates` devolvem objetos IDÊNTICOS — campo que só um lado mapeia derruba o teste |
 | `ativacao-loja.spec.mjs` | `units.active_from`: antes da estreia nada aparece no Executar e nada entra no previsto — **e os dois lados da fração andam juntos** (zerar só o denominador faz a aderência da estreia estourar 100%) |
 | `completions-cap.spec.mjs` | o teto da lista de conclusões em memória corta pelo TEMPO, nunca pela posição — um `slice(-500)` numa lista que chega do mais novo para o mais velho apagava as conclusões de HOJE a cada "Concluir" (vídeo do IBR3, 11/09/2026) |
+| `carryover-marcacao.spec.mjs` | marcação ao vivo em D quita o carryover até D, como uma submissão — e a aderência NÃO muda (o checklist marcado sem "Concluir" continua não entregue). Caso do IBR3, 16/09/2026: 7/7 marcadas, ninguém concluiu, tudo voltou no dia seguinte |
+| `auto-concluir.spec.mjs` | a última tarefa marcada fecha o checklist sozinha (tela real em jsdom): com o colega em 2 de 3, marcar a terceira submete sem "Concluir", com o `doneBy` de cada um; marcar uma que não é a última não submete. Decisão de 17/09/2026: checklist dividido entre pessoas ficava sem registro |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
