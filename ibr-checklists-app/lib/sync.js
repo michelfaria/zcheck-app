@@ -315,11 +315,23 @@ export async function saveUsers(users, { changedIds = null, deleteIds = null } =
         // poder reenviá-lo.
         const patch = baseRow(u);
         if (u.pin) patch.pin = u.pin;
-        const { error } = await db().from('users').update(patch).eq('id', u.id);
+        // `count: 'exact'` pede ao PostgREST quantas linhas o UPDATE tocou
+        // (Content-Range), sem RETURNING — um .select() aqui exigiria SELECT
+        // de `pin` e voltaria 42501. Precisa da contagem porque, desde
+        // 20260923_users_escrita_gestao, UPDATE de quem não é diretoria é
+        // FILTRADO pelo RLS: zero linhas, 204, sem erro. E a conferência do fim
+        // (reler os ids) não pega esse caso — a linha existe e continua
+        // legível. Acontece de verdade: diretoria rebaixada em outro aparelho
+        // segue com a aba Usuários aberta até recarregar. Contagem ausente
+        // (PostgREST que não a devolve) fica como antes — não é recusa.
+        const { error, count } = await db().from('users').update(patch, { count: 'exact' }).eq('id', u.id);
         if (error) {
           console.error('saveUsers: update', u.name, error);
           semVaga = semVaga || asQuotaError(error);
           falhas.push(`${u.name}: ${error.message}`);
+        } else if (Number.isFinite(count) && count === 0) {
+          console.error('saveUsers: update sem linha alterada', u.name);
+          falhas.push(`${u.name}: o servidor não alterou nada — só a diretoria altera usuários; recarregue o app e confira seu acesso`);
         }
       } else {
         // `users.pin` é NOT NULL e não tem default: usuário novo sem PIN é
@@ -1776,14 +1788,24 @@ export async function uploadUserAvatar(companyId, userId, blob) {
 // PGRST202 = a função ainda não existe (cliente publicado antes da migration):
 // cai no UPDATE de antes. Dá para remover esta segunda tentativa quando a
 // migration estiver aplicada.
+//
+// O UPDATE de reserva confere quantas linhas tocou. Ele também roda quando o
+// cache de esquema do PostgREST está velho logo DEPOIS da migration (a função
+// existe, mas ele ainda responde PGRST202) — e aí, para quem não é diretoria,
+// são zero linhas com 204. Sem a contagem a tela diria "salvo", a foto iria
+// para a sessão e o cache, e sumiria no próximo fetchUsers.
 export async function saveUserAvatar(userId, avatarUrl) {
   let { error } = await db().rpc('set_my_avatar', { p_avatar_url: avatarUrl });
   // Mesmo critério de `semRpc` em lib/collab.js.
   if (error?.code === 'PGRST202' || /could not find the function|schema cache/i.test(error?.message || '')) {
     console.warn('[Supabase] set_my_avatar ausente — rode 20260923_users_escrita_gestao.sql');
-    ({ error } = await db().from('users')
-      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+    let count;
+    ({ error, count } = await db().from('users')
+      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() }, { count: 'exact' })
       .eq('id', userId));
+    if (!error && Number.isFinite(count) && count === 0) {
+      throw new Error('o servidor não gravou a foto — tente de novo em alguns minutos');
+    }
   }
   if (error) throw error;
   // Mantém o cache offline coerente: sem isto a foto sumia ao reabrir o app sem

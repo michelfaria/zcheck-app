@@ -25,6 +25,15 @@
 -- novo ou apaga usuário da empresa. A aba Usuários só aparece para `gestao`
 -- (ROLE_TABS em app/app/page.js), mas aba escondida não é fronteira de acesso.
 --
+-- E um segundo caminho, que não passa pelo RLS: `create_user_from_request`
+-- (20260726_tenant_03e) é SECURITY DEFINER, aceita GERÊNCIA, aceita pedido em
+-- qualquer status e termina em `ON CONFLICT (id) DO UPDATE SET name, pin,
+-- role, unit_id, sector_id`. Uma gerência com o id de qualquer pedido da
+-- empresa (ela mesma insere um: `user_requests_tenant_rw` é FOR ALL para
+-- authenticated) e o id da diretoria em `p_user_id` troca o PIN da diretoria e
+-- a rebaixa — tomada de conta. O app nunca usa esse caminho: a fila de pedidos
+-- só carrega para `gestao` e a aprovação manda sempre um id NOVO (`uid()`).
+--
 -- ── A correção ──────────────────────────────────────────────────────────────
 --   · SELECT continua para todo membro autenticado da empresa — ranking, equipe
 --     e Meu ID leem `users` (fetchUsers em lib/sync.js).
@@ -32,7 +41,12 @@
 --     da própria empresa. É o único papel que tem a aba Usuários.
 --   · A exceção: cada pessoa troca a PRÓPRIA foto. Isso sai da tabela e vai
 --     para a RPC `set_my_avatar(p_avatar_url)`, que só alcança a linha do
---     `user_id` do token e só toca `avatar_url` e `updated_at`.
+--     `user_id` do token, só toca `avatar_url` e `updated_at`, e só aceita
+--     um arquivo da pasta da própria pessoa no bucket `user-avatars`.
+--   · `create_user_from_request` passa a ser o que o app já usa: só a
+--     diretoria, só CRIA (id que já existe é recusado, sem ON CONFLICT), só a
+--     partir de pedido `pendente` — que ela marca `aprovado` na mesma
+--     transação, então o mesmo pedido não cria duas pessoas.
 --
 -- Por que RPC e não grant por coluna: grant é por PAPEL DO POSTGRES, não por
 -- linha, e toda sessão do app é o mesmo papel `authenticated`. Um
@@ -44,11 +58,14 @@
 -- "escreve quem é gestao".
 --
 -- ── O que NÃO muda ──────────────────────────────────────────────────────────
---   · create_user_from_request — SECURITY DEFINER: roda como dona da tabela, e
---     a dona não passa pelo RLS. Continua aceitando gerência e diretoria, com
---     as checagens que já tem (20260726_tenant_03e).
 --   · provision_company e /api/auth/refresh — `service_role`, que tem
 --     BYPASSRLS.
+--   · O gatilho de vagas `users_seat_quota` (20260923_limite_usuarios, já em
+--     produção). Ele vale para a tabela e para as duas RPCs. Os comentários
+--     de lá ainda citam `users_tenant_rw` como a policy que recusa escrita de
+--     outra empresa e o ON CONFLICT da aprovação: depois desta migration, quem
+--     recusa é `users_gestao_insert`/`users_gestao_update`, e a aprovação não
+--     tem mais ON CONFLICT (o cuidado (b) do gatilho fica inofensivo).
 --   · Os grants. A trava é o RLS; mexer em grant de `users` já custou um
 --     .upsert() quebrado (ver o comentário de saveUsers em lib/sync.js).
 --
@@ -56,10 +73,17 @@
 --   1. Deploy do cliente que chama `set_my_avatar` (lib/sync.js,
 --      saveUserAvatar). Enquanto a função não existe ele recebe PGRST202 e cai
 --      no UPDATE direto de antes — nada quebra.
---   2. Esta migration.
--- Na ordem inversa, até o deploy sair, a troca de foto de quem não é diretoria
--- vira UPDATE de ZERO linhas: o PostgREST responde 204, sem erro, e a foto
--- some no próximo reload.
+--   2. ESPERAR os aparelhos recarregarem — um dia inteiro de operação. Aba ou
+--      PWA aberta desde antes do deploy roda o bundle VELHO (public/sw.js é
+--      network-first, mas não força reload de quem está aberto), e o bundle
+--      velho troca a foto por UPDATE direto: depois desta migration isso é
+--      UPDATE de ZERO linhas, o PostgREST responde 204 sem erro, a tela diz
+--      que salvou e a foto some no próximo reload. O cliente novo confere a
+--      contagem e ERRA — o velho não tem como.
+--   3. Esta migration. O `notify pgrst` do fim recarrega o cache de esquema
+--      do PostgREST, para a RPC nova não responder PGRST202 logo depois.
+-- A aprovação de cadastro não pede deploy: o app já chama a RPC como
+-- diretoria, com id novo e pedido pendente.
 --
 -- ── Risco que continua, e não é desta migration ─────────────────────────────
 -- O papel vem do CLAIM do token, que vale 7 dias (lib/serverAuth.js). Uma
@@ -70,11 +94,13 @@
 -- Aplicar em: https://supabase.com/dashboard/project/rjuulamozdhssgqrzfji/sql
 -- Idempotente. Testada em PGlite:
 --   node supabase/migrations/20260923_users_escrita_gestao.test.mjs
+--   node supabase/migrations/20260923_users_escrita_gestao.combinado.test.mjs
 -- Pré-requisitos: 20260709_tenant_02_rls (RLS ligado em users),
 --                 20260726_user_avatars (users.avatar_url, jwt_user_id,
---                 jwt_user_role).
+--                 jwt_user_role), 20260726_tenant_03e (a versão anterior de
+--                 create_user_from_request, mesma assinatura).
 --
--- Se a trava do fim (4) encontrar outra policy de escrita em `users`, a
+-- Se a trava do fim (5) encontrar outra policy de escrita em `users`, a
 -- migration INTEIRA é desfeita e a mensagem de erro diz qual policy é: vários
 -- comandos enviados numa consulta só rodam numa transação implícita (é o que o
 -- teste prova no PGlite). Se a trava disparar no SQL Editor, confira com (a)
@@ -127,6 +153,22 @@ create policy users_gestao_delete on public.users
 -- função é SECURITY DEFINER e o RLS não vale aqui dentro.
 --
 -- Sem linha atualizada, ERRO: um "ok" calado faria o modal dizer que salvou.
+--
+-- E o VALOR é conferido. Agora que esta é a única porta para `avatar_url`, "só
+-- a foto muda" tem de valer também para o que entra nela: a foto de cada um
+-- vai para o `<img src>` de todos os colegas (Equipe, ranking, Painel) e para
+-- o cache de cada aparelho. Sem conferência, qualquer um gravava
+--   · um endereço externo — um pixel que entrega IP e navegador de cada colega
+--     que abre a Equipe;
+--   · a URL da foto de um colega — para se passar por ele;
+--   · uma string de megabytes — que fetchUsers manda para a empresa inteira a
+--     cada carga.
+-- Aceita só NULL (tira a foto) ou exatamente o que uploadUserAvatar
+-- (lib/sync.js) produz: https, host do Supabase, bucket `user-avatars`, pasta
+-- `{empresa do token}/{usuário do token}/` e um nome de arquivo simples.
+-- O host fica preso a `*.supabase.co`: se o projeto passar a servir por
+-- domínio próprio, acrescentar o domínio aqui (a foto nova falharia com erro,
+-- não em silêncio).
 create or replace function public.set_my_avatar(p_avatar_url text)
 returns void
 language plpgsql
@@ -136,9 +178,28 @@ as $$
 declare
   v_user    text := public.jwt_user_id();
   v_company text := public.jwt_company_id();
+  v_pasta   text;
+  v_caminho text;
 begin
   if v_user is null or v_company is null then
     raise exception 'sem sessão válida' using errcode = '42501';
+  end if;
+
+  if p_avatar_url is not null then
+    -- O tamanho primeiro: não roda expressão regular sobre megabytes.
+    if length(p_avatar_url) > 512 then
+      raise exception 'foto recusada: endereço longo demais' using errcode = '22023';
+    end if;
+
+    v_pasta   := '/storage/v1/object/public/user-avatars/' || v_company || '/' || v_user || '/';
+    v_caminho := substring(p_avatar_url from '^https://[A-Za-z0-9-]+\.supabase\.co(/.*)$');
+
+    if v_caminho is null
+       or left(v_caminho, length(v_pasta)) <> v_pasta
+       or substr(v_caminho, length(v_pasta) + 1) !~ '^[A-Za-z0-9_-][A-Za-z0-9._-]*$' then
+      raise exception 'foto recusada: tem de ser um arquivo da sua pasta (user-avatars/%/%/) no armazenamento do app',
+        v_company, v_user using errcode = '22023';
+    end if;
   end if;
 
   update public.users
@@ -161,7 +222,98 @@ revoke all on function public.set_my_avatar(text) from anon;
 grant execute on function public.set_my_avatar(text) to authenticated;
 
 
--- ── (4) Trava: nada mais reabre a escrita ───────────────────────────────────
+-- ── (4) Aprovação de cadastro: só a diretoria, e só CRIA ────────────────────
+-- A função é SECURITY DEFINER — não passa pelo RLS de (2) —, então a regra
+-- "só a diretoria escreve em users" tem de estar escrita AQUI dentro também.
+-- Mesma assinatura e mesmo retorno de 20260726_tenant_03e: o cliente
+-- (approveRequest em app/app/page.js) não muda. O que muda:
+--   · só `gestao`. A gerência não tem a aba Usuários nem carrega a fila de
+--     pedidos; aceitá-la aqui era a porta que sobrava.
+--   · só CRIA. `p_user_id` que já existe é recusado — o ON CONFLICT DO UPDATE
+--     de antes reescrevia nome, PIN, papel, loja e setor de QUALQUER pessoa da
+--     empresa. O app manda sempre um id novo; editar gente é pela tabela, que
+--     o RLS já prende à diretoria.
+--   · só pedido `pendente`, e o pedido vira `aprovado` na MESMA transação: um
+--     pedido velho não serve de chave para nada, e dois cliques (ou dois
+--     aparelhos) não criam a mesma pessoa duas vezes — o segundo espera o
+--     lock da linha e já a encontra aprovada. Se o INSERT falhar (ZC_QUOTA,
+--     por exemplo), a marcação volta junto e o pedido continua na fila.
+-- O app segue gravando `reviewed_at`/`reviewed_by` e os ajustes do pedido logo
+-- depois, como antes; aqui só o `status`, que é o que trava a reaprovação.
+create or replace function public.create_user_from_request(
+  p_request_id text,
+  p_user_id    text,
+  p_name       text,
+  p_role       text,
+  p_unit_id    text,
+  p_sector_id  text,
+  p_pin        text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pin     text;
+  v_role    text := public.jwt_user_role();
+  v_company text := public.jwt_company_id();
+begin
+  if v_company is null then
+    raise exception 'sem sessão válida' using errcode = '42501';
+  end if;
+
+  if v_role is distinct from 'gestao' then
+    raise exception 'apenas a diretoria aprova cadastro' using errcode = '42501';
+  end if;
+
+  if nullif(p_user_id, '') is null then
+    raise exception 'id do usuário novo ausente' using errcode = '22023';
+  end if;
+
+  -- Em QUALQUER empresa: id de outra empresa também não pode ser tocado, e a
+  -- mensagem não diz de qual empresa ele é.
+  if exists (select 1 from public.users u where u.id = p_user_id) then
+    raise exception 'usuário % já existe — a aprovação só cria acesso novo', p_user_id
+      using errcode = '23505';
+  end if;
+
+  update public.user_requests
+     set status = 'aprovado'
+   where id::text = p_request_id
+     and company_id = v_company
+     and status = 'pendente'
+  returning coalesce(nullif(p_pin, ''), pin) into v_pin;
+
+  if not found then
+    if exists (select 1 from public.user_requests
+                where id::text = p_request_id and company_id = v_company) then
+      raise exception 'solicitação % não está pendente — já foi aprovada ou recusada', p_request_id
+        using errcode = '55000';
+    end if;
+    raise exception 'solicitação % não encontrada no escopo da sua empresa', p_request_id
+      using errcode = 'P0002';
+  end if;
+
+  if v_pin is null then
+    raise exception 'solicitação % sem PIN', p_request_id using errcode = '23502';
+  end if;
+
+  -- INSERT puro: duas aprovações correndo com o mesmo id novo terminam em
+  -- chave duplicada, não em sobrescrita. (Não citar a cláusula de upsert
+  -- neste corpo: a verificação (b) do fim procura por ela no texto da função.)
+  insert into public.users (id, company_id, name, pin, role, unit_id, sector_id, suspended, updated_at)
+  values (p_user_id, v_company, p_name, v_pin, p_role, p_unit_id, p_sector_id, false, now());
+end;
+$$;
+
+-- `create or replace` mantém os grants, mas a migration não conta com isso.
+revoke all on function public.create_user_from_request(text, text, text, text, text, text, text) from public;
+revoke all on function public.create_user_from_request(text, text, text, text, text, text, text) from anon;
+grant execute on function public.create_user_from_request(text, text, text, text, text, text, text) to authenticated;
+
+
+-- ── (5) Trava: nada mais reabre a escrita ───────────────────────────────────
 -- Policies PERMISSIVE se somam com OR. Qualquer outra policy de escrita para
 -- um papel de cliente — criada à mão no dashboard, ou vinda de migration que
 -- não está no repositório — anularia tudo acima em silêncio. Então a migration
@@ -197,6 +349,13 @@ begin
 end $$;
 
 
+-- ── (6) O PostgREST enxerga a RPC nova já ───────────────────────────────────
+-- Com o cache de esquema velho, `set_my_avatar` responde PGRST202 e o cliente
+-- cai no UPDATE direto — que para quem não é diretoria agora é zero linhas.
+-- O NOTIFY só sai no COMMIT: se a trava acima abortar, nada é recarregado.
+notify pgrst, 'reload schema';
+
+
 -- ============================================================================
 -- VERIFICAÇÃO
 --
@@ -223,11 +382,15 @@ end $$;
 --   -- users_gestao_delete | DELETE · users_gestao_insert | INSERT ·
 --   -- users_gestao_update | UPDATE · users_tenant_select | SELECT
 --
--- (b) A RPC existe e o anon não executa:
+-- (b) As RPCs existem, o anon não executa, e a aprovação é a versão nova:
 --
 --   select has_function_privilege('anon', 'public.set_my_avatar(text)', 'EXECUTE')          as anon,
---          has_function_privilege('authenticated', 'public.set_my_avatar(text)', 'EXECUTE') as autenticado;
---   -- esperado: false | true
+--          has_function_privilege('authenticated', 'public.set_my_avatar(text)', 'EXECUTE') as autenticado,
+--          has_function_privilege('anon',
+--            'public.create_user_from_request(text,text,text,text,text,text,text)', 'EXECUTE') as anon_aprova,
+--          pg_get_functiondef('public.create_user_from_request(text,text,text,text,text,text,text)'::regprocedure)
+--            ilike '%on conflict%' as aprovacao_com_on_conflict;
+--   -- esperado: false | true | false | false
 --
 -- (c) Simulando um COLABORADOR no próprio SQL Editor (troque os ids por um
 --     colaborador real; tudo dentro de uma transação desfeita no fim):
@@ -238,11 +401,25 @@ end $$;
 --   set local role authenticated;
 --   update public.users set role = 'gestao' where id = '<id>';   -- UPDATE 0
 --   select public.set_my_avatar(null);                           -- ok
+--   select public.set_my_avatar('https://example.com/x.gif');    -- ERRO 22023
+--   rollback;
+--
+-- (c2) A aprovação não aceita mais gerência (troque os ids por uma gerência
+--      real e por qualquer pedido da empresa):
+--
+--   begin;
+--   select set_config('request.jwt.claims',
+--     '{"user_id":"<id>","user_role":"gerencia","company_id":"<empresa>"}', true);
+--   set local role authenticated;
+--   select public.create_user_from_request('<pedido>', '<id da diretoria>',
+--     'x', 'gerencia', null, null, '0000');
+--   -- esperado: ERRO 'apenas a diretoria aprova cadastro'
 --   rollback;
 --
 -- (d) Fim a fim no app:
 --   · colaborador → Meu ID → trocar a foto: aparece no cabeçalho e continua lá
 --     depois do reload;
 --   · diretoria → Usuários → editar, suspender, criar e apagar: igual a antes;
---   · diretoria → aprovar uma solicitação de cadastro: igual a antes.
+--   · diretoria → aprovar uma solicitação de cadastro: igual a antes, e ela
+--     sai da fila.
 -- ============================================================================

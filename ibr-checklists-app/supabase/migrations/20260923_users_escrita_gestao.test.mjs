@@ -15,8 +15,12 @@
  *      consegue se promover ANTES da migration. Sem isso, o resto do arquivo
  *      poderia estar passando contra uma bancada que nunca esteve aberta.
  *   2. Depois dela, só `gestao` insere, altera e apaga — e só na própria empresa.
- *   3. Cada um continua trocando a PRÓPRIA foto, e nada além dela.
- *   4. Os caminhos SECURITY DEFINER e service_role seguem funcionando.
+ *   3. Cada um continua trocando a PRÓPRIA foto, e nada além dela — nem o
+ *      valor: só um arquivo da própria pasta no bucket `user-avatars`.
+ *   4. A aprovação de cadastro (SECURITY DEFINER, não passa pelo RLS) segue a
+ *      mesma regra: só a diretoria, só cria, só pedido pendente. A gerência
+ *      reescrevia qualquer pessoa pelo ON CONFLICT dela — reproduzido ANTES.
+ *      E o service_role segue funcionando.
  *   5. Se houver outra policy de escrita em `users`, a migration não se aplica
  *      pela metade: desfaz tudo e diz qual é.
  *
@@ -60,7 +64,7 @@ await db.exec(`
     name text, pin text not null, role text, unit_id text, sector_id text,
     suspended boolean default false, updated_at timestamptz, avatar_url text
   );
-  create table public.user_requests (id text primary key, company_id text, pin text);
+  create table public.user_requests (id text primary key, company_id text, pin text, status text default 'pendente');
 
   alter table public.users enable row level security;
   create policy users_tenant_rw on public.users
@@ -119,6 +123,16 @@ check((await linha('dir')).pin === '0000',
 await db.exec(comoDono + `update public.users set role = 'colaborador' where id = 'joao';
                           update public.users set pin = '9999' where id = 'dir';`);
 
+// O outro caminho, que o RLS não vê: a RPC de aprovação aceita gerência, pedido
+// em qualquer status e termina em ON CONFLICT DO UPDATE. A gerência insere um
+// pedido qualquer (user_requests_tenant_rw é FOR ALL) e aponta para a diretoria.
+await db.exec(comoDono + `insert into public.user_requests (id, company_id, pin, status) values ('req-velho', 'empresa-a', '1234', 'aprovado');`);
+await db.exec(comoGerente + `select public.create_user_from_request('req-velho', 'dir', 'Diretora', 'gerencia', null, null, '0000');`);
+const dirTomada = await linha('dir');
+check(dirTomada.role === 'gerencia' && dirTomada.pin === '0000',
+  'ANTES: a gerência, pela RPC de aprovação e com um pedido JÁ APROVADO, rebaixa a diretoria e troca o PIN dela');
+await db.exec(comoDono + `update public.users set role = 'gestao', pin = '9999', name = 'Diretora' where id = 'dir';`);
+
 await db.exec(MIGRATION);
 check(await policies() === 'users_gestao_delete,users_gestao_insert,users_gestao_update,users_tenant_select',
   'a policy "tudo para qualquer papel" sai e entram as quatro novas');
@@ -168,7 +182,10 @@ check((await linha('joao')).suspended === false,
   'gerência não suspende pela tabela — não tem a aba Usuários, e o banco agora concorda');
 
 // ── Regra 3: a própria foto ──────────────────────────────────────────────────
-const URL_FOTO = 'https://proj.supabase.co/storage/v1/object/public/user-avatars/empresa-a/joao/1.jpg';
+// A URL que uploadUserAvatar produz: getPublicUrl de `{empresa}/{usuário}/{ts}.jpg`.
+const fotoDe = (empresa, id, arquivo = '1727190000000.jpg') =>
+  `https://proj.supabase.co/storage/v1/object/public/user-avatars/${empresa}/${id}/${arquivo}`;
+const URL_FOTO = fotoDe('empresa-a', 'joao');
 await db.exec(comoJoao + `select public.set_my_avatar('${URL_FOTO}');`);
 const joaoComFoto = await linha('joao');
 check(joaoComFoto.avatar_url === URL_FOTO && joaoComFoto.updated_at !== null,
@@ -180,9 +197,34 @@ check((await linha('maria')).avatar_url === null, 'nem a linha de mais ninguém'
 await db.exec(comoJoao + `select public.set_my_avatar(null);`);
 check((await linha('joao')).avatar_url === null, 'null remove a foto e volta a inicial do nome');
 
+// O VALOR: só um arquivo da própria pasta. Cada recusa ERRA (o modal mostra) e
+// não grava nada.
+await db.exec(comoJoao + `select public.set_my_avatar('${URL_FOTO}');`);
+const RECUSADAS = [
+  ['https://evil.example/t.gif?u=joao',                                   'endereço externo (pixel de rastreio)'],
+  [fotoDe('empresa-a', 'joao').replace('proj.supabase.co', 'evil.example'), 'o caminho certo em outro host'],
+  [fotoDe('empresa-a', 'joao').replace('https://', 'http://'),            'http sem TLS'],
+  [fotoDe('empresa-a', 'maria'),                                          'a foto de um colega (se passar por ele)'],
+  [fotoDe('empresa-b', 'joao'),                                           'a pasta de outra empresa'],
+  [fotoDe('empresa-a', 'joao', '../maria/1.jpg'),                         'subir de pasta'],
+  [fotoDe('empresa-a', 'joao', '1.jpg?x=1'),                              'com query'],
+  ['/storage/v1/object/public/user-avatars/empresa-a/joao/1.jpg',         'relativa, sem host'],
+  ['',                                                                    'string vazia'],
+  ['A'.repeat(5_000_000),                                                 'string de 5 MB'],
+];
+for (const [valor, caso] of RECUSADAS) {
+  let erro = null;
+  await db.exec(comoJoao);
+  try { await db.query(`select public.set_my_avatar($1)`, [valor]); } catch (e) { erro = e; }
+  check(erro?.code === '22023' && /foto recusada/.test(erro?.message || '')
+     && (await linha('joao')).avatar_url === URL_FOTO,
+    `set_my_avatar recusa ${caso} — e a foto gravada continua a de antes`);
+}
+await db.exec(comoJoao + `select public.set_my_avatar(null);`);
+
 // Token com user_id de outra empresa: não acontece com token assinado pelo
 // servidor, mas é a conferência que a função faz por ser SECURITY DEFINER.
-const cruzado = await erroDe(como('beto', 'colaborador', 'empresa-a') + `select public.set_my_avatar('${URL_FOTO}');`);
+const cruzado = await erroDe(como('beto', 'colaborador', 'empresa-a') + `select public.set_my_avatar('${fotoDe('empresa-a', 'beto')}');`);
 check(/não encontrado na sua empresa/.test(cruzado || '') && (await linha('beto')).avatar_url === null,
   'a RPC não alcança linha de outra empresa — e ERRA, em vez de responder ok sem gravar');
 
@@ -238,16 +280,53 @@ await erroDe(comoBea + `update public.users set role = 'gestao' where id = 'joao
 check((await linha('joao')).role === 'colaborador', 'diretoria da B não alcança a A');
 
 // ── Regra 4: os caminhos que não passam pelo RLS ─────────────────────────────
-// create_user_from_request é SECURITY DEFINER e aceita GERÊNCIA — que agora
-// não escreve na tabela. Se a função passasse pelo RLS, a aprovação quebraria.
-await db.exec(comoDono + `insert into public.user_requests values ('req1', 'empresa-a', '4321');`);
-await db.exec(comoGerente + `select public.create_user_from_request('req1', 'aprovado', 'Aprovado', 'colaborador', 'ibr1', null);`);
+// create_user_from_request é SECURITY DEFINER: o RLS de cima não vale lá
+// dentro, e a regra tem de estar escrita na própria função.
+const statusDo = async id => {
+  await db.exec(comoDono);
+  return (await db.query(`select status from public.user_requests where id = $1`, [id])).rows[0]?.status;
+};
+await db.exec(comoDono + `insert into public.user_requests (id, company_id, pin) values
+  ('req1', 'empresa-a', '4321'), ('req2', 'empresa-a', '4322'), ('req-b', 'empresa-b', '4323');`);
+
+// O ataque de ANTES, de novo: gerência, pedido velho, id da diretoria.
+const dirAntes = JSON.stringify(await linha('dir'));
+const gerAtaca = await erroDe(comoGerente + `select public.create_user_from_request('req-velho', 'dir', 'Diretora', 'gerencia', null, null, '0000');`);
+check(/apenas a diretoria aprova cadastro/.test(gerAtaca || '') && JSON.stringify(await linha('dir')) === dirAntes,
+  'a gerência não chama mais a RPC de aprovação — a diretoria continua diretoria, com o PIN dela');
+const gerAprova = await erroDe(comoGerente + `select public.create_user_from_request('req1', 'aprovado', 'Aprovado', 'colaborador', 'ibr1', null);`);
+check(/apenas a diretoria aprova cadastro/.test(gerAprova || '') && !(await linha('aprovado')) && await statusDo('req1') === 'pendente',
+  'nem para um pedido pendente de verdade: nada criado, pedido continua na fila');
+for (const [s, papel] of [[comoJoao, 'colaborador'], [comoLider, 'liderança']]) {
+  const r = await erroDe(s + `select public.create_user_from_request('req1', 'x-${papel}', 'X', 'gestao', null, null);`);
+  check(/apenas a diretoria aprova cadastro/.test(r || ''), `${papel} também não`);
+}
+
+// A diretoria aprova como o app faz: id NOVO, pedido pendente.
+await db.exec(comoDir + `select public.create_user_from_request('req1', 'aprovado', 'Aprovado', 'colaborador', 'ibr1', null);`);
 const aprovado = await linha('aprovado');
-check(aprovado?.company_id === 'empresa-a' && aprovado?.pin === '4321',
-  'gerência aprova cadastro pela RPC (insert)');
-await db.exec(comoGerente + `select public.create_user_from_request('req1', 'aprovado', 'Aprovado Renomeado', 'lideranca', 'ibr2', null);`);
-check((await linha('aprovado')).name === 'Aprovado Renomeado',
-  'e o ON CONFLICT da mesma RPC continua atualizando');
+check(aprovado?.company_id === 'empresa-a' && aprovado?.pin === '4321' && aprovado?.suspended === false,
+  'diretoria aprova cadastro pela RPC — na empresa dela, com o PIN do pedido');
+check(await statusDo('req1') === 'aprovado', 'e o pedido sai da fila na mesma transação');
+
+const reaprova = await erroDe(comoDir + `select public.create_user_from_request('req1', 'aprovado2', 'De Novo', 'colaborador', 'ibr1', null);`);
+check(/não está pendente/.test(reaprova || '') && !(await linha('aprovado2')),
+  'o mesmo pedido não cria uma segunda pessoa (clique duplo, dois aparelhos)');
+
+const sobrescreve = await erroDe(comoDir + `select public.create_user_from_request('req2', 'aprovado', 'Aprovado Renomeado', 'lideranca', 'ibr2', null);`);
+const aindaAprovado = await linha('aprovado');
+check(/já existe/.test(sobrescreve || '') && aindaAprovado.name === 'Aprovado' && aindaAprovado.role === 'colaborador'
+   && await statusDo('req2') === 'pendente',
+  'id que já existe é recusado (sem ON CONFLICT) — nada muda, e o pedido usado continua pendente');
+const sobrescreveDir = await erroDe(comoDir + `select public.create_user_from_request('req2', 'dir', 'Diretora', 'colaborador', 'ibr1', null, '0000');`);
+check(/já existe/.test(sobrescreveDir || '') && JSON.stringify(await linha('dir')) === dirAntes,
+  'nem a diretoria reescreve alguém pela RPC — editar gente é pela tabela');
+const deOutraEmpresa = await erroDe(comoDir + `select public.create_user_from_request('req2', 'beto', 'Beto', 'colaborador', 'ibr1', null);`);
+check(/já existe/.test(deOutraEmpresa || '') && (await linha('beto')).company_id === 'empresa-b',
+  'nem um usuário de outra empresa');
+const pedidoDeFora = await erroDe(comoDir + `select public.create_user_from_request('req-b', 'novo-b', 'Novo', 'colaborador', 'ibr1', null);`);
+check(/não encontrada no escopo da sua empresa/.test(pedidoDeFora || '') && !(await linha('novo-b')) && await statusDo('req-b') === 'pendente',
+  'nem pedido de outra empresa');
 
 // provision_company e /api/auth/refresh usam service_role (BYPASSRLS).
 await db.exec(`reset role; select set_config('request.jwt.claims', '{}', false); set role service_role;
@@ -258,9 +337,17 @@ check((await linha('adm-c'))?.company_id === 'empresa-c', 'service_role (provisi
 const antes = await policies();
 check(await erroDe(MIGRATION) === null && await policies() === antes, 'idempotente — 2ª execução, mesmas policies');
 
+const aprovacaoComUpsert = async () => {
+  await db.exec(comoDono);
+  return (await db.query(`select pg_get_functiondef('public.create_user_from_request(text,text,text,text,text,text,text)'::regprocedure) ilike '%on conflict%' as x`)).rows[0].x;
+};
+check(await aprovacaoComUpsert() === false, 'a aprovação instalada é a nova (sem ON CONFLICT) — a verificação (b) da migration');
+
 // Uma policy de escrita criada à mão reabriria tudo (PERMISSIVE soma com OR).
-// Recoloca também a policy antiga: se a migration não for atômica, ela some
-// antes de a trava disparar, e o teste pega.
+// Recoloca também a policy antiga e a aprovação antiga: se a migration não for
+// atômica, elas somem antes de a trava disparar, e o teste pega.
+await db.exec(comoDono);
+await db.exec(APROVACAO);
 await db.exec(comoDono + `
   create policy users_tenant_rw on public.users
     for all to authenticated
@@ -270,12 +357,13 @@ await db.exec(comoDono + `
 const travou = await erroDe(MIGRATION);
 check(/users_edicao_manual/.test(travou || ''),
   'com outra policy de escrita em users, a migration aborta e diz qual é');
-check((await policies()).includes('users_tenant_rw'),
-  'e não aplica nada pela metade: a policy antiga continua lá (transação única)');
+check((await policies()).includes('users_tenant_rw') && await aprovacaoComUpsert() === true,
+  'e não aplica nada pela metade: a policy antiga e a aprovação antiga continuam lá (transação única)');
 
 await db.exec(comoDono + `drop policy users_edicao_manual on public.users;`);
 await db.exec(MIGRATION);
-check(await policies() === antes, 'removida a intrusa, a migration aplica normalmente');
+check(await policies() === antes && await aprovacaoComUpsert() === false,
+  'removida a intrusa, a migration aplica normalmente — policies e aprovação');
 
 await db.exec(comoDono + `alter table public.users disable row level security;`);
 check(/RLS está DESLIGADO/.test(await erroDe(MIGRATION) || ''),
