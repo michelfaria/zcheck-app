@@ -36,6 +36,9 @@ import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades } from './agora';
 
 /* --------------------------------- J.I.T. (H1) --------------------------------- */
 
+// O id de um item só é único DENTRO do seu checklist — ver `itemText` em buildJit.
+const itemKey = (templateId, itemId) => `${templateId}|${itemId}`;
+
 
 // Deriva o J.I.T. 100% dos dados existentes (completions + templates + closures).
 // Escopo: uma loja (líder) ou todas (gerência/gestão, scopeUnitId = null).
@@ -50,9 +53,12 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const unitIds = scopeUnitId ? [scopeUnitId] : units.map(u => u.id);
   const unitName = id => units.find(u => u.id === id)?.name || id;
 
-  // Mapa itemId → texto, para nomear itens críticos nas recomendações.
+  // Mapa checklist+item → texto, para nomear itens críticos nas recomendações.
+  // A chave PRECISA do checklist: o id do item só é único dentro do template
+  // (os checklists semeados usam `i1`, `i2`… em todos). Chaveado só pelo id, o
+  // J.I.T. nomeava a falha da câmara fria da Cozinha com uma tarefa de Salão.
   const itemText = new Map();
-  templates.forEach(t => (t.items || []).forEach(i => { if (!itemText.has(i.id)) itemText.set(i.id, i.text); }));
+  templates.forEach(t => (t.items || []).forEach(i => itemText.set(itemKey(t.id, i.id), i.text)));
 
   const scopeFilter = dates => (scopeUnitId ? { dates, unitId: scopeUnitId } : { dates });
 
@@ -95,16 +101,32 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // dia já batia o limite de "≥2× nos últimos 7 dias" e virava recomendação —
   // hotspot inventado a partir de uma reexecução.
   const f7 = latestPerRound(filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 }));
+  //
+  // Chave = loja + checklist + item, pelo mesmo motivo do `itemText`: dois
+  // críticos DIFERENTES com o mesmo `i1` na mesma loja somavam num hotspot só,
+  // e o N da recomendação saía inflado. Cada entrada carrega as partes e o
+  // texto — ninguém precisa desmontar a chave com `split('|')`.
   const hotspot = new Map();
   f7.forEach(c => (c.items || []).forEach(i => {
-    if (i.critical && !tarefaFeita(i)) { const k = `${c.unitId}|${i.id}`; hotspot.set(k, (hotspot.get(k) || 0) + 1); }
+    if (!i.critical || tarefaFeita(i)) return;
+    // Execução antiga sem `templateId` cai no nome, como em lib/rounds.js.
+    const tid = c.templateId || c.templateName || '';
+    const k = `${c.unitId}|${itemKey(tid, i.id)}`;
+    const h = hotspot.get(k);
+    if (h) { h.n++; return; }
+    hotspot.set(k, {
+      unitId: c.unitId, templateId: tid, itemId: i.id, n: 1,
+      // Texto de hoje no template; sem template (apagado, ou execução sem
+      // `templateId`), o que a própria execução gravou.
+      text: itemText.get(itemKey(tid, i.id)) || i.text || null,
+    });
   }));
-  [...hotspot.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([k, n]) => {
-    const [uid, iid] = k.split('|');
+  const recorrentes = [...hotspot.entries()].filter(([, h]) => h.n >= 2).sort((a, b) => b[1].n - a[1].n);
+  recorrentes.slice(0, 2).forEach(([k, h]) => {
     recs.push({
       id: `hotspot_${k}`, type: 'critical_hotspot',
-      text: `${unitName(uid)}: "${truncName(itemText.get(iid) || 'item crítico', 40)}" ficou pendente ${n}× nos últimos 7 dias. Priorize hoje.`,
-      unitId: uid, tab: 'painel',
+      text: `${unitName(h.unitId)}: "${truncName(h.text || 'item crítico', 40)}" ficou pendente ${h.n}× nos últimos 7 dias. Priorize hoje.`,
+      unitId: h.unitId, tab: 'painel',
     });
   });
 
@@ -165,8 +187,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
       const closedToday = isUnitOff(units, closures, uid, today);
       const overdueCount = overdue.filter(t => t.unitId === uid).length;
       // itens críticos recorrentes (≥2× em 7d) desta loja
-      const criticalHotspots = [...hotspot.entries()]
-        .filter(([k, n]) => n >= 2 && k.split('|')[0] === uid).length;
+      const criticalHotspots = recorrentes.filter(([, h]) => h.unitId === uid).length;
       const expectedToday = closedToday ? 0 : countApplicableTemplatesOnDate(templates, { unitId: uid }, today);
       const doneToday = filterCompletions(completions, { dates: [today], unitId: uid }).length;
       const pendingToday = Math.max(0, expectedToday - doneToday);
@@ -185,7 +206,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // Análise automática que conecta pontos que um humano teria que garimpar:
   // tendência, falha crítica recorrente ou loja destoante. Hoje é rule-based;
   // o contrato de eventos é o mesmo se depois virar LLM (§16 da revisão).
-  const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence, today });
+  const insight = buildInsight({ completions, units, unitIds, scopeUnitId, unitName, hotspot, yFiltered, yAdherence, today });
 
   // ── Blocos extras, para a versão PÁGINA do J.I.T. (coluna lateral) ──────
   // Não entram no pop-up: ali a tela é estreita e o J.I.T. precisa ser curto.
@@ -215,14 +236,9 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
 
   // (c) Críticos recorrentes — o `hotspot` já está calculado para as
   // recomendações; aqui ele vira lista, não só as 2 primeiras.
-  const criticalTop = [...hotspot.entries()]
-    .filter(([, n]) => n >= 2)
-    .sort((a, b) => b[1] - a[1])
+  const criticalTop = recorrentes
     .slice(0, 5)
-    .map(([k, n]) => {
-      const [uid, iid] = k.split('|');
-      return { unitId: uid, unitName: unitName(uid), text: itemText.get(iid) || 'item crítico', count: n };
-    });
+    .map(([, h]) => ({ unitId: h.unitId, unitName: unitName(h.unitId), text: h.text || 'item crítico', count: h.n }));
 
   // (d) Quem executou hoje.
   const peopleToday = collaboratorStats(tFiltered).slice(0, 5);
@@ -293,7 +309,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
 // Prioridade: queda de tendência > falha crítica recorrente > loja destoante > estável.
 // `today` vem de quem chama (buildJit), já resolvido no fuso da loja em escopo
 // — recalcular aqui daria um dia diferente para uma loja fora de Brasília.
-function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, itemText, hotspot, yFiltered, yAdherence, today }) {
+function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, hotspot, yFiltered, yAdherence, today }) {
   const wkThis = weekStartStr(today);
   const wkPrev = weekStartStr(addDays(today, -7));
 
@@ -330,15 +346,12 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
   }
 
   // 2. Falha crítica recorrente (≥3× em 7 dias).
-  let topHot = null;
-  [...hotspot.entries()].sort((a, b) => b[1] - a[1]).forEach(([k, n]) => {
-    if (!topHot && n >= 3) { const [u, iid] = k.split('|'); topHot = { unitId: u, iid, n }; }
-  });
+  const topHot = [...hotspot.values()].sort((a, b) => b.n - a.n).find(h => h.n >= 3);
   if (topHot) {
     return {
-      id: `crit_${topHot.unitId}_${topHot.iid}`, type: 'recurring_critical',
+      id: `crit_${topHot.unitId}_${topHot.templateId}_${topHot.itemId}`, type: 'recurring_critical',
       headline: `Falha crítica que se repete em ${unitName(topHot.unitId)}`,
-      evidence: `"${truncName(itemText.get(topHot.iid) || 'item crítico', 44)}" ficou pendente ${topHot.n}× nos últimos 7 dias. É um risco recorrente — ataque a causa, não só a tarefa do dia.`,
+      evidence: `"${truncName(topHot.text || 'item crítico', 44)}" ficou pendente ${topHot.n}× nos últimos 7 dias. É um risco recorrente — ataque a causa, não só a tarefa do dia.`,
       unitId: topHot.unitId,
     };
   }
