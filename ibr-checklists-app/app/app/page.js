@@ -4740,14 +4740,19 @@ function SelfieViewer({ path }) {
   const [error, setError] = useState(false);
   useEffect(() => {
     if (!path) return;
-    import('../../lib/supabase').then(async ({ supabase }) => {
-      // O bucket 'colaboradores' é privado: selfie + CPF. Nunca usar getPublicUrl aqui.
-      const { data } = await supabase.storage
+    import('../../lib/supabase').then(async ({ authedSupabase }) => {
+      // O bucket 'colaboradores' é privado: selfie + CPF. Nunca getPublicUrl, e
+      // nunca o cliente anônimo: a assinatura passa pelo token da sessão, e a
+      // policy colaboradores_leitura_diretoria só libera a selfie de um pedido
+      // da empresa do token, para a diretoria
+      // (supabase/migrations/20260924_colaboradores_selfie_diretoria.sql).
+      // A URL só precisa viver até o <img> carregar.
+      const { data } = await authedSupabase().storage
         .from('colaboradores')
-        .createSignedUrl(path, 3600);
+        .createSignedUrl(path, 300);
       if (data?.signedUrl) setUrl(data.signedUrl);
       else setError(true);
-    });
+    }).catch(() => setError(true));
   }, [path]);
   if (error) return <p style={{ fontSize: 12, color: C.muted }}>Selfie não disponível.</p>;
   if (!url) return <p style={{ fontSize: 12, color: C.muted }}>Carregando selfie…</p>;

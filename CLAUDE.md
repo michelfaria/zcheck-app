@@ -187,6 +187,14 @@ renomear/trocar PIN acima da capacidade passa; reativar sem vaga é barrado; rod
 2× sem erro) — `npm i --no-save @electric-sql/pglite` antes, como os outros
 `.test.mjs` de migration.
 
+Selfie do /cadastro (bucket `colaboradores`): só a diretoria da empresa DONA lê,
+pelo token da sessão (`SelfieViewer` com `authedSupabase()`). Dono = o pedido
+mais antigo em `user_requests` que cita o objeto até 1 h depois do upload — um
+ponteiro sozinho não dá posse, porque qualquer um grava `user_requests` e os
+caminhos já vazaram. O gatilho `user_requests_selfie_trava` força `created_at`
+e trava `selfie_path`. Prova em PGlite:
+`supabase/migrations/20260924_colaboradores_selfie_diretoria.test.mjs`.
+
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
 variável inexistente no array de dependências: build limpo, app inteiro fora do

@@ -1,4 +1,9 @@
 -- ============================================================================
+-- A policy `colaboradores_signed_read_authenticated` do fim deste arquivo foi
+-- DERRUBADA por 20260924_colaboradores_selfie_diretoria.sql: dava a selfie de
+-- todos os cadastros a qualquer sessão de qualquer empresa. Se esta migration
+-- for rodada de novo, rode aquela em seguida.
+--
 -- Espelha para o role `authenticated` os privilégios que hoje o role `anon` tem.
 --
 -- Contexto: até agora todo acesso ao banco era anônimo. A rota /api/auth/session
