@@ -521,6 +521,9 @@ function mapCompletionRow(row) {
     reviewedByName: row.reviewed_by_name ?? null,
     reviewedAt: row.reviewed_at ?? null,
     reviewNote: row.review_note ?? null,
+    // Relógio do SERVIDOR (default now()). É a marca-d'água da recarga
+    // incremental (`fetchCompletionsSince`) — `completedAt` vem do aparelho.
+    createdAt: row.created_at ?? null,
   };
 }
 
@@ -544,6 +547,25 @@ export async function fetchCompletions() {
     console.warn('[Supabase] fetchCompletions failed, using cache:', e.message);
   }
   return (await cache.get('ibr_completions')) || [];
+}
+
+/**
+ * Conclusões GRAVADAS no banco a partir de `desde` (ISO, pelo `created_at`).
+ *
+ * É a recarga do que o realtime perdeu com o app em segundo plano (ver
+ * `juntarConclusoes` em lib/completions.js). Lança em erro, sem cair no cache
+ * como `fetchCompletions`: o cache é a lista da última carga, que já está em
+ * memória — devolvê-lo aqui não acrescentaria nada.
+ */
+export async function fetchCompletionsSince(desde) {
+  const { data, error } = await db()
+    .from('completions')
+    .select('*')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: true })
+    .limit(COMPLETIONS_HORIZON);
+  if (error) throw error;
+  return (data || []).map(mapCompletionRow);
 }
 
 /**

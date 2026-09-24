@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   CheckCircle2, Circle, AlertTriangle, ChevronRight, ArrowLeft,
   Plus, Trash2, X, Settings2, Clock, Lock, Camera,
@@ -18,7 +18,7 @@ import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
   fetchCompany, fetchUnits, fetchSectors, fetchChecklistTypes,
   fetchUsers, fetchPublicUsers, saveUsers as dbSaveUsers,
-  fetchCompletions, saveCompletion as syncSaveCompletion, fetchLiveMarks,
+  fetchCompletions, fetchCompletionsSince, saveCompletion as syncSaveCompletion, fetchLiveMarks,
   fetchClosures, saveClosures as dbSaveClosures,
   sendRecognition, fetchRecognitions,
   fetchActionPlans, createActionPlan, completeActionPlan,
@@ -41,7 +41,7 @@ import PlanoVagas, { VagasMedidor, SemVagaDialogo, LojaBloqueadaDialogo, AvisoTe
 // Teto da lista de conclusões em memória — corta pelo TEMPO, nunca pela
 // posição. O `slice(-500)` que ficava nos três pontos de escrita apagava as
 // conclusões de HOJE a cada "Concluir" (ver lib/completions.js).
-import { capCompletions } from '../../lib/completions';
+import { capCompletions, marcaDagua, marcaMaisNova, inicioDaRecarga, juntarConclusoes } from '../../lib/completions';
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
@@ -76,7 +76,7 @@ import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../compon
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
 import { PainelConsolidado } from '../../components/painel/PainelConsolidado';
 import { truncName, ddmm, fmtDataCurta } from '../../lib/format';
-import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
+import { PERIODS, countApplicableTemplatesOnDate, computeProductivity, reviewSummary, PRODUCTIVITY_REVIEW_RULE } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
 import {
   ROLE_LABELS, MANAGER_ROLES, STATUS_CFG, Eyebrow, Ticket, Avatar,
@@ -1872,7 +1872,7 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
 /* ------------------------------ executar view ------------------------------ */
 
 
-export function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function ExecutarView({ unit, templates, completions, closures, currentUser, onSaveCompletion, onRefreshCompletions, activeTypes = CHECKLIST_TYPE_ORDER }) {
   const [checklistType, setChecklistType] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
   const today = todayStr(tzOf(unit));
@@ -1892,6 +1892,14 @@ export function ExecutarView({ unit, templates, completions, closures, currentUs
       .catch(() => {});
     return () => { cancelled = true; };
   }, [unit.id, today, activeTemplate]);
+
+  // As conclusões também são conferidas com o banco ao abrir a lista e ao
+  // entrar num checklist: o realtime pode ter caído com a tela acesa (troca de
+  // rede), e é aqui que a lista velha engana — "Parcial" no cartão e "Concluir"
+  // aceso num checklist que o colega já fechou (ver `recarregarConclusoes`).
+  useEffect(() => {
+    onRefreshCompletions?.();
+  }, [unit.id, activeTemplate?.id, onRefreshCompletions]);
 
   /**
    * O que há para fazer hoje em cada checklist — previstas + arrastadas.
@@ -8108,6 +8116,15 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                 ? 'O score aparece conforme as novas execuções registram o horário de cada tarefa.'
                 : `${prodScore.rate.toFixed(1)} pts/h · ${Math.round(prodScore.points)} pontos no período · tarefa crítica vale 2 pts e checklist 100% dá bônus.`}
             </p>
+            {/* O desconto da conferência, com os brutos: quem perde ponto por
+                uma reprovação tem que ver QUANTAS e QUANTO, não só um score
+                mais baixo sem explicação. */}
+            {reviewSummary(prodScore) && (
+              <p style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.5, color: prodScore.reprovadas ? C.critical : prodScore.ressalvas ? C.warning : C.muted }}>
+                {reviewSummary(prodScore)}
+              </p>
+            )}
+            <p style={{ fontSize: 10.5, color: C.mutedLight, marginTop: 4, lineHeight: 1.5 }}>{PRODUCTIVITY_REVIEW_RULE}</p>
           </div>
         );
       })()}
@@ -9503,11 +9520,19 @@ function AppInner() {
     })();
   }, []);
 
+  // Marca-d'água da recarga incremental de conclusões: o `created_at` mais novo
+  // entre as linhas LIDAS do banco (carga inicial e recargas — nunca o
+  // realtime; ver `marcaDagua` em lib/completions.js). `undefined` = a carga
+  // inicial ainda não voltou, e recarregar antes dela seria ler duas vezes.
+  const marcaConclusoesRef = useRef(undefined);
+  const recargaConclusoesRef = useRef(null);
+
   // Dados operacionais: só com sessão aberta, e escopados por company_id no RLS.
   useEffect(() => {
     if (!currentUser) return;
     const TEMPLATES_VERSION = 'v5-stable-ids';
     let cancelled = false;
+    marcaConclusoesRef.current = undefined;
 
     // SEED_TEMPLATES e SEED_USERS são dados do IBR, herança de quando o app era
     // single-tenant. NUNCA podem ser gravados nem exibidos em outro tenant: sem
@@ -9556,6 +9581,7 @@ function AppInner() {
       // para a frente, tudo que lê `completions` já enxerga o que a liderança
       // julgou, sem precisar receber uma segunda estrutura.
       setCompletions(annotateReviews(comp, reviews, notes));
+      marcaConclusoesRef.current = marcaDagua(comp);
       setUsers(usr);
       setClosures(cls);
       await seedSupabaseIfEmpty(tpl, usr);
@@ -9610,6 +9636,51 @@ function AppInner() {
   const unitSeatBlock = (u, nextActiveFrom) => bloqueioDeLojaNoBanco({
     reler: refreshQuota, cotaDaTela: userQuota, users, unidade: u, novaAtivaDesde: nextActiveFrom,
   });
+
+  /**
+   * Recarga das conclusões que o realtime perdeu.
+   *
+   * O socket do realtime morre com o app em segundo plano, e o INSERT feito por
+   * outro aparelho nesse meio-tempo não é reenviado quando ele volta. Caso do
+   * IBR2 em 24/09/2026: o app do Nicolas concluiu a Abertura Pca Bebidas sozinho
+   * (10/10, gravado às 07:38), e o celular do Michel, guardado desde as 07:35,
+   * seguiu mostrando "Parcial · 2 de 10" com o botão "Concluir" aceso — até
+   * alguém apertar e gravar a mesma rodada de novo. Detalhes em lib/completions.js.
+   *
+   * Roda ao voltar para o app, ao voltar a rede e ao abrir a Rotina ou um
+   * checklist (ver `ExecutarView`). A leitura é incremental (`created_at` a
+   * partir da marca-d'água), então sair e voltar do app custa algumas linhas,
+   * não os 90 dias. Uma recarga por vez: as chamadas que chegam durante uma em
+   * voo esperam a mesma.
+   */
+  const recarregarConclusoes = useCallback(() => {
+    if (!currentUser || marcaConclusoesRef.current === undefined) return Promise.resolve();
+    if (recargaConclusoesRef.current) return recargaConclusoesRef.current;
+    const p = (async () => {
+      try {
+        const novas = await fetchCompletionsSince(inicioDaRecarga(marcaConclusoesRef.current));
+        marcaConclusoesRef.current = marcaMaisNova(marcaConclusoesRef.current, marcaDagua(novas));
+        if (novas.length) setCompletions(prev => juntarConclusoes(prev, novas));
+      } catch (e) {
+        console.warn('[App] recarga de conclusões falhou (segue com a lista atual):', e?.message);
+      } finally {
+        recargaConclusoesRef.current = null;
+      }
+    })();
+    recargaConclusoesRef.current = p;
+    return p;
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const aoVoltar = () => { if (document.visibilityState === 'visible') recarregarConclusoes(); };
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('online', recarregarConclusoes);
+    return () => {
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('online', recarregarConclusoes);
+    };
+  }, [currentUser, recarregarConclusoes]);
 
   // ── Data persistence — all writes go to Supabase via sync layer ──────────────
 
@@ -9744,9 +9815,17 @@ function AppInner() {
           // `executedBy` espelha a MESMA regra da RPC (doneBy, com fallback no
           // submissor). Sem ele aqui, o briefing e o índice só passariam a
           // enxergar o destinatário certo no carregamento seguinte.
+          //
+          // `reviewedAt` e `comMotivo` pelo mesmo motivo: sem data, o veredito
+          // novo fica fora do corte da Qualidade e da produtividade (ver
+          // `verdictInForce`) até o reload — a liderança reprovava e o score
+          // não se mexia. A RPC regrava `reviewed_at = now()` em toda tarefa
+          // da conferência, então o relógio local é a mesma resposta.
           return { ...it, review: {
             verdict: v.verdict, note: v.note || null, byName: currentUser.name,
             executedBy: it.doneBy || c.operatorUserId || null,
+            comMotivo: !!(v.note || '').trim(),
+            reviewedAt: new Date().toISOString(),
           } };
         }),
       } : c)));
@@ -10284,7 +10363,7 @@ function AppInner() {
           <AvisoTermosVagas userId={currentUser.id} />
         )}
         {activeTab === 'executar' && (
-          <ExecutarView key={unitId} unit={unit} templates={templates} completions={visibleCompletions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
+          <ExecutarView key={unitId} unit={unit} templates={templates} completions={visibleCompletions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} onRefreshCompletions={recarregarConclusoes} activeTypes={ACTIVE_TYPES} />
         )}
         {/* O Painel consolidado: o "agora" que era o J.I.T., o dia, a rede e o
             segmento analítico que era Relatórios, numa tela só. */}
