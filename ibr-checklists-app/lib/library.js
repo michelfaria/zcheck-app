@@ -16,9 +16,11 @@
  */
 
 // Taxonomia oficial de setores (21/07/2026) — é a MESMA em landing, waitlist e
-// onboarding. Food Service agrupa os antigos restaurante/café/padaria; cada
-// modelo guarda o sub-segmento em `segmento` (só exibição). `hint` diz o que o
-// setor abrange. Setores ainda sem modelos existem de propósito: aparecem como
+// onboarding. Food Service agrupa os antigos restaurante/café/padaria (e, desde
+// 24/09/2026, hamburgueria); cada modelo guarda o sub-segmento em `segmento`,
+// que o onboarding usa para perguntar "qual é a sua operação?" — sem isso,
+// escolher Food Service criava os modelos de TODOS os sub-segmentos em cada
+// loja. `hint` diz o que o setor abrange. Setores ainda sem modelos existem de propósito: aparecem como
 // "em breve" e medem demanda (template_adopted + campo setor do waitlist).
 export const LIBRARY_VERTICALS = [
   { id: 'food-service', label: 'Food Service',
@@ -401,4 +403,108 @@ export const LIBRARY_TEMPLATES = [
       { text: 'Ativar alarme ao sair', critical: true },
     ],
   },
+
+  // ── Hamburgueria ───────────────────────────────────────────────────────────
+  // A operação gira em torno da chapa, da fritadeira e da expedição: boa parte
+  // do movimento sai por delivery, e o erro caro é o pedido que vai errado ou
+  // aberto. Por isso a expedição tem checklist próprio.
+  {
+    id: 'hamb-cozinha-abertura', vertical: 'food-service', segmento: 'Hamburgueria', momento: 'Abertura', area: 'Cozinha',
+    descricao: 'Chapa quente, praça montada e carne conferida antes do primeiro pedido.',
+    deadline: '11:00',
+    items: [
+      { text: 'Conferir temperatura das câmaras e refrigeradores (refrigeração ≤ 5°C, congelados ≤ -12°C)', critical: true },
+      { text: 'Conferir validade e etiqueta das carnes, blends e molhos abertos', critical: true },
+      { text: 'Porcionar e pesar os blends do dia conforme a ficha técnica' },
+      { text: 'Ligar a chapa e conferir a temperatura de trabalho' },
+      { text: 'Conferir o óleo da fritadeira: nível, cor e data da última troca' },
+      { text: 'Montar a praça: pães, queijos, vegetais higienizados e molhos em potes identificados' },
+      { text: 'Higienizar bancadas, tábuas e espátulas', photoRequired: true },
+      { text: 'Conferir estoque de pães e embalagens para o movimento previsto' },
+      { text: 'Verificar uniforme, touca e higiene da equipe', critical: true },
+    ],
+  },
+  {
+    id: 'hamb-chapa-intermediario', vertical: 'food-service', segmento: 'Hamburgueria', momento: 'Intermediário', area: 'Cozinha',
+    descricao: 'Chapa e praça no padrão entre um pico e outro.',
+    items: [
+      { text: 'Raspar e limpar a chapa entre os picos' },
+      { text: 'Medir a temperatura interna de um hambúrguer de prova no ponto padrão da casa', critical: true },
+      { text: 'Repor a praça: o que foi aberto primeiro sai primeiro' },
+      { text: 'Descartar molhos e vegetais que passaram do tempo de bancada', critical: true },
+      { text: 'Trocar panos e solução sanitizante da bancada' },
+      { text: 'Filtrar o óleo da fritadeira se o movimento pedir' },
+    ],
+  },
+  {
+    id: 'hamb-expedicao-intermediario', vertical: 'food-service', segmento: 'Hamburgueria', momento: 'Intermediário', area: 'Expedição',
+    descricao: 'Pedido certo, fechado e no tempo — no balcão e no delivery.',
+    items: [
+      { text: 'Conferir cada pedido contra a comanda antes de fechar a embalagem', critical: true },
+      { text: 'Lacrar as embalagens de delivery', critical: true },
+      { text: 'Separar molhos, guardanapos e talheres por pedido' },
+      { text: 'Conferir o tempo de espera dos pedidos prontos no balcão' },
+      { text: 'Manter a estação de retirada limpa e organizada' },
+      { text: 'Repor embalagens, sacolas e lacres' },
+    ],
+  },
+  {
+    id: 'hamb-cozinha-fechamento', vertical: 'food-service', segmento: 'Hamburgueria', momento: 'Fechamento', area: 'Cozinha',
+    descricao: 'Chapa limpa, carne guardada e gás fechado antes de sair.',
+    items: [
+      { text: 'Raspar e limpar a chapa a fundo e desligar', critical: true },
+      { text: 'Filtrar ou trocar o óleo da fritadeira e anotar a data' },
+      { text: 'Guardar carnes e porções etiquetadas (nome + data)', critical: true },
+      { text: 'Descartar sobras de bancada conforme a regra da casa', critical: true },
+      { text: 'Higienizar bancadas, tábuas, espátulas e piso', photoRequired: true },
+      { text: 'Fechar o registro de gás', critical: true },
+      { text: 'Conferir a temperatura das câmaras antes de sair', critical: true },
+      { text: 'Retirar o lixo e limpar os ralos' },
+    ],
+  },
 ];
+
+// ── Plano de adoção (onboarding) ─────────────────────────────────────────────
+// Puro, sem React: vive aqui para o teste (tests/library-plan.spec.mjs) poder
+// provar o que o onboarding cria sem montar a tela.
+
+const normalizeName = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+/** Sub-segmentos de um setor, na ordem da biblioteca. [] se o setor não tem. */
+export function segmentosDoSetor(vertical) {
+  return [...new Set(LIBRARY_TEMPLATES.filter(t => t.vertical === vertical && t.segmento).map(t => t.segmento))];
+}
+
+/**
+ * Para cada loja, mapeia cada modelo do setor para o setor da loja de nome
+ * equivalente; sem equivalente, cai no primeiro setor da loja.
+ *
+ * `segmentos` filtra os sub-segmentos (ex.: só Hamburgueria). Vazio ou nulo
+ * não filtra — é o caso dos setores que não têm sub-segmento, como Hotel.
+ *
+ * Nomes: o checklist se chama "Área — Momento". Dois sub-segmentos podem ter o
+ * mesmo par (Bar — Abertura existe em Restaurante e em Café) e cair no mesmo
+ * setor; aí o nome leva o sub-segmento entre parênteses, senão a loja ficaria
+ * com dois checklists de nome idêntico.
+ */
+export function planoDaBiblioteca(vertical, units, segmentos = null) {
+  const filtro = segmentos && segmentos.length ? new Set(segmentos) : null;
+  const models = LIBRARY_TEMPLATES.filter(t => t.vertical === vertical && (!filtro || !t.segmento || filtro.has(t.segmento)));
+  const plan = [];
+  (units || []).forEach(u => {
+    const sectors = u.sectors || [];
+    models.forEach(m => {
+      const sector =
+        sectors.find(s => normalizeName(s) === normalizeName(m.area)) ||
+        sectors.find(s => normalizeName(s).includes(normalizeName(m.area)) || normalizeName(m.area).includes(normalizeName(s))) ||
+        sectors[0] || m.area;
+      plan.push({ model: m, unit: u, sector, name: `${m.area} — ${m.momento}` });
+    });
+  });
+  const vezes = new Map();
+  const chave = p => `${p.unit.id}|${normalizeName(p.sector)}|${p.name}`;
+  plan.forEach(p => vezes.set(chave(p), (vezes.get(chave(p)) || 0) + 1));
+  return plan.map(p => (vezes.get(chave(p)) > 1 && p.model.segmento
+    ? { ...p, name: `${p.name} (${p.model.segmento})` }
+    : p));
+}

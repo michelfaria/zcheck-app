@@ -10,18 +10,29 @@ import { C, R } from '../lib/tokens';
 export default function BackToTop() {
   const [visible, setVisible] = useState(false);
 
+  // Some enquanto o rodapé está na tela: fixo no canto, ele cobria o link
+  // "Contato" em celulares de 320–375px (alvo de toque tapado, WCAG 2.5.8).
+  const [footerOnScreen, setFooterOnScreen] = useState(false);
+
   useEffect(() => {
     const onScroll = () => setVisible(window.scrollY > window.innerHeight * 0.9);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    const footer = document.querySelector('footer');
+    let io;
+    if (footer && 'IntersectionObserver' in window) {
+      io = new IntersectionObserver(([e]) => setFooterOnScreen(e.isIntersecting));
+      io.observe(footer);
+    }
+    return () => { window.removeEventListener('scroll', onScroll); io?.disconnect(); };
   }, []);
 
-  if (!visible) return null;
+  if (!visible || footerOnScreen) return null;
 
   return (
     <button
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      // Sem animação para quem pediu movimento reduzido (WCAG 2.3.3).
+      onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })}
       aria-label="Voltar ao topo da página"
       style={{
         position: 'fixed', right: 20, bottom: 20, zIndex: 90,

@@ -98,7 +98,7 @@ import { C, R, W, T, successBright, greenOnDark } from '../../lib/tokens';
 import { normalizeCnpj, formatCnpj, cnpjError } from '../../lib/cnpj';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
 import { useAppUrlState } from '../../lib/appUrlState';
-import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
+import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS, segmentosDoSetor, planoDaBiblioteca } from '../../lib/library';
 import {
   billingState, priceForUnits, formatBRL,
   PRICE_PER_UNIT, ANNUAL_DISCOUNT_LABEL, EXTRA_USER_PRICE, INCLUDED_USERS_PER_UNIT, MAX_SELF_SERVICE_UNITS,
@@ -6768,43 +6768,37 @@ function guessVertical(units) {
   return best;
 }
 
-// Para cada loja da empresa, mapeia cada modelo do segmento para o setor de
-// nome equivalente; sem equivalente, cai no primeiro setor da loja.
-function libraryPlanForCompany(vertical, units) {
-  const models = LIBRARY_TEMPLATES.filter(t => t.vertical === vertical);
-  const plan = [];
-  units.forEach(u => {
-    const sectors = u.sectors || [];
-    models.forEach(m => {
-      const sector =
-        sectors.find(s => normalizeName(s) === normalizeName(m.area)) ||
-        sectors.find(s => normalizeName(s).includes(normalizeName(m.area)) || normalizeName(m.area).includes(normalizeName(s))) ||
-        sectors[0] || m.area;
-      plan.push({ model: m, unit: u, sector });
-    });
-  });
-  return plan;
-}
+// O plano (modelo → loja/setor, com nome sem duplicata) mora em lib/library.js
+// (`planoDaBiblioteca`), coberto por tests/library-plan.spec.mjs.
 
-function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab, onStartTour }) {
+export function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab, onStartTour }) {
   const [step, setStep] = useState(0); // 0 segmento · 1 revisão · 2 pronto
   const [vertical, setVertical] = useState(() => guessVertical(units));
+  // Sub-segmentos escolhidos (Food Service: Restaurante, Café, Padaria,
+  // Hamburgueria). Antes não havia a pergunta: escolher Food Service criava
+  // os modelos dos quatro em cada loja — uma hamburgueria recebia checklist de
+  // padaria. Começa vazio de propósito: quem escolhe diz o que é.
+  const [segmentos, setSegmentos] = useState([]);
   const [creating, setCreating] = useState(false);
   const accent = units[0]?.color || C.ink;
 
   useEffect(() => { track('onboarding_shown', { source: 'onboarding' }); }, []);
 
-  const plan = vertical ? libraryPlanForCompany(vertical, units) : [];
+  const opcoesSegmento = vertical ? segmentosDoSetor(vertical) : [];
+  const precisaSegmento = opcoesSegmento.length > 1;
+  const plan = vertical ? planoDaBiblioteca(vertical, units, precisaSegmento ? segmentos : null) : [];
+  const escolherSetor = id => { setVertical(id); setSegmentos([]); };
+  const alternarSegmento = seg => setSegmentos(atual => (atual.includes(seg) ? atual.filter(x => x !== seg) : [...atual, seg]));
 
   const createAll = async () => {
     if (creating || plan.length === 0) return;
     setCreating(true);
-    const created = plan.map(({ model: m, unit: u, sector }) => ({
+    const created = plan.map(({ model: m, unit: u, sector, name }) => ({
       id: uid(),
       unitId: u.id,
       sector,
       shift: m.momento === 'Abertura' ? 'Manhã' : m.momento === 'Fechamento' ? 'Tarde' : ['Manhã', 'Tarde'],
-      name: `${m.area} — ${m.momento}`,
+      name,
       deadline: m.deadline || null,
       items: (m.items || []).map(i => ({
         id: uid(), text: i.text, critical: !!i.critical,
@@ -6813,7 +6807,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
     }));
     await onCreateTemplates(created);
     created.forEach(t => track('template_adopted', { source: 'onboarding', unitId: t.unitId, metadata: { vertical, name: t.name } }));
-    track('onboarding_completed', { source: 'onboarding', metadata: { vertical, templates: created.length } });
+    track('onboarding_completed', { source: 'onboarding', metadata: { vertical, segmentos, templates: created.length } });
     setCreating(false);
     setStep(2);
   };
@@ -6860,7 +6854,7 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                   const empty = count === 0; // setor na taxonomia, modelos ainda em curadoria
                   const VIcon = VERTICAL_ICON[v.id] || ClipboardList;
                   return (
-                    <button key={v.id} onClick={() => !empty && setVertical(v.id)} disabled={empty}
+                    <button key={v.id} onClick={() => !empty && escolherSetor(v.id)} disabled={empty}
                       style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: empty ? 'default' : 'pointer', textAlign: 'left',
                         opacity: empty ? 0.55 : 1,
                         background: active ? `${accent}12` : 'white',
@@ -6877,8 +6871,29 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                   );
                 })}
               </div>
+              {precisaSegmento && (
+                <div style={{ marginBottom: 18 }}>
+                  <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>
+                    Qual é a sua operação? <span style={{ fontWeight: W.medium, color: C.muted }}>Marque uma ou mais.</span>
+                  </p>
+                  <div role="group" aria-label="Tipo de operação" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {opcoesSegmento.map(seg => {
+                      const marcado = segmentos.includes(seg);
+                      const n = LIBRARY_TEMPLATES.filter(t => t.vertical === vertical && t.segmento === seg).length;
+                      return (
+                        <button key={seg} type="button" aria-pressed={marcado} onClick={() => alternarSegmento(seg)}
+                          style={{ padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: W.semibold, cursor: 'pointer',
+                            background: marcado ? accent : 'white', color: marcado ? 'white' : C.ink,
+                            border: `1.5px solid ${marcado ? accent : C.border}` }}>
+                          {seg} <span style={{ fontWeight: W.medium, opacity: 0.8 }}>· {n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <Btn primary disabled={!vertical} onClick={() => setStep(1)}>Continuar →</Btn>
+                <Btn primary disabled={!vertical || (precisaSegmento && segmentos.length === 0)} onClick={() => setStep(1)}>Continuar →</Btn>
                 <Btn onClick={skip}>Começar do zero em Gerenciar</Btn>
               </div>
             </>
@@ -6893,9 +6908,9 @@ function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onC
                 Cada um vira uma cópia sua — edite itens, prazos e orientações quando quiser.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
-                {plan.map(({ model: m, unit: u, sector }, i) => (
+                {plan.map(({ model: m, unit: u, sector, name }, i) => (
                   <div key={i} style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
-                    <p style={{ fontSize: 13.5, fontWeight: W.semibold, color: C.ink }}>{m.area} — {m.momento}</p>
+                    <p style={{ fontSize: 13.5, fontWeight: W.semibold, color: C.ink }}>{name}</p>
                     <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>
                       {u.name} · setor {sector} · {(m.items || []).length} itens
                       {(m.items || []).some(x => x.critical) ? ` · ${(m.items || []).filter(x => x.critical).length} críticos` : ''}
@@ -8427,10 +8442,10 @@ function UnitIdView({ profile, position, total, accent, sectorRanking = [] }) {
             onde o número é bom. A contagem fica no subtítulo, que é o lugar
             dela. */}
         <Metric label="Críticos em dia" value={p.criticalRate == null ? '—' : `${p.criticalRate}%`}
-          sub={p.criticalPending ? `${p.criticalPending} pendente(s)` : 'nenhum pendente'}
+          sub={p.criticalPending ? `${p.criticalPending} ${p.criticalPending === 1 ? 'pendente' : 'pendentes'}` : 'nenhum pendente'}
           tone={p.criticalRate == null ? C.ink : p.criticalRate >= 95 ? C.success : p.criticalRate >= 80 ? C.warning : C.critical} />
         <Metric label="Sequência" value={`${p.streak} dia${p.streak === 1 ? '' : 's'}`}
-          sub={`recorde de ${p.bestStreak} · ${p.operators} pessoa(s)`} />
+          sub={`recorde de ${p.bestStreak} · ${p.operators} ${p.operators === 1 ? 'pessoa' : 'pessoas'}`} />
       </div>
 
       {p.weekly.length > 0 && (
@@ -8585,8 +8600,8 @@ export function UnidadesView({ units, templates, completions, closures, currentU
             <div style={{ flex: 1, minWidth: 0 }}>
               <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink }}>{p.unit.name}</p>
               <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 2 }}>
-                Nível {p.level} · {p.checklists} checklists · {p.operators} pessoa(s)
-                {p.criticalPending ? ` · ${p.criticalPending} crítico(s) pendente(s)` : ''}
+                Nível {p.level} · {p.checklists} checklists · {p.operators} {p.operators === 1 ? 'pessoa' : 'pessoas'}
+                {p.criticalPending ? ` · ${p.criticalPending} ${p.criticalPending === 1 ? 'crítico pendente' : 'críticos pendentes'}` : ''}
               </p>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
