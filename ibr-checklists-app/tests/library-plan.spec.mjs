@@ -17,9 +17,20 @@
  *   3. dois sub-segmentos com o mesmo "Área — Momento" no mesmo setor ganham
  *      o sub-segmento no nome, em vez de dois checklists de nome idêntico;
  *   4. a biblioteca tem ids únicos e todo modelo tem item com texto.
+ *
+ * Também de 24/09/2026, quando Farmácia, Consultório / Clínica e Escritório
+ * entraram como setores e Pet Shop ganhou modelos:
+ *
+ *   5. cada setor novo tem Abertura e Fechamento, todo modelo aponta para um
+ *      setor da taxonomia e todo setor tem ícone no onboarding; a casa de
+ *      ração escolhe "Loja e ração" e não recebe checklist de banho e tosa;
+ *   6. nenhum modelo cita norma (Anvisa, RDC, NR, SNGPC…): adotar um modelo
+ *      não pode parecer que deixa a operação em dia com a fiscalização. Item
+ *      de norma, cada cliente acrescenta o seu.
  */
 
-import { LIBRARY_TEMPLATES, segmentosDoSetor, planoDaBiblioteca } from '../lib/library.js';
+import { readFileSync } from 'node:fs';
+import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS, segmentosDoSetor, planoDaBiblioteca } from '../lib/library.js';
 
 let ok = true;
 const check = (c, m) => { if (!c) ok = false; console.log(`  ${c ? '✓' : '✗'} ${m}`); };
@@ -65,6 +76,44 @@ check(new Set(LIBRARY_TEMPLATES.map(t => t.id)).size === LIBRARY_TEMPLATES.lengt
 check(LIBRARY_TEMPLATES.every(t => t.items.length > 0 && t.items.every(i => i.text?.trim())), 'todo modelo tem itens com texto');
 check(LIBRARY_TEMPLATES.every(t => ['Abertura', 'Intermediário', 'Fechamento'].includes(t.momento)),
   'todo momento é Abertura, Intermediário ou Fechamento (o tipo do checklist sai do nome)');
+
+console.log('\n═══ 5. setores de 24/09/2026 ═══');
+const ids = new Set(LIBRARY_VERTICALS.map(v => v.id));
+check(LIBRARY_TEMPLATES.every(t => ids.has(t.vertical)), 'todo modelo aponta para um setor de LIBRARY_VERTICALS');
+for (const v of ['farmacia', 'petshop', 'consultorio', 'escritorio']) {
+  const ms = LIBRARY_TEMPLATES.filter(t => t.vertical === v);
+  const momentos = new Set(ms.map(t => t.momento));
+  check(ids.has(v) && momentos.has('Abertura') && momentos.has('Fechamento'), `${v}: ${ms.length} modelos, com Abertura e Fechamento`);
+}
+check(['farmacia', 'consultorio', 'escritorio'].every(v => segmentosDoSetor(v).length === 0),
+  'Farmácia, Consultório e Escritório não perguntam a operação');
+const petSegs = segmentosDoSetor('petshop');
+check(petSegs.length === 2 && petSegs.includes('Loja e ração') && petSegs.includes('Banho e tosa'),
+  `Pet Shop pergunta a operação (${petSegs.join(', ')})`);
+const racao = planoDaBiblioteca('petshop', [loja('r', ['Loja', 'Estoque', 'Caixa'])], ['Loja e ração']);
+check(racao.length > 0 && racao.every(p => p.model.segmento === 'Loja e ração' && p.model.area !== 'Banho e Tosa'),
+  `casa de ração: ${racao.length} checklists, nenhum de banho e tosa`);
+check(racao.some(p => p.model.area === 'Estoque' && p.sector === 'Estoque'), 'o recebimento cai no setor Estoque da loja');
+const petTudo = planoDaBiblioteca('petshop', [loja('p', ['Loja', 'Banho e Tosa'])], petSegs);
+check(petTudo.length === LIBRARY_TEMPLATES.filter(t => t.vertical === 'petshop').length, `pet shop com banho e tosa recebe os dois (${petTudo.length})`);
+check(petTudo.filter(p => p.model.segmento === 'Banho e tosa').every(p => p.sector === 'Banho e Tosa'), 'banho e tosa cai no setor Banho e Tosa');
+check(new Set(petTudo.map(p => p.name)).size === petTudo.length, 'nenhum nome repetido na loja');
+const sala = planoDaBiblioteca('consultorio', [loja('c', ['Recepção', 'Consultório 1'])], null);
+check(sala.filter(p => p.model.area === 'Consultório').every(p => p.sector === 'Consultório 1'), 'a sala cai em "Consultório 1" (nome parecido)');
+// VERTICAL_ICON mora na tela (app/app/page.js); sem entrada, o setor aparece
+// no onboarding com o ícone genérico de prancheta.
+const src = readFileSync(new URL('../app/app/page.js', import.meta.url), 'utf8');
+const icones = src.match(/const VERTICAL_ICON = \{([\s\S]*?)\};/)?.[1] || '';
+const semIcone = [...ids].filter(id => !new RegExp(`['"]?${id}['"]?\\s*:`).test(icones));
+check(semIcone.length === 0, semIcone.length ? `setor sem ícone no onboarding: ${semIcone.join(', ')}` : 'todo setor tem ícone no onboarding (VERTICAL_ICON)');
+
+console.log('\n═══ 6. modelo não promete norma ═══');
+const NORMA = /\b(anvisa|rdc|nr-?\s?\d+|portaria|sngpc|pgrss|avcb|crf|crmv|biosseguran[çc]a|vigil[âa]ncia sanit[áa]ria|lgpd)\b/i;
+const citam = LIBRARY_TEMPLATES.flatMap(t => [t.descricao, ...t.items.map(i => i.text)]
+  .filter(s => NORMA.test(s)).map(s => `${t.id}: "${s}"`));
+check(citam.length === 0, citam.length ? `cita norma — ${citam.join(' · ')}` : 'nenhum modelo cita norma (Anvisa, RDC, NR, SNGPC…)');
+check(NORMA.test('Conforme RDC 44/2009') && NORMA.test('Extintores da NR-23') && !NORMA.test('Conferir o mapa do buffet'),
+  'o filtro pega sigla de norma e não pega palavra comum');
 
 console.log(ok ? '\n  ✅ PASSOU' : '\n  ❌ FALHOU');
 process.exit(ok ? 0 : 1);

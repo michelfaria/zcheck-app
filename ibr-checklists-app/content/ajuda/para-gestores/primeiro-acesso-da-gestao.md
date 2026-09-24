@@ -3,7 +3,7 @@ title: "Primeiro acesso da gestão: tour e biblioteca de modelos"
 description: "O que fazer no primeiro login da gestão: tour guiado e criação dos primeiros checklists a partir da biblioteca."
 category: para-gestores
 order: 1
-updatedAt: "2026-09-23"
+updatedAt: "2026-09-24"
 ---
 
 Sua empresa acabou de entrar no ZCheck? Este é o caminho recomendado para sair do zero e ter a operação rodando no mesmo dia.
@@ -14,7 +14,7 @@ No primeiro login, o app apresenta um **tour guiado** com as principais funciona
 
 ## 2. Crie os primeiros checklists pela biblioteca
 
-Empresa nova começa sem checklists — e a forma mais rápida de resolver é usar os **modelos prontos por setor** — Food Service (bar, restaurante, café, padaria, hamburgueria, pizzaria, lanchonete), Hotel / Pousada e Varejo, com mais setores a caminho:
+Empresa nova começa sem checklists — e a forma mais rápida de resolver é usar os **modelos prontos por setor** — Food Service (bar, restaurante, café, padaria, hamburgueria, pizzaria, lanchonete), Hotel / Pousada, Varejo, Farmácia, Pet Shop (loja e ração, banho e tosa), Consultório / Clínica e Escritório, com mais setores a caminho:
 
 1. Abra a aba **Gerenciar** e toque em **+ Novo**.
 2. Toque em **Escolher um modelo pronto**.
