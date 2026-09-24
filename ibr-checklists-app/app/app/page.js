@@ -12,7 +12,7 @@ import {
   ThumbsUp, TrendingUp, Upload,
   Image as ImageIcon, Pencil, Smartphone, Lightbulb, KeyRound, Sprout, Flame,
   CalendarCheck, ShieldCheck, UtensilsCrossed, BedDouble, Tent, Dumbbell, PawPrint,
-  Hourglass, Share,
+  Pill, Stethoscope, Building2, Hourglass, Share,
 } from 'lucide-react';
 import {
   fetchTemplates, saveTemplates as dbSaveTemplates, subscribeToTemplates,
@@ -6723,6 +6723,9 @@ const VERTICAL_ICON = {
   hotel: BedDouble,
   eventos: Tent,
   varejo: Store,
+  farmacia: Pill,
+  consultorio: Stethoscope,
+  escritorio: Building2,
   academia: Dumbbell,
   petshop: PawPrint,
 };

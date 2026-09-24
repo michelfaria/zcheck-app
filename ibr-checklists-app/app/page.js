@@ -2,7 +2,7 @@ import Image from 'next/image';
 import {
   CheckSquare, LayoutGrid, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
   Check, Eye, Target, TrendingUp, ClipboardCheck, History, ArrowLeftRight,
-  Trash2, ShieldCheck, Store, Coffee, BedDouble, ShoppingCart, UtensilsCrossed,
+  Trash2, ShieldCheck, Store, Coffee, BedDouble, UtensilsCrossed,
   Pill, PawPrint, Stethoscope, Building2,
 } from 'lucide-react';
 import { C, R, W, T, greenOnDark } from '../lib/tokens';
@@ -122,22 +122,25 @@ const ShotCaption = ({ as: Tag = 'p', children, style }) => (
 );
 
 // Faixa "Feito para o seu negócio" — o escopo inicial de segmentos.
-// `modelos: true` só onde a biblioteca (lib/library.js) tem modelo pronto:
-// Food Service (restaurante, café, padaria), Hotel / Pousada e Varejo. Nos
-// outros o card não promete modelo nem norma (Anvisa, biossegurança): o
-// produto serve porque a rotina é montada do zero ou importada por CSV. Ganhou
-// modelo na biblioteca? Troque para true. `href` fica reservado para as
-// futuras landings por segmento; enquanto null, o card não é link.
+// `modelos: true` só onde a biblioteca (lib/library.js) tem modelo pronto.
+// Desde 24/09/2026 todos os cards têm: Food Service, Hotel / Pousada,
+// Farmácia, Pet Shop (loja e ração · banho e tosa), Consultório / Clínica e
+// Escritório. O card Supermercados saiu no mesmo dia: os modelos de Varejo são
+// de loja genérica e não cobrem frio exposto, validade em rodízio, açougue nem
+// hortifrúti — volta quando houver segmento Supermercado na biblioteca. Mesmo
+// com modelo, o card não promete norma (Anvisa, biossegurança): os modelos
+// deixam de fora, de propósito, os itens de exigência legal. Segmento novo sem
+// modelo entra com false. `href` fica reservado para as futuras landings por
+// segmento; enquanto null, o card não é link.
 const SEGMENTS = [
   { id: 'restaurantes', Icon: UtensilsCrossed, nome: 'Bares e restaurantes', frase: 'Abertura da cozinha, câmara fria e fechamento de caixa.', modelos: true, href: null },
   { id: 'cafeterias',   Icon: Coffee,          nome: 'Cafeterias e padarias', frase: 'Produção, vitrine e atendimento prontos antes de abrir.', modelos: true, href: null },
   { id: 'redes',        Icon: Store,           nome: 'Redes de food service', frase: 'O mesmo padrão em todas as unidades, com ranking entre lojas.', modelos: true, href: null },
   { id: 'hotelaria',    Icon: BedDouble,       nome: 'Hotelaria',             frase: 'Recepção, governança e café da manhã conferidos.', modelos: true, href: null },
-  { id: 'supermercados', Icon: ShoppingCart,   nome: 'Supermercados',         frase: 'Piso de vendas, estoque, validade e fechamento de caixa.', modelos: true, href: null },
-  { id: 'farmacias',    Icon: Pill,            nome: 'Farmácias',             frase: 'Temperatura da geladeira, validades e abertura da loja.', modelos: false, href: null },
-  { id: 'racao',        Icon: PawPrint,        nome: 'Casas de ração e pet shops', frase: 'Estoque, limpeza, banho e tosa, e o fechamento do dia.', modelos: false, href: null },
-  { id: 'consultorios', Icon: Stethoscope,     nome: 'Consultórios',          frase: 'Sala pronta, material conferido e limpeza entre atendimentos.', modelos: false, href: null },
-  { id: 'escritorios',  Icon: Building2,       nome: 'Escritórios',           frase: 'Abertura, limpeza, equipamentos e fechamento do prédio.', modelos: false, href: null },
+  { id: 'farmacias',    Icon: Pill,            nome: 'Farmácias',             frase: 'Temperatura da geladeira, validades e abertura da loja.', modelos: true, href: null },
+  { id: 'racao',        Icon: PawPrint,        nome: 'Casas de ração e pet shops', frase: 'Estoque, limpeza, banho e tosa, e o fechamento do dia.', modelos: true, href: null },
+  { id: 'consultorios', Icon: Stethoscope,     nome: 'Consultórios',          frase: 'Sala pronta, material conferido e limpeza entre atendimentos.', modelos: true, href: null },
+  { id: 'escritorios',  Icon: Building2,       nome: 'Escritórios',           frase: 'Abertura, limpeza, equipamentos e fechamento do prédio.', modelos: true, href: null },
 ];
 
 // Os três pilares — a narrativa de posicionamento.
@@ -432,7 +435,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-grid-3">
             {[
-              ['Crie sua conta e monte sua rotina', 'Em poucos minutos, você escolhe um modelo pronto (restaurante, café, padaria, hotel e varejo) ou começa do zero e ajusta do seu jeito. Se já usa uma planilha, dá para importar.'],
+              ['Crie sua conta e monte sua rotina', 'Em poucos minutos, você escolhe um modelo pronto do seu segmento ou começa do zero e ajusta do seu jeito. Se já usa uma planilha, dá para importar.'],
               ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só os checklists do seu setor. Você escolhe quais tarefas pedem foto, e o app funciona sem internet.'],
               ['Você abre o Painel e age', 'Ali você vê, ao longo do dia, o que foi feito ou não e por onde começar. E o que você marcar para tratar volta a aparecer até ser resolvido.'],
             ].map(([t, d], i) => (
@@ -577,7 +580,7 @@ export default function LandingPage() {
             })}
           </div>
           <p style={{ textAlign: 'center', fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 24 }}>
-            Nos segmentos sem modelo pronto, você monta os checklists em minutos ou importa a sua planilha. O preço é o mesmo para todos.
+            O seu negócio não está na lista? Você monta os checklists em minutos ou importa a sua planilha. O preço é o mesmo para todos.
           </p>
         </div>
       </section>
