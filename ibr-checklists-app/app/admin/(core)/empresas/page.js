@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { C } from '../../../../lib/tokens';
 import { normalizeCnpj, formatCnpj, cnpjError } from '../../../../lib/cnpj';
+import { formatBRL, extraSeatsInUse, EXTRA_USER_PRICE, INCLUDED_USERS_PER_UNIT } from '../../../../lib/plans';
 import {
   useAdminData, Card, Kpi, SectionTitle, HealthDot, UpdatedAt, ErrorBox, Loading,
   Empty, ChartTip, Table, fmtDay, timeAgo,
@@ -96,6 +97,81 @@ function UnitCnpjEditor({ unit, busy, onSave }) {
   );
 }
 
+// Vagas de usuário (regra de 23/09/2026): 10 por loja ativa, somadas, + as
+// adicionais contratadas. Os números vêm da view admin_company_health (ativos
+// = não suspensos; lojas que já estrearam) — antes da migration 20260923 as
+// colunas não existem e a tela cai na contagem bruta de usuários.
+const hasSeats = c => c && c.active_users != null && c.seat_capacity != null;
+
+function SeatsCell({ company }) {
+  if (!hasSeats(company)) return <span>{company.users}</span>;
+  if (company.billing?.exempt) return <span style={{ color: C.muted }}>{company.active_users} · isenta</span>;
+  const over = Number(company.active_users) > Number(company.seat_capacity);
+  const extra = company.billing?.extra_seats ?? company.extra_seats ?? 0;
+  return (
+    <span style={{ color: over ? C.critical : C.ink, fontWeight: over ? 700 : 400 }}>
+      {company.active_users}/{company.seat_capacity}
+      {extra > 0 && <span style={{ color: C.muted, fontWeight: 400 }}> · +{extra} adic.</span>}
+    </span>
+  );
+}
+
+// Vagas e cobrança no drill-down: em uso / capacidade / adicionais contratadas,
+// o valor que o MP cobra e a trilha de quem contratou ou reduziu vagas.
+function SeatsCard({ company, changes }) {
+  const b = company.billing || {};
+  const units = company.active_units_billable ?? 0;
+  const inUse = extraSeatsInUse(company.active_users, units);
+  const extra = b.extra_seats ?? company.extra_seats ?? 0;
+  const over = Number(company.active_users) > Number(company.seat_capacity);
+  const linha = { fontSize: 13, color: C.ink, margin: 0 };
+  return (
+    <Card>
+      <SectionTitle right={b.adjust_pending
+        ? <span style={{ fontSize: 11, fontWeight: 700, color: C.warning }}>AJUSTE DE VALOR PENDENTE NO MP</span>
+        : null}>
+        Vagas e cobrança
+      </SectionTitle>
+      {b.exempt ? (
+        <p style={linha}>
+          Conta isenta (cortesia) — sem limite de vagas e sem cobrança. {company.active_users} usuários ativos.
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gap: 4 }}>
+          <p style={{ ...linha, color: over ? C.critical : C.ink, fontWeight: over ? 700 : 400 }}>
+            {company.active_users} de {company.seat_capacity} vagas em uso
+            {over && ' — acima da capacidade: ninguém novo entra até suspender ou contratar'}
+          </p>
+          <p style={{ ...linha, color: C.muted }}>
+            {company.included_seats} da franquia ({units} {units === 1 ? 'loja ativa' : 'lojas ativas'} × {INCLUDED_USERS_PER_UNIT}, piso de 1 loja)
+            {' + '}{extra} adicionais contratadas ({formatBRL(EXTRA_USER_PRICE * extra, { cents: true })}/mês)
+            {inUse > 0 && ` · ${inUse} adicionais em uso (mínimo para reduzir)`}
+          </p>
+          <p style={{ ...linha, color: C.muted }}>
+            Cobrado no Mercado Pago: {b.billed_amount != null
+              ? `${formatBRL(b.billed_amount)}/mês${b.billed_cycle ? ` · ${b.billed_cycle === 'monthly' ? 'mensal' : 'anual'}` : ''}`
+              : 'sem valor registrado'}
+          </p>
+        </div>
+      )}
+      {changes.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Table
+            head={['Quando', 'Quem', 'Vagas adicionais', 'Ativos / franquia', 'Origem']}
+            rows={changes.map(ch => [
+              ch.created_at ? new Date(ch.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—',
+              ch.changed_by_name || ch.changed_by || '—',
+              `${ch.from_seats ?? 0} → ${ch.to_seats ?? 0} (${formatBRL(ch.unit_price ?? EXTRA_USER_PRICE, { cents: true })} cada)`,
+              `${ch.active_users ?? '—'} / ${ch.included_seats ?? '—'}`,
+              <span key="o" style={{ fontSize: 12, color: C.muted }}>{ch.source || '—'}</span>,
+            ])}
+          />
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // Empresas — gestão de tenants: drill-down (unidades → setores, usuários) e
 // ações de gestão (ativar/desativar, +7 dias de trial, deletar).
 export default function CompaniesPage() {
@@ -177,7 +253,7 @@ export default function CompaniesPage() {
       <Card>
         <SectionTitle>Todas as empresas ({companies.length})</SectionTitle>
         <Table
-          head={['Empresa', 'CNPJ', 'Plano', 'Unidades', 'Usuários', 'Checklists 7d', '30d', 'Última atividade', '']}
+          head={['Empresa', 'CNPJ', 'Plano', 'Unidades', 'Vagas', 'Checklists 7d', '30d', 'Última atividade', '']}
           empty="Nenhuma empresa provisionada."
           rows={companies.map(c => [
             <span key="n" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -194,7 +270,7 @@ export default function CompaniesPage() {
                 ? `trial até ${c.trial_ends_at ? fmtDay(c.trial_ends_at.slice(0, 10)) : '—'}`
                 : (c.subscription_status || c.plan || '—')}
             </span>,
-            c.units, c.users, c.completions_7d, c.completions_30d,
+            c.units, <SeatsCell key="v" company={c} />, c.completions_7d, c.completions_30d,
             timeAgo(c.last_activity),
             <button key="b"
               onClick={() => setSelected(selected === c.company_id ? null : c.company_id)}
@@ -283,10 +359,21 @@ export default function CompaniesPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Kpi label="Unidades" value={detail.data.company.units} />
-              <Kpi label="Usuários" value={detail.data.company.users} />
+              {hasSeats(detail.data.company) ? (
+                <Kpi label="Vagas em uso"
+                     value={`${detail.data.company.active_users}/${detail.data.company.seat_capacity}`}
+                     sub={detail.data.company.billing?.exempt ? 'isenta (cortesia)'
+                       : `${detail.data.company.billing?.extra_seats ?? detail.data.company.extra_seats ?? 0} adicionais contratadas`} />
+              ) : (
+                <Kpi label="Usuários" value={detail.data.company.users} />
+              )}
               <Kpi label="Checklists 30d" value={detail.data.company.completions_30d} />
               <Kpi label="Última atividade" value={timeAgo(detail.data.company.last_activity)} />
             </div>
+
+            {hasSeats(detail.data.company) && (
+              <SeatsCard company={detail.data.company} changes={detail.data.seatChanges || []} />
+            )}
 
             <Card style={{ padding: 12 }}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

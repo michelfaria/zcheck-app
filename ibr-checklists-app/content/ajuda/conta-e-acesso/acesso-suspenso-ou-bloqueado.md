@@ -3,7 +3,7 @@ title: "“Acesso suspenso” ou “muitas tentativas” — o que significa"
 description: "Entenda as mensagens de bloqueio do login e como resolver cada uma."
 category: conta-e-acesso
 order: 3
-updatedAt: "2026-07-20"
+updatedAt: "2026-09-23"
 ---
 
 O login do ZCheck tem proteções que às vezes aparecem como mensagens de bloqueio. Cada uma tem um motivo e uma solução diferentes.
@@ -18,7 +18,7 @@ Depois de vários PINs errados seguidos, o app trava novas tentativas por **10 m
 
 Seu usuário foi **suspenso** pela gestão — o acesso fica pausado e seu nome sai da lista de login.
 
-- **O que fazer**: fale com a sua gestão. Se foi engano, a diretoria reativa o acesso na aba Usuários em segundos.
+- **O que fazer**: fale com a sua gestão. Se foi engano, a diretoria reativa o acesso na aba Usuários — desde que haja vaga livre no plano da empresa. Sem vaga livre, a diretoria contrata uma vaga em [Plano e vagas](/ajuda/para-gestores/planos-e-vagas) antes de reativar.
 
 ## "Sem conexão. Verifique sua internet."
 

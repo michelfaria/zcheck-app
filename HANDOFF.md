@@ -51,9 +51,12 @@ Tailwind. Sem libs de pagamento (integração MP é `fetch` direto na API).
   **backfill** de `onboarded_at` para quem já tem lojas (IBR/demo/hotel-teste).
 
 ### Novos arquivos em `ibr-checklists-app/lib/`
-- `plans.js` — fonte única dos tiers (`starter` R$97/1un, `growth` R$197/3un,
-  `scale` R$297/5un; `CUSTOM_TIER` >5) + `billingState(company)` (retorna
-  `active`/`trialing`/`expired`) + `getTier`/`getTierByPrice`/`tierForUnits`.
+- `plans.js` — fonte única de preço e vagas (modelo atual, 23/09/2026): preço POR
+  LOJA (`PRICE_PER_UNIT` R$ 97 anual / R$ 127 mensal, `priceForUnits`), 10 vagas de
+  usuário por loja somadas na empresa + vaga adicional R$ 17,00/mês nos dois ciclos
+  (`includedSeatsFor`/`seatCapacity`/`extraSeatsInUse`), `formatBRL`,
+  `monthlyValueFor` e `billingState(company)` (`active`/`trialing`/`expired`). Os
+  tiers starter/growth/scale e `getTier`/`getTierByPrice`/`tierForUnits` saíram.
 - `mercadopago.js` — server-only: `createPreapproval`, `getPreapproval`,
   `getAuthorizedPayment`, `cancelPreapproval`, `verifyWebhookSignature` (x-signature).
 - `signupServer.js` — helpers das rotas de signup (`serviceClient`, `hashSecret`

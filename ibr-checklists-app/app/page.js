@@ -6,16 +6,33 @@ import {
 import { C, R, W, T, greenOnDark, successBright } from '../lib/tokens';
 import BackToTop from '../components/BackToTop';
 import PriceCalculator from '../components/PriceCalculator';
-import { TRIAL_DAYS, PRICE_PER_UNIT } from '../lib/plans';
+import {
+  TRIAL_DAYS, PRICE_PER_UNIT, ANNUAL_DISCOUNT_LABEL, INCLUDED_USERS_PER_UNIT,
+  EXTRA_USER_PRICE, includedSeatsFor, formatBRL,
+} from '../lib/plans';
 
 // Landing pública. Consome os mesmos tokens do app (lib/tokens.js). O CTA é o
 // cadastro self-service (/comecar): a empresa cria a conta sozinha, testa 14 dias
 // e assina — o fluxo existe (signup + trial + Mercado Pago). Os preços vêm de
-// lib/plans.js (fonte única): faixas por loja com desconto progressivo, e a
-// TRANSPARÊNCIA (preço público + calculadora, sem reunião comercial) é a
-// premissa de posicionamento — o mercado esconde preço; o ZCheck publica.
+// lib/plans.js (fonte única): preço por loja com 10 usuários inclusos (franquia
+// somada na empresa) + vaga adicional a R$ 17,00/mês, e a TRANSPARÊNCIA (preço
+// público + calculadora, sem reunião comercial) é a premissa de posicionamento
+// — o mercado esconde preço; o ZCheck publica. Por isso a vaga adicional
+// aparece ao lado do preço da loja em TODO lugar onde há preço: "sem taxa
+// escondida" só é verdade se nenhum custo mora só nos Termos.
 // O hero mostra um EXEMPLO ILUSTRATIVO do J.I.T., rotulado — nunca dados
 // falsos apresentados como reais.
+
+// Números do preço já no formato da página, todos derivados de lib/plans.js —
+// mudou a tabela lá, muda a landing inteira. A vaga sai SEMPRE com centavos
+// ("R$ 17,00"): é como aparece na fatura e nos Termos, e "R$ 17" solto lê
+// como valor arredondado.
+const ANUAL = formatBRL(PRICE_PER_UNIT.annual);
+const MENSAL = formatBRL(PRICE_PER_UNIT.monthly);
+const VAGA = formatBRL(EXTRA_USER_PRICE, { cents: true });
+const FRANQUIA = INCLUDED_USERS_PER_UNIT;
+// '−24%' → '24%': o selo carrega o sinal de menos; no texto corrido ele sobra.
+const DESCONTO_ANUAL = ANNUAL_DISCOUNT_LABEL.replace(/^[−-]\s*/, '');
 
 const WA = 'https://wa.me/5512988017472?text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20o%20ZCheck!';
 const SIGNUP = '/comecar';
@@ -525,9 +542,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 8 · PREÇO — preço único por loja: anual (R$ 97, herói) e mensal
-          (R$ 127, âncora). Sucinto e visual: card + linha dinâmica + os 3
-          ralos de dinheiro do food service + FAQ curto. */}
+      {/* 8 · PREÇO — preço por loja: anual (R$ 97, herói) e mensal (R$ 127,
+          âncora), com 10 usuários inclusos por loja e vaga adicional a
+          R$ 17,00/mês nos dois planos. Sucinto e visual: card + linha
+          dinâmica + os 3 ralos de dinheiro do food service + FAQ curto. */}
       <section id="preco" style={{ padding: '96px 0' }}>
         <div className="lp-container">
           <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 32px' }}>
@@ -536,7 +554,7 @@ export default function LandingPage() {
               Seu restaurante no padrão, com ou sem você na loja.
             </h2>
             <p style={{ fontSize: T.body, color: C.muted }}>
-              Um preço único por loja. Sem pacote, sem surpresa.
+              Um preço por loja, com {FRANQUIA} usuários inclusos · vaga adicional <span style={{ whiteSpace: 'nowrap' }}>{VAGA}/mês</span>. Sem pacote, sem surpresa.
             </p>
           </div>
 
@@ -570,17 +588,22 @@ export default function LandingPage() {
               Teste grátis por {TRIAL_DAYS} dias — sem cartão de crédito
             </a>
             <p style={{ fontSize: T.caption, color: C.muted, marginTop: 12 }}>
-              Anual: 12 meses no cartão · Mensal: sem fidelidade, cancele quando quiser.
+              {FRANQUIA} usuários inclusos por loja · vaga adicional {VAGA}/mês · Anual: 12 meses no cartão · Mensal: sem fidelidade, cancele quando quiser.
             </p>
           </div>
 
-          {/* FAQ enxuto do preço */}
+          {/* FAQ enxuto do preço. As duas perguntas de usuário existem porque a
+              franquia é SOMADA na empresa (não "10 por loja, cada uma no seu
+              quadrado") e porque a fatura segue a vaga CONTRATADA, não o uso —
+              quem suspende alguém esperando pagar menos precisa saber antes. */}
           <div style={{ maxWidth: 620, margin: '48px auto 0', borderTop: `1px solid ${C.border}` }}>
             {[
               ['O que conta como loja/unidade?', 'Cada ponto de operação com equipe própria — loja de rua, praça de alimentação, quiosque ou dark kitchen.'],
-              ['Como funciona a cobrança do anual?', `R$ ${PRICE_PER_UNIT.annual} por loja, todo mês no cartão de crédito, por 12 meses.`],
+              ['Quantos usuários estão incluídos?', `${FRANQUIA} por loja, somados na empresa: 2 lojas = ${includedSeatsFor(2)} usuários, em qualquer uma delas. Precisa de mais gente? Cada vaga adicional custa ${VAGA}/mês, no anual e no mensal, e só entra na fatura se você contratar.`],
+              ['O que conta como usuário?', 'Cada pessoa com acesso ativo, de qualquer nível — da equipe à diretoria. Quem vê várias lojas ocupa uma vaga só. Suspender um acesso libera a vaga para outra pessoa; a fatura segue as vagas contratadas, e a vaga adicional que sobrar você reduz no app, a partir da próxima fatura.'],
+              ['Como funciona a cobrança do anual?', `${ANUAL} por loja, todo mês no cartão de crédito, por 12 meses. Vagas adicionais, se houver, vêm na mesma cobrança, a ${VAGA}/mês cada.`],
               ['Funciona sem internet?', 'Sim — a equipe registra offline e tudo sincroniza quando a conexão volta.'],
-              ['Serve para quem tem 1 loja só?', `Sim. O preço é por loja: 1 loja = R$ ${PRICE_PER_UNIT.annual}/mês no anual.`],
+              ['Serve para quem tem 1 loja só?', `Sim. O preço é por loja: 1 loja = ${ANUAL}/mês no anual, com ${FRANQUIA} usuários inclusos; vaga adicional ${VAGA}/mês.`],
             ].map(([q, a]) => (
               <details key={q} className="lp-faq" style={{ borderBottom: `1px solid ${C.border}` }}>
                 <summary>{q}</summary>
@@ -596,7 +619,7 @@ export default function LandingPage() {
               {[
                 'Preço público, desde o primeiro dia. Sem cotação, sem consultor, sem taxa escondida.',
                 'Sem taxa de implantação — e no plano anual, você ganha implantação assistida, desde 1 loja.',
-                'Sem custo por usuário — usuários ilimitados em cada loja.',
+                `${FRANQUIA} usuários inclusos em cada loja. Vaga adicional a ${VAGA}/mês, igual no anual e no mensal — contratada só com a sua confirmação.`,
                 'Cancelamento em 2 cliques, sem multa, sem fidelidade no plano mensal.',
               ].map(item => (
                 <li key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -614,7 +637,7 @@ export default function LandingPage() {
             </h3>
             <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
               {[
-                ['“Peça uma cotação.”', `O preço está na página: R$ ${PRICE_PER_UNIT.annual}/loja.`],
+                ['“Peça uma cotação.”', `O preço está na página: ${ANUAL}/loja com ${FRANQUIA} usuários; vaga adicional ${VAGA}/mês.`],
                 ['“Fale com um consultor.”', 'Comece o teste agora.'],
                 ['Fidelidade na letra miúda.', 'Mensal sem fidelidade; anual claro: 12 meses.'],
                 ['Taxa de implantação escondida.', 'Sem taxa. Está escrito aqui em cima.'],
@@ -653,7 +676,7 @@ export default function LandingPage() {
             })}
           </div>
           <p style={{ textAlign: 'center', fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 24 }}>
-            Qualquer segmento. Qualquer tamanho. R$ {PRICE_PER_UNIT.annual} por unidade/mês no plano anual.
+            Qualquer segmento. Qualquer tamanho. {ANUAL} por unidade/mês no plano anual, com {FRANQUIA} usuários inclusos — vaga adicional {VAGA}/mês.
           </p>
         </div>
       </section>
@@ -690,10 +713,12 @@ export default function LandingPage() {
           <div style={{ borderTop: `1px solid ${C.border}` }}>
             {[
               ['Minha equipe vai usar?', 'Cada colaborador entra com um PIN, vê só o que é do seu turno e marca no celular em segundos — sem treinamento longo nem app pesado. Como cada um forma seu histórico e recebe reconhecimento, a adesão se sustenta.'],
-              ['Quanto custa?', `${TRIAL_DAYS} dias grátis, sem cartão. Depois, R$ ${PRICE_PER_UNIT.annual} por loja/mês no plano anual (12 meses no cartão) ou R$ ${PRICE_PER_UNIT.monthly} no mensal, sem fidelidade. Preço único, público, igual para qualquer segmento.`],
-              ['O que acontece se eu abrir ou fechar uma loja no meio do mês?', 'A cobrança acompanha as unidades ativas, com pró-rata: loja que entra paga proporcional aos dias do mês, loja que sai deixa de contar na fatura seguinte.'],
+              ['Quanto custa?', `${TRIAL_DAYS} dias grátis, sem cartão. Depois, ${ANUAL} por loja/mês no plano anual (12 meses no cartão) ou ${MENSAL} no mensal, sem fidelidade. Cada loja inclui ${FRANQUIA} usuários, somados na empresa; vaga adicional ${VAGA}/mês nos dois planos. Preço público, igual para qualquer segmento.`],
+              // Sem pró-rata desde 23/09/2026: loja e vaga mudam o valor da
+              // assinatura a partir da PRÓXIMA fatura (Termos v1.2, seção 7).
+              ['O que acontece se eu abrir ou fechar uma loja no meio do mês?', `A cobrança acompanha as lojas ativas e muda a partir da fatura seguinte, sem pró-rata: loja que entra passa a contar na próxima fatura (e traz mais ${FRANQUIA} vagas de usuário); loja que sai deixa de contar na fatura seguinte. Vagas adicionais seguem a mesma regra.`],
               ['Vocês aumentam o preço depois?', 'O preço é público, e mudanças também serão. No plano anual, o valor contratado fica garantido até o fim dos seus 12 meses. No mensal, um novo valor só vale a partir do ciclo seguinte, com 30 dias de aviso.'],
-              ['Existe contrato de fidelidade?', `Não no plano mensal: cancele quando quiser, em 2 cliques, sem multa. O plano anual é um compromisso de 12 meses, cobrado mês a mês no cartão — em troca de 24% de desconto (R$ ${PRICE_PER_UNIT.annual} em vez de R$ ${PRICE_PER_UNIT.monthly} por loja).`],
+              ['Existe contrato de fidelidade?', `Não no plano mensal: cancele quando quiser, em 2 cliques, sem multa. O plano anual é um compromisso de 12 meses, cobrado mês a mês no cartão — em troca de ${DESCONTO_ANUAL} de desconto no preço da loja (${ANUAL} em vez de ${MENSAL}). A vaga adicional custa ${VAGA}/mês nos dois planos.`],
               ['O que é a implantação assistida?', 'Nossa equipe configura a operação com você: lojas, setores e checklists montados juntos, migração do que hoje está em planilha e treinamento dos gerentes no primeiro acesso. Está incluída no plano anual, para qualquer número de lojas — de 1 para cima. No plano mensal, a implantação é self-service: modelos prontos por setor e onboarding guiado dentro do app, também sem custo.'],
               ['Precisa instalar alguma coisa?', 'Não. O ZCheck roda no navegador e pode ser adicionado à tela inicial do celular como um app (PWA). Sem loja de aplicativos, sem atualização manual.'],
               ['Funciona sem internet?', 'Sim. A execução registra tudo localmente e sincroniza quando a conexão volta — feito para estoque, câmara fria e subsolo.'],

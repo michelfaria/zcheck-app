@@ -3,7 +3,7 @@ title: "Lojas, setores e tipos de checklist (Estrutura)"
 description: "Organize a estrutura da empresa: lojas, setores, tipos de checklist e o logo que aparece no app."
 category: para-gestores
 order: 3
-updatedAt: "2026-07-20"
+updatedAt: "2026-09-23"
 ---
 
 A aba **Gerenciar → Estrutura** é onde você desenha a espinha dorsal da operação: quais lojas existem, que setores cada uma tem e quais tipos de checklist a empresa usa.
@@ -12,6 +12,7 @@ A aba **Gerenciar → Estrutura** é onde você desenha a espinha dorsal da oper
 
 - Adicione ou edite lojas, com **nome** e **cor** própria (a cor identifica a loja em todo o app).
 - Quem é da gerência ou diretoria alterna entre as lojas pelos botões no topo da tela.
+- Cada loja ativa traz **10 vagas de usuário** para a empresa. Remover ou desativar uma loja tira essas vagas: se a equipe ativa não couber no que sobra, o app pede para suspender usuários ou contratar vagas antes. Mudanças de lojas valem a partir da próxima fatura — veja [Plano e vagas](/ajuda/para-gestores/planos-e-vagas).
 
 ## Setores
 

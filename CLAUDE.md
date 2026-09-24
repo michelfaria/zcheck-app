@@ -31,15 +31,23 @@ components/painel/               → a aba Painel consolidada (Painel+J.I.T.+Dad
   agora.js                       → blocos do registro AGORA (Painel E pop-up)
   JitPanel.js                    → buildJit + o pop-up de briefing
   shared.js, context.js, NotificationHistory.js
+components/PlanoVagas.js         → vagas na tela: medidor da aba Usuários, folha "Plano e vagas",
+                                   diálogos de "sem vaga livre" e o aviso da versão dos Termos
 app/cadastro/page.js             → pedido de PIN de colaborador (não cria empresa)
 app/onboarding/page.js           → cria empresa via /api/admin/provision (exige chave)
 app/importar/page.js             → importa CSV (exige PIN de gerência/gestão)
 app/api/auth/session/route.js    → PIN → JWT assinado com o segredo do Supabase
 app/api/admin/provision/route.js → provisiona empresa (service_role, server-only)
+app/api/billing/seats/route.js   → contrata/reduz vagas adicionais (só diretoria, role 'gestao')
+app/api/admin/cron/billing-sync/ → cron diário (11:00 UTC, vercel.json): valor da assinatura no MP
+                                   = lojas ativas + vagas contratadas; ≠ cobrado → reajusta ou pendente
 app/layout.js                    → layout global
 app/globals.css                  → estilos globais (@tailwind + CSS vars dos tokens)
 lib/tokens.js                    → FONTE ÚNICA de cor/raio/peso/tamanho (C/R/W/T)
 lib/dates.js                     → FONTE ÚNICA do "dia de operação" (fuso POR LOJA, units.timezone)
+lib/plans.js                     → FONTE ÚNICA de preço e vagas: R$ 97 anual / R$ 127 mensal por loja,
+                                   10 vagas por loja somadas, vaga adicional R$ 17,00/mês (formatBRL)
+lib/seats.js                     → decisões puras do servidor sobre vagas e valor (checkout, webhook, cron)
 lib/library.js                   → biblioteca de checklists prontos por setor
 lib/serverAuth.js                → assina o token de sessão (NUNCA importar no cliente)
 lib/tenant.js                    → detecção de tenant por hostname
@@ -82,6 +90,21 @@ const EMPRESAS = {
 - O dia é o do RELÓGIO DA LOJA: `todayStr(tzOf(unit))`, nunca `todayStr()` solto.
   Prazo de checklist é `instantAt(data, hora, tz)` — comparar com `new Date()`
   usa o fuso de quem abriu o painel, não o da loja que executou
+- Preço e limite de usuários NUNCA escritos à mão em texto de tela (landing,
+  calculadora, app): sempre das constantes de `lib/plans.js` (`PRICE_PER_UNIT`,
+  `INCLUDED_USERS_PER_UNIT`, `EXTRA_USER_PRICE`) via `formatBRL` — a vaga
+  adicional é `formatBRL(EXTRA_USER_PRICE, { cents: true })` → "R$ 17,00".
+  Exceção de propósito: Termos (`app/termos/page.js`) e Central de Ajuda
+  (`content/ajuda/`) são texto estático — mudou a tabela, sai versão nova dos
+  Termos (e `TERMOS_VERSAO` em `components/PlanoVagas.js`) e revisão dos artigos.
+  O limite de vagas é imposto NO BANCO pelo trigger `users_seat_quota`
+  (migration `20260923_limite_usuarios`), que recusa com mensagem começando por
+  `ZC_QUOTA` — o cliente detecta pelo prefixo; a tela só pergunta antes. A
+  decisão (regras, casos e porquês) mora em
+  `~/Brains/ingo/memoria/2026-09-23-zcheck-limite-10-usuarios-por-loja.md`.
+  O reajuste automático do valor da assinatura no Mercado Pago fica atrás de
+  `MP_ADJUST_ENABLED` (`'1'` liga; desligada, marca `adjust_pending` e sai o
+  alerta R8 — até testar no sandbox)
 - `globals.css` deve ter `@tailwind` — se quebrar, restaurar com `git show HEAD:ibr-checklists-app/app/globals.css`
 - git root está em `/Users/michelfaria/Projects/zcheck-app` — não em `ibr-checklists-app/`.
   O repositório saiu do iCloud em 12/09/2026: em `~/Documents` o iCloud evictava
@@ -105,7 +128,7 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` roda os oito de node:
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os dezesseis de node (lista completa no script `test` do `package.json`):
 
 | Teste | O que prova |
 |---|---|
@@ -120,10 +143,18 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `completions-cap.spec.mjs` | o teto da lista de conclusões em memória corta pelo TEMPO, nunca pela posição — um `slice(-500)` numa lista que chega do mais novo para o mais velho apagava as conclusões de HOJE a cada "Concluir" (vídeo do IBR3, 11/09/2026) |
 | `carryover-marcacao.spec.mjs` | marcação ao vivo em D quita o carryover até D, como uma submissão — e a aderência NÃO muda (o checklist marcado sem "Concluir" continua não entregue). Caso do IBR3, 16/09/2026: 7/7 marcadas, ninguém concluiu, tudo voltou no dia seguinte |
 | `auto-concluir.spec.mjs` | a última tarefa marcada fecha o checklist sozinha (tela real em jsdom): com o colega em 2 de 3, marcar a terceira submete sem "Concluir", com o `doneBy` de cada um; marcar uma que não é a última não submete. Decisão de 17/09/2026: checklist dividido entre pessoas ficava sem registro |
+| `plans.spec.mjs` | a conta do plano em `lib/plans.js`, **afirmada em reais, não pela fórmula**: franquia de 10 vagas por loja SOMADA (1/2/3 lojas = 10/20/30, piso de 1 loja), o 11º ativo pede vaga adicional, redução nunca abaixo das adicionais em uso, vaga a "R$ 17,00" igual nos dois ciclos (o −24% é só da loja) e `monthlyValueFor` vale o `billed_amount` real. E `unitsForAmount`/`getTierByPrice` não podem voltar: 381 = anual 2 lojas + 11 vagas = mensal 3 lojas — o valor não identifica o plano |
+| `seats.spec.mjs` | o lado do servidor (`lib/seats.js`), sem sessão, banco nem MP: o mínimo da redução vem do banco, nunca do cliente; o checkout cobra as lojas ATIVAS e no mínimo as vagas em uso; o webhook grava o plano pela intenção do checkout e **nunca grava null** (o webhook antigo zerava `plan_tier` e o pagante virava "cortesia" no MRR); o cron só reajusta quando esperado ≠ cobrado em centavos; o `cancelled` de uma assinatura velha não bloqueia quem está em teste |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
 que é o que impede o Playwright de cobrir tela logada.
+
+Fora do `npm run test`: `supabase/migrations/20260923_limite_usuarios.test.mjs`
+prova o trigger `users_seat_quota` em PGlite (11º sem vaga barrado com `ZC_QUOTA`;
+renomear/trocar PIN acima da capacidade passa; reativar sem vaga é barrado; roda
+2× sem erro) — `npm i --no-save @electric-sql/pglite` antes, como os outros
+`.test.mjs` de migration.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma

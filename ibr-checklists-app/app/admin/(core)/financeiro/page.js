@@ -1,12 +1,29 @@
 'use client';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import { C } from '../../../../lib/tokens';
+import { formatBRL, EXTRA_USER_PRICE } from '../../../../lib/plans';
 import {
   useAdminData, Card, Kpi, SectionTitle, UpdatedAt, ErrorBox, Loading, Empty,
   ChartTip, Table, timeAgo, HealthDot,
 } from '../ui';
 
-const money = v => (v == null ? '—' : `R$ ${Number(v).toLocaleString('pt-BR')}`);
+// Dinheiro sempre pelo formatador único de lib/plans.js: valor quebrado
+// (vaga adicional de R$ 17,00 somada) mostra os centavos, nunca arredonda.
+const money = v => (v == null ? '—' : formatBRL(v));
+
+// Vagas: "em uso / capacidade", e as adicionais contratadas quando existem.
+// Acima da capacidade (loja removida/desativada) sai em vermelho — é o R7.
+function SeatsCell({ seats }) {
+  if (!seats) return <span style={{ color: C.mutedLight }}>—</span>;
+  if (seats.exempt) return <span style={{ color: C.muted }}>{seats.active} · isenta</span>;
+  const over = seats.active > seats.capacity;
+  return (
+    <span style={{ color: over ? C.critical : C.ink, fontWeight: over ? 700 : 400 }}>
+      {seats.active}/{seats.capacity}
+      {seats.extra > 0 && <span style={{ color: C.muted, fontWeight: 400 }}> · +{seats.extra} adic.</span>}
+    </span>
+  );
+}
 
 const STATE = {
   active:   { label: 'ASSINANTE', color: C.success },
@@ -31,7 +48,8 @@ export default function FinancePage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Kpi label="MRR" value={money(kpis.mrr)} sub={`ARR ${money(kpis.arr)}`} />
+        <Kpi label="MRR" value={money(kpis.mrr)}
+             sub={`ARR ${money(kpis.arr)}${kpis.extraSeatsContracted ? ` · ${kpis.extraSeatsContracted} vagas adic.` : ''}`} />
         <Kpi label="Assinantes" value={kpis.payingCount}
              sub={kpis.courtesyCount ? `+ ${kpis.courtesyCount} cortesia` : 'pagantes'} />
         <Kpi label="Em trial" value={kpis.trialingCount} />
@@ -72,18 +90,21 @@ export default function FinancePage() {
             : (
               <>
                 <Table
-                  head={['Empresa', 'Uso 7d', 'Prob.', 'Tier provável', 'Valor esperado']}
+                  head={['Empresa', 'Uso 7d', 'Prob.', 'Plano provável', 'Valor esperado']}
                   rows={companies.filter(c => c.projection).map(c => [
                     c.name,
                     c.completions_7d,
                     `${Math.round(c.projection.probability * 100)}%`,
-                    c.projection.tier,
+                    c.projection.extra_seats
+                      ? `${c.projection.tier} + ${c.projection.extra_seats} vaga(s)`
+                      : c.projection.tier,
                     money(Math.round(c.projection.probability * c.projection.value)),
                   ])}
                 />
                 <p style={{ fontSize: 11, color: C.mutedLight, marginTop: 8 }}>
                   Regra declarada: ≥10 checklists/7d → 60% · 1–9 → 30% · sem uso → 5%,
-                  sobre o preço do tier que comporta as unidades. Estimativa simples — não é promessa.
+                  sobre o plano anual das lojas ativas + as vagas adicionais já contratadas ou em uso
+                  ({formatBRL(EXTRA_USER_PRICE, { cents: true })}/mês cada). Estimativa simples — não é promessa.
                 </p>
               </>
             )}
@@ -92,9 +113,13 @@ export default function FinancePage() {
 
       {/* Por empresa */}
       <Card>
-        <SectionTitle>Valores por empresa</SectionTitle>
+        <SectionTitle right={kpis.adjustPendingCount
+          ? <span style={{ fontSize: 11, fontWeight: 700, color: C.warning }}>{kpis.adjustPendingCount} ajuste(s) de valor pendente(s)</span>
+          : null}>
+          Valores por empresa
+        </SectionTitle>
         <Table
-          head={['Empresa', 'Status', 'Plano', 'Mensalidade', 'Trial até', 'Pago até', 'Uso 30d', 'Última atividade']}
+          head={['Empresa', 'Status', 'Plano', 'Mensalidade', 'Vagas', 'Trial até', 'Pago até', 'Uso 30d', 'Última atividade']}
           empty="Nenhuma empresa."
           rows={companies.map(c => {
             const s = STATE[c.state] || STATE.expired;
@@ -108,7 +133,15 @@ export default function FinancePage() {
                 {s.label}{c.state === 'trialing' && c.trial_days_left != null ? ` ${c.trial_days_left}d` : ''}
               </span>,
               c.plan_tier || (c.state === 'trialing' ? 'trial' : '—'),
-              c.monthly > 0 ? money(c.monthly) : '—',
+              <span key="m">
+                {c.monthly > 0 ? money(c.monthly) : '—'}
+                {c.adjust_pending && (
+                  <span title="O valor no Mercado Pago ainda não acompanhou vagas/lojas" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: C.warning }}>
+                    AJUSTE PENDENTE
+                  </span>
+                )}
+              </span>,
+              <SeatsCell key="v" seats={c.seats} />,
               c.trial_ends_at ? new Date(c.trial_ends_at).toLocaleDateString('pt-BR') : '—',
               c.current_period_end ? new Date(c.current_period_end).toLocaleDateString('pt-BR') : '—',
               c.completions_30d,

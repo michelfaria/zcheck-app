@@ -33,7 +33,11 @@ import {
   subscribeToCompletions,
   requestPushPermission, hasPushPermission, fetchPushStatus,
   setCacheScope,
+  fetchUserQuota, setExtraSeats, asQuotaError,
 } from '../../lib/sync';
+// Vagas de usuário (10 por loja ativa + adicional de R$ 17,00/mês): medidor,
+// folha "Plano e vagas" e os diálogos de "sem vaga livre".
+import PlanoVagas, { VagasMedidor, SemVagaDialogo, LojaBloqueadaDialogo, AvisoTermosVagas, resumoVagas, erroVagas, bloqueioDeLojaNoBanco, avisoVagasContratadas } from '../../components/PlanoVagas';
 // Teto da lista de conclusões em memória — corta pelo TEMPO, nunca pela
 // posição. O `slice(-500)` que ficava nos três pontos de escrita apagava as
 // conclusões de HOJE a cada "Concluir" (ver lib/completions.js).
@@ -95,7 +99,10 @@ import { normalizeCnpj, formatCnpj, cnpjError } from '../../lib/cnpj';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
 import { useAppUrlState } from '../../lib/appUrlState';
 import { LIBRARY_TEMPLATES, LIBRARY_VERTICALS } from '../../lib/library';
-import { billingState, priceForUnits, MAX_SELF_SERVICE_UNITS } from '../../lib/plans';
+import {
+  billingState, priceForUnits, formatBRL,
+  PRICE_PER_UNIT, ANNUAL_DISCOUNT_LABEL, EXTRA_USER_PRICE, INCLUDED_USERS_PER_UNIT, MAX_SELF_SERVICE_UNITS,
+} from '../../lib/plans';
 import { getSessionToken, setSessionToken, persistSession, loadPersistedSession } from '../../lib/supabase';
 const LOGO_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABEBAMAAADD1i77AAAAHlBMVEUAAQEHPF0EL2MHPFwIQmUHO1wAWl8AAP8AAAAAAAAlhJ1KAAAACHRSTlMA6xee/l8EAdSX9pUAAAV1SURBVHjabZZdbxvHFYafnSVHEmKJnCUpGZJMDakPFwmckpRkOKjrWKaMXLQXlGW1QI3GWxXxHyjQH9MroVctirbxXS5S10bRAEFqi4YVR7VsZSXVlmLLXOoz4lrc7cWSMmN5bnZm58WZc95z5j0DzaFhMG8Jix8OcTRzsviONiMCsrxliPzlrFEiarUJqexjFrTE2nTEUw21SD03dwzgeH65OkQs7kf5VbosoK1hxQw/wxV98iC7Ugm2O34ZbFnPoF4OdwwA7AW/GlTZfWd7wK2KeGbel4fvP/SaRwh77tS3/1uNFk+ZMUTWyK/6cF31Hh0RlO0vT+4dRrc6q6Lt4EdBMPC0Xo/0PKoFDUc/KUjTSgilcjYyK6aFJTDV+GWpGz5Ez3+7qox+I/M3tAPMflrhquFuVp1GpKWpFGOpFGhg5IbAlqJojI9EtQ0go8WsKmVKWfmaP/EbK6+5agEm9Y/XNoJUuXOhGTkQ7JzYWB9czEdfYkL5xbn2/56ubF1vAuwy7rasiZ++kzhXBhumrN+WQLSmaDg3le+O2hrAJqpKMlrUslkZs0iixehZO4wBWw+d1cZkQoeZi15CaimUlgxr24z05P400/V5VXRt17pLZTtzYTOe2HvV9/P+xd1ht/szI2ukYzdTz0FM3fF3PXuh37g9yvyOZ57ZqUTqFdN1jY7RvkXEx3+WpEpzXnWRjt7Nl1xfqib2jJo5s+/k3UcuxkIXeHfNyMkqub9uBxS26svtxqH5/LT1z/Gv6hj69AY5c7N9Jxjd3+txmf/oi1Pn3E7zJImtzZcQbBltz3cS37UHk23r6Xngof2PxWoVxGCyu1F34yplTqRAzh7xdQVpIzUA2eSkUhmlEoUGpdlppSzABpiFG4N5pZRSk0VChsfU+AgA0gaEBIRSJTl8pcF4HsSM0Syae84nFYdlhk51zcleB2Aq8tiJhPdCBj1r7/7b6uhYJ7N/54z5rA7YXz60eBoCTKMSDGy0fdPhsr5BZiW5HUDZWl93ZQiop1+0bUSWz30l0dXkE1Hbt8uwO32gTjR9+HH8weHQcmx3YCXojzwZvbfrQaaKGYQWRKZ319UrHy71B+5E2a9JXY9XUR9gpsIaSefv/6e+G9w883U8//dRJ7/wYHsdDXQ5IeDi4U9+V3jcOXW/v+wHnRGuxXjFRbbj/msFEleESBaSBWUjxmUjEzNH2yM2YE4MTgildcg89rTmRotIaTKXTSujtCZMpkiqwpHCAFUmv9ivQTvVeQBpfHDwvKNHtNhw0nogBxfDlefXn6h03GwBeP6lB9+J7s8aS2Ns/NZGe6tSKi0SgxNNqc0mNL9vVVIpihKdUakwxjYxltKyVYo9U3iQ430PgJq+H+x5rQDpA6wZ1cYdtn6mAks3AFKTPfTrUgjnwoIHIM3OvSUl0MZrJzJbFZj5S0NEdld9/97wKycSBjAN/i1mgPG+T0NS/PsX9FLDB3vAdd2tnOm6rhvbA+CP84l6fHs21Mkbf8hUj3qIb/3LA9AFbl6605DrkanXjShalA1a1FjOBgP06C2CXwAcRvjcTIcW0EZ27VEopJNKdR+zAOKsAEx+7a50nX/yPYC4+t5BPP64ARj4OgAEt0dN527jl+sOVI7IdWyACOBpED4QcX0nnAEwFwKcMfGsj4gHLAEZpNeaZBO+f/dw5fwSyKDQe/69/W/2g1aAgQxiddjzkK+KwF2j8kZr9q59CPTaHEZc13XN9PGmzMhwMt7QreiEPt62b0CmCEiRzU5dfltjb8tGkwWkzEyopGW/5XlQW+67GCt5nohT77r9Q0CzoqKx+tBL88Rauuy//YFxLWaecN24ce/NIJoWpDdYgaEXq28Y4P9JDehlYotRagAAAABJRU5ErkJggg==';
 const LOGO_LOGIN_URI = 'data:image/png;base64,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';
@@ -2977,7 +2984,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   );
 }
 
-export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, usersPanel, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER }) {
+export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSaveClosures, canSeeAllUnits, usersPanel, checklistTypes, allUnits, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany, onReloadTemplates, company, activeTypes = CHECKLIST_TYPE_ORDER, unitSeatBlock, onOpenSeats }) {
   const [showImport, setShowImport] = useState(false);
   const [headerLogoBusy, setHeaderLogoBusy] = useState(false);
 
@@ -4025,14 +4032,14 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
           templates={templates}
           onSaveUnit={onSaveUnit} onSaveSector={onSaveSector} onSaveChecklistType={onSaveChecklistType}
           onDeleteChecklistType={onDeleteChecklistType} onDeleteSector={onDeleteSector}
-          onDeleteUnit={onDeleteUnit} onSaveCompany={onSaveCompany} />
+          onDeleteUnit={onDeleteUnit} onSaveCompany={onSaveCompany} unitSeatBlock={unitSeatBlock} onOpenSeats={onOpenSeats} />
       )}
     </div>
   );
 }
 
 /* ─────────────────── Estrutura View ─────────────────── */
-function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany }) {
+function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSaveUnit, onSaveSector, onSaveChecklistType, onDeleteChecklistType, onDeleteSector, onDeleteUnit, onSaveCompany, unitSeatBlock, onOpenSeats }) {
   const [tab, setTab] = useState('tipos'); // 'tipos' | 'lojas' | 'setores'
   const [newTypeName, setNewTypeName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
@@ -4045,14 +4052,30 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
   // sem id não há o que editar nem o que apagar.
   const sectorRows = useSectors();
   const [logoBusy, setLogoBusy] = useState(false);
+  // Remover/adiar loja que deixaria mais usuários ativos do que vagas (regra
+  // 12 do limite de usuários). Diálogo, não a faixa de erro do topo: o clique
+  // foi lá embaixo, na lista de lojas, e a faixa ficaria fora da tela.
+  const [lojaBloqueada, setLojaBloqueada] = useState(null); // { titulo, texto }
+  // A trava da regra 12 relê a cota no banco antes de decidir: enquanto essa
+  // leitura corre, um segundo clique em Salvar/Remover não dispara outra.
+  const conferindoLoja = useRef(false);
 
   const saveEditUnit = async () => {
     if (!editUnit?.name.trim()) return;
     // Obrigatório também na edição — ninguém volta a uma loja sem CNPJ.
     const cnpjMsg = cnpjError(editUnit.cnpj || '');
     if (cnpjMsg) { flashErro('Informe o CNPJ da loja', new Error(cnpjMsg)); return; }
+    // "Ativa desde" no futuro tira a loja da contagem de hoje — e com ela 10
+    // vagas da franquia. Mesma trava da remoção (ver `unitSeatBlock`), que
+    // relê a cota no banco — uma ida ao banco antes do save: a guarda
+    // `conferindoLoja` segura o segundo clique em "Salvar" até o fim.
+    if (conferindoLoja.current) return;
+    conferindoLoja.current = true;
     setSaving(true);
     try {
+      const original = (allUnits || []).find(x => x.id === editUnit.id);
+      const bloqueio = original ? await unitSeatBlock?.(original, editUnit.activeFrom || '') : null;
+      if (bloqueio) { setLojaBloqueada({ titulo: 'Não dá para adiar a ativação agora', texto: bloqueio }); return; }
       await onSaveUnit?.({
         id: editUnit.id, companyId: company?.id, name: editUnit.name.trim(),
         color: editUnit.color, timezone: editUnit.timezone || APP_TZ,
@@ -4063,7 +4086,8 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
       });
       flash('Loja atualizada!'); setEditUnit(null);
     }
-    catch (e) { flashErro('Não foi possível atualizar a loja', e); } finally { setSaving(false); }
+    catch (e) { flashErro('Não foi possível atualizar a loja', e); }
+    finally { setSaving(false); conferindoLoja.current = false; }
   };
   /** Quantos checklists usam este tipo/setor — o número entra no aviso, para a
    *  confirmação dizer o tamanho do estrago em vez de um "tem certeza?" vazio. */
@@ -4109,8 +4133,17 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
   };
 
   const removeUnit = async (u) => {
-    if (!confirm(`Remover a loja "${u.name}"? Os checklists dela deixam de aparecer.`)) return;
-    try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { flashErro('Não foi possível remover a loja', e); }
+    // Antes do "tem certeza?": perguntar e depois recusar seria pedir uma
+    // decisão que não pode ser cumprida. A trava relê a cota no banco (ida
+    // assíncrona): o segundo clique nesse meio-tempo não abre outro confirm.
+    if (conferindoLoja.current) return;
+    conferindoLoja.current = true;
+    try {
+      const bloqueio = await unitSeatBlock?.(u);
+      if (bloqueio) { setLojaBloqueada({ titulo: 'Não dá para remover a loja agora', texto: bloqueio }); return; }
+      if (!confirm(`Remover a loja "${u.name}"? Os checklists dela deixam de aparecer.`)) return;
+      try { await onDeleteUnit?.(u.id); flash('Loja removida.'); } catch (e) { flashErro('Não foi possível remover a loja', e); }
+    } finally { conferindoLoja.current = false; }
   };
   const onPickCompanyLogo = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -4194,6 +4227,12 @@ function EstruturView({ unit, allUnits, checklistTypes, company, templates, onSa
           <AlertTriangle size={16} color={C.critical} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
           <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical }}>{failure}</p>
         </div>
+      )}
+
+      {lojaBloqueada && (
+        <LojaBloqueadaDialogo {...lojaBloqueada}
+          onAbrirPlano={onOpenSeats ? () => { setLojaBloqueada(null); onOpenSeats(); } : null}
+          onClose={() => setLojaBloqueada(null)} />
       )}
 
       <div className="flex gap-2">
@@ -4759,7 +4798,17 @@ export const userInUnit = (u, unitId) => {
   return String(u.unitId).split(',').some(id => id.trim() === unitId);
 };
 
-export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult, unitId = null }) {
+/**
+ * Aba Usuários (só a diretoria a vê — ROLE_TABS).
+ *
+ * Vagas (regra de 23/09/2026, lib/plans.js): `quota` é a cota lida do banco
+ * por `company_user_quota()`; null = migration ausente ou leitura que falhou,
+ * e aí não há medidor nem pergunta — quem decide é o trigger do banco, e a
+ * recusa dele cai no mesmo diálogo. `onOpenSeats` abre "Plano e vagas" (a folha
+ * mora no AppInner, porque o cabeçalho também a abre), `onQuotaChange(q)` põe
+ * no AppInner a cota nova devolvida ao contratar, e `onRefreshQuota` relê.
+ */
+export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData, generatingTestData, testDataResult, unitId = null, quota = null, company = null, onOpenSeats, onQuotaChange, onRefreshQuota }) {
   const units = useUnits(); // unidades da empresa logada (antes: constante do IBR)
   // A loja escolhida no cabeçalho vale AQUI também. Antes a lista ignorava o
   // seletor: trocar de loja não mudava uma linha da tela.
@@ -4840,6 +4889,80 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
    */
   const requestsNoEscopo = requests.filter(r => !unitId || !r.unit_id || r.unit_id === unitId);
 
+  // ── Vagas ─────────────────────────────────────────────────────────────────
+  // Conta a EMPRESA inteira (a franquia é somada), nunca o escopo da loja.
+  const vagas = resumoVagas(quota, users);
+  // Só a diretoria contrata vaga. A gerência que chegasse aqui recebe "peça à
+  // diretoria" — o banco e a rota /api/billing/seats recusam do mesmo jeito.
+  const podeContratar = currentUser?.role === 'gestao';
+  // Pergunta ANTES só com cota lida e empresa não isenta. Sem cota, o save
+  // segue e, se o banco recusar, a recusa abre o mesmo diálogo.
+  const semVagaLivre = () => !!vagas && !vagas.isenta && vagas.livres < 1;
+  // { tipo: 'insert'|'reactivate', nome, acao, detalhe, continuar }
+  const [semVaga, setSemVaga] = useState(null);
+
+  // Relê a cota ao abrir a aba: quem aprovou em outro aparelho ou mexeu em
+  // loja muda o número, e o medidor é a primeira coisa que a diretoria olha.
+  useEffect(() => { onRefreshQuota?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Contrata as vagas que faltam e segue com o que estava sendo feito.
+   * Devolve a frase de erro (o diálogo a mostra) ou null.
+   *
+   * A cota é RELIDA do banco antes de contratar — nunca a da tela, que pode
+   * ser de antes de outra sessão suspender alguém (e aí não falta vaga
+   * nenhuma), contratar ou reduzir vagas. O alvo é o TOTAL de adicionais (a
+   * rota espera um número absoluto) calculado sobre o número de AGORA, e vai
+   * junto o número que esta leitura viu (`expected`): se mudar no meio, a rota
+   * recusa com 'stale'. E nunca se contrata mais do que o diálogo mostrou e a
+   * diretoria aceitou (`faltamAceitas`): se agora faltam mais, o diálogo se
+   * atualiza com a cota nova e pergunta de novo.
+   */
+  const contratarEContinuar = async (faltamAceitas) => {
+    const q = await fetchUserQuota();
+    if (!q) return 'Não foi possível ler as vagas contratadas agora. Tente de novo em instantes.';
+    onQuotaChange?.(q);
+    const agora = resumoVagas(q, users);
+    const continuar = semVaga?.continuar;
+    // Sobrou vaga (alguém foi suspenso em outro aparelho): segue sem cobrar nada.
+    if (agora.isenta || agora.livres >= 1) {
+      setSemVaga(null);
+      await continuar?.({ jaConfirmado: true, contratadas: 0 });
+      return null;
+    }
+    const faltam = Math.max(1, 1 - agora.livres);
+    if (faltam > faltamAceitas) {
+      return `As vagas mudaram enquanto esta tela estava aberta: agora ${faltam === 1 ? 'falta 1 vaga' : `faltam ${faltam} vagas`}. Confira o valor e confirme de novo.`;
+    }
+    const r = await setExtraSeats(agora.extras + faltam, { expected: agora.extras });
+    if (!r.ok) {
+      if (r.reason === 'stale') onRefreshQuota?.();
+      return erroVagas(r.reason, r.min, r.current);
+    }
+    onQuotaChange?.(r.quota || null);
+    setSemVaga(null);
+    // O toast da contratação sai junto com o do save (um só toast por vez).
+    // `pending` (ajuste no Mercado Pago desligado ou que falhou) vai junto: o
+    // valor da assinatura ainda não mudou, e o toast tem de dizer isso — a
+    // confirmação acabou de mostrar "a mensalidade passa a…".
+    await continuar?.({ jaConfirmado: true, contratadas: faltam, pendente: !!r.pending });
+    return null;
+  };
+  /**
+   * "Não há vaga livre?" perguntado ao BANCO, não à cota da tela: relê antes
+   * de abrir qualquer diálogo. A cota da tela pode ter uma suspensão feita em
+   * outro aparelho a menos — e aí o diálogo ofereceria contratar uma vaga que
+   * já está livre. Leitura que falha cai na cota da tela (o diálogo relê de
+   * novo antes de cobrar qualquer coisa).
+   */
+  const semVagaNoBanco = async () => {
+    if (!semVagaLivre()) return false;
+    const fresca = resumoVagas((await onRefreshQuota?.()) || quota, users);
+    return !!fresca && !fresca.isenta && fresca.livres < 1;
+  };
+  // O complemento do toast ("— 1 vaga adicional contratada", ou o ajuste da
+  // mensalidade em processamento) mora em PlanoVagas.js: avisoVagasContratadas.
+
   // Load pending requests — only for gestao
   useEffect(() => {
     if (currentUser?.role !== 'gestao') return;
@@ -4862,11 +4985,23 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     load();
   }, [currentUser?.role]);
 
-  const approveRequest = async (req) => {
+  const approveRequest = async (req, { jaConfirmado = false, contratadas = 0, pendente = false } = {}) => {
+    const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
+    // Cadastro novo ocupa vaga; alteração de dados não. Sem vaga livre, a
+    // pergunta vem ANTES da RPC — depois dela a pessoa já estaria criada.
+    // O "Processando…" liga antes da releitura da cota: ela é uma ida ao
+    // banco, e o botão livre nesse meio-tempo aprovaria duas vezes.
     setProcessingId(req.id);
+    if (!isAlteracao && !jaConfirmado && await semVagaNoBanco()) {
+      setProcessingId(null);
+      setSemVaga({
+        tipo: 'insert', acao: 'aprovar', nome: editingReq.name ?? req.name,
+        continuar: opts => approveRequest(req, opts),
+      });
+      return;
+    }
     try {
       const supabase = (await import('../../lib/supabase')).authedSupabase();
-      const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
 
       // Merge edits into the request. `req.pin` não existe mais no cliente (o
       // anon não pode ler a coluna); `finalPin` só tem valor se a gestão digitou
@@ -4905,6 +5040,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // 20260724_fix_aprovacao_uuid.sql) e o fluxo seguia marcando a
         // solicitação como aprovada. A pessoa ficava aprovada sem existir em
         // `users` — fora da lista de login e fora da fila de aprovação.
+        // Recusa do trigger de vagas (outra aprovação levou a última vaga
+        // enquanto esta tela estava aberta): vira o diálogo de contratar, não
+        // um toast com a mensagem crua do banco.
+        const semVagaErr = asQuotaError(rpcErr);
+        if (semVagaErr) throw semVagaErr;
         if (rpcErr) throw new Error(`Não foi possível criar o acesso de ${newUser.name}: ${rpcErr.message}`);
         // Lista vazia de alterações = atualiza só o estado local e o cache, sem
         // reescrever nada. A RPC já gravou; reescrever daqui só criaria uma
@@ -4998,13 +5138,24 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       setRequests(r => r.filter(x => x.id !== req.id));
       setReviewingRequest(null);
       setEditingReq({});
+      if (contratadas) showToast(`Cadastro aprovado${avisoVagasContratadas(contratadas, { pendente })}`);
     } catch (e) {
       console.error(e);
-      // Silenciar aqui foi o que deixou o bug da aprovação invisível por
-      // semanas: a solicitação sumia da fila e ninguém sabia que o acesso não
-      // tinha sido criado. Falhou, a gestão precisa ver — e a solicitação
-      // continua na fila para tentar de novo.
-      showToast(e?.message || 'Não foi possível aprovar. Tente de novo.');
+      if (e?.code === 'ZC_QUOTA') {
+        // A solicitação continua na fila e a tela de aprovação continua aberta:
+        // contratar e seguir refaz a aprovação com o que já foi escolhido.
+        onRefreshQuota?.();
+        setSemVaga({
+          tipo: 'insert', acao: 'aprovar', nome: editingReq.name ?? req.name, detalhe: e.quota,
+          continuar: opts => approveRequest(req, opts),
+        });
+      } else {
+        // Silenciar aqui foi o que deixou o bug da aprovação invisível por
+        // semanas: a solicitação sumia da fila e ninguém sabia que o acesso não
+        // tinha sido criado. Falhou, a gestão precisa ver — e a solicitação
+        // continua na fila para tentar de novo.
+        showToast(e?.message || 'Não foi possível aprovar. Tente de novo.');
+      }
     }
     setProcessingId(null);
   };
@@ -5027,8 +5178,18 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     setProcessingId(null);
   };
 
-  const handleSave = async u => {
+  const handleSave = async (u, { jaConfirmado = false, contratadas = 0, pendente = false } = {}) => {
     const novo = !u.id;
+    // Só duas transições passam a ocupar vaga: usuário novo e suspenso →
+    // ativo. Renomear, trocar PIN, papel ou loja nunca pergunta nada — o
+    // trigger do banco também não barra essas.
+    const reativando = !novo && !u.suspended && !!users.find(x => x.id === u.id)?.suspended;
+    if ((novo || reativando) && !jaConfirmado && await semVagaNoBanco()) {
+      setSemVaga(novo
+        ? { tipo: 'insert', acao: 'criar', nome: u.name, continuar: opts => handleSave(u, opts) }
+        : { tipo: 'reactivate', nome: u.name });
+      return;
+    }
     const id = u.id || uid();
     const next = novo
       ? [...users, { ...u, id }]
@@ -5038,10 +5199,19 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       // não é motivo para reescrever a equipe inteira.
       await onSaveUsers(next, { changedIds: [id] });
       setEditing(null);
-      showToast(novo ? 'Usuário criado!' : 'Usuário atualizado!');
-    } catch (_) {
-      // O motivo já foi ao toast em saveUsers. O editor continua aberto, com o
-      // que foi digitado, para dar para corrigir e tentar de novo.
+      showToast(novo ? `Usuário criado${contratadas ? avisoVagasContratadas(contratadas, { pendente }) : '!'}` : 'Usuário atualizado!');
+    } catch (e) {
+      // Recusa do banco por falta de vaga (a cota estava velha, ou outra
+      // pessoa levou a última vaga): mesma UX da pergunta de antes — novo
+      // pede confirmação para contratar, reativação é bloqueio.
+      if (e?.code === 'ZC_QUOTA') {
+        const reativacao = e.quota?.action === 'reactivate' || (!novo && reativando);
+        setSemVaga(reativacao
+          ? { tipo: 'reactivate', nome: u.name, detalhe: e.quota }
+          : { tipo: 'insert', acao: 'criar', nome: u.name, detalhe: e.quota, continuar: opts => handleSave(u, opts) });
+      }
+      // Os demais motivos já foram ao toast em saveUsers. O editor continua
+      // aberto, com o que foi digitado, para dar para corrigir e tentar de novo.
     }
   };
 
@@ -5056,8 +5226,26 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     }
   };
 
+  // Os diálogos de vaga saem nas TRÊS telas desta aba (lista, editor e
+  // aprovação): é de dentro do editor e da aprovação que eles nascem.
+  const dialogoSemVaga = semVaga ? (
+    <SemVagaDialogo
+      tipo={semVaga.tipo} acao={semVaga.acao} nome={semVaga.nome}
+      resumo={vagas} detalhe={semVaga.detalhe} company={company}
+      podeContratar={podeContratar}
+      onContratar={contratarEContinuar}
+      onAbrirPlano={onOpenSeats ? () => { setSemVaga(null); onOpenSeats(); } : null}
+      onClose={() => setSemVaga(null)}
+    />
+  ) : null;
+
   if (editing) {
-    return <UserEditor user={editing === 'new' ? null : editing} defaultUnitId={unitId} onSave={handleSave} onCancel={() => setEditing(null)} />;
+    return (
+      <>
+        <UserEditor user={editing === 'new' ? null : editing} defaultUnitId={unitId} onSave={handleSave} onCancel={() => setEditing(null)} />
+        {dialogoSemVaga}
+      </>
+    );
   }
 
   // Approval modal
@@ -5290,6 +5478,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
             {processingId ? 'Processando…' : isAlteracao ? 'Confirmar alteração' : 'Aprovar cadastro'}
           </button>
         </div>
+        {dialogoSemVaga}
       </div>
     );
   }
@@ -5379,6 +5568,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           ? `${unitSel.name} · ${escopo.length} ${escopo.length === 1 ? 'pessoa' : 'pessoas'}, incluindo quem tem acesso a todas as lojas`
           : `Todas as lojas · ${escopo.length} ${escopo.length === 1 ? 'pessoa' : 'pessoas'}`}
       </p>
+      {/* Medidor de vagas: a EMPRESA inteira, qualquer que seja a loja do
+          cabeçalho — a franquia é somada. A linha de cima conta o escopo (e
+          inclui suspensos); esta conta quem ocupa vaga. */}
+      <VagasMedidor quota={quota} users={users} podeContratar={podeContratar}
+        onAbrirPlano={podeContratar && onOpenSeats ? onOpenSeats : null} />
       {/* Resumo de quem não recebe alerta. Fica ANTES da lista porque o marcador
           por linha resolve "quem", e este bloco resolve "quantos e o que fazer" —
           sem ele a gestão precisaria varrer a lista para descobrir o tamanho do
@@ -5490,6 +5684,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           </div>
         </div>
       )}
+      {dialogoSemVaga}
     </div>
   );
 }
@@ -5948,7 +6143,7 @@ function UserDataChangeModal({ currentUser, onClose }) {
 
 /* --------------------------------- shell ----------------------------------- */
 
-export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans, onOpenAvatar }) {
+export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitchUnit, onLogout, isOnline, syncing, pendingSync, pushEnabled, onEnablePush, onDisablePush, company, allUnits, onStartTour, trialDaysLeft, onOpenPlans, onOpenAvatar, onOpenSeats }) {
   // As unidades vêm por prop (as da própria empresa). Antes o Header lia a
   // constante UNITS (IBR1/2/3), então toda empresa via as lojas do IBR aqui.
   const unitList = allUnits?.length ? allUnits : UNITS;
@@ -6056,6 +6251,15 @@ export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitch
               className="flex items-center gap-1"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
               <PlayCircle size={15} /> Tour
+            </button>
+          )}
+          {/* Plano e vagas — só a diretoria (quem contrata) e só com a cota
+              lida: sem ela a folha não teria número nenhum para mostrar. */}
+          {onOpenSeats && (
+            <button onClick={onOpenSeats} title="Plano e vagas de usuário"
+              className="flex items-center gap-1"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+              <Users size={15} aria-hidden /> Vagas
             </button>
           )}
           {currentUser.role === 'gestao' && (
@@ -8725,6 +8929,11 @@ function AppInner() {
   const [closures, setClosures] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [showPlans, setShowPlans] = useState(false);   // painel de assinatura (modal)
+  // Cota de vagas de usuário (company_user_quota). Null = sem migration, sem
+  // leitura ou papel que não gere usuários/lojas: sem medidor e sem trava no
+  // cliente — o trigger do banco segue valendo de qualquer jeito.
+  const [userQuota, setUserQuota] = useState(null);
+  const [showSeats, setShowSeats] = useState(false);   // folha "Plano e vagas"
   const [showNudge, setShowNudge] = useState(false);   // nudge dispensável do trial
   const [generatingTestData, setGeneratingTestData] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -9369,6 +9578,39 @@ function AppInner() {
     return () => { cancelled = true; unsubscribe(); unsubscribeTemplates(); };
   }, [currentUser]);
 
+  // ── Vagas de usuário ──────────────────────────────────────────────────────
+  // Só gerência e diretoria leem a cota: a diretoria cria/aprova/reativa
+  // usuários, e as duas removem lojas (a trava da regra 12). Os demais papéis
+  // não fazem nada que a cota mude, então não há por que buscá-la.
+  const lerCota = !!currentUser && ['gerencia', 'gestao'].includes(currentUser.role);
+  useEffect(() => {
+    if (!lerCota) { setUserQuota(null); return; }
+    let cancelled = false;
+    fetchUserQuota().then(q => { if (!cancelled) setUserQuota(q); });
+    return () => { cancelled = true; };
+  }, [lerCota, currentUser?.id]);
+  const refreshQuota = async () => {
+    if (!lerCota) return null;
+    const q = await fetchUserQuota();
+    // Leitura que falhou (rede) não apaga a cota que a tela já tem: sumir com
+    // o medidor e com as perguntas por um soluço de conexão é pior do que um
+    // número de minutos atrás — e quem trava de verdade é o banco.
+    if (q) setUserQuota(q);
+    return q;
+  };
+
+  // Regra 12: remover a loja (ou adiar a ativação para o futuro) tira 10
+  // vagas da franquia — bloqueia se os ativos passariam da capacidade. A conta
+  // mora em components/PlanoVagas.js (testada em usuarios-render). ASSÍNCRONA:
+  // relê a cota no banco antes de decidir. O banco não trava loja — esta é a
+  // única trava da regra —, e a cota da tela da gerência é a do login (ela não
+  // vê a aba Usuários, que relê ao abrir): aprovações e suspensões feitas em
+  // outro aparelho durante a semana decidiriam errado nos dois sentidos.
+  // Leitura que falha cai na cota da tela.
+  const unitSeatBlock = (u, nextActiveFrom) => bloqueioDeLojaNoBanco({
+    reler: refreshQuota, cotaDaTela: userQuota, users, unidade: u, novaAtivaDesde: nextActiveFrom,
+  });
+
   // ── Data persistence — all writes go to Supabase via sync layer ──────────────
 
   const saveTemplates = async (next, changedIds = null) => {
@@ -9449,13 +9691,23 @@ function AppInner() {
     setUsers(next);
     try {
       await dbSaveUsers(next, opts);
+      // Criar, suspender, reativar ou remover mexe no "em uso" do banco — e
+      // é dele que sai o mínimo de vagas adicionais de "Plano e vagas".
+      refreshQuota();
     } catch (e) {
       console.error('saveUsers', e);
       // Desfaz o otimismo: era exatamente ele que enganava — o colaborador
       // aparecia na lista, o banco tinha recusado, e só o reload contava a
       // verdade. Volta a lista e diz o motivo.
       setUsers(anterior);
-      showToast(`Não foi possível salvar no servidor: ${e?.message || 'tente de novo.'}`);
+      if (e?.code === 'ZC_QUOTA') {
+        // Sem vaga livre: a aba Usuários abre o diálogo certo (contratar ou
+        // bloqueio). Toast com a mensagem crua do trigger só atrapalharia. A
+        // cota estava velha — relê.
+        refreshQuota();
+      } else {
+        showToast(`Não foi possível salvar no servidor: ${e?.message || 'tente de novo.'}`);
+      }
       throw e;
     }
   };
@@ -9734,7 +9986,7 @@ function AppInner() {
   // intactos). O RLS já nega escrita no banco; isto é o bloqueio visível.
   const billing = billingState(company);
   if (billing.state === 'expired') {
-    return <SubscribePanel mode="block" company={company} currentUser={currentUser} onLogout={doLogout} />;
+    return <SubscribePanel mode="block" company={company} currentUser={currentUser} relerCota={refreshQuota} onLogout={doLogout} />;
   }
 
   const dismissNudge = () => setShowNudge(false);
@@ -9808,7 +10060,19 @@ function AppInner() {
           onOpen={() => { dismissNudge(); setShowPlans(true); }} />
       )}
       {showPlans && (
-        <SubscribePanel mode="modal" company={company} currentUser={currentUser} onClose={() => setShowPlans(false)} />
+        <SubscribePanel mode="modal" company={company} currentUser={currentUser} relerCota={refreshQuota} onClose={() => setShowPlans(false)} />
+      )}
+      {/* "Plano e vagas" — aberta pelo medidor da aba Usuários, pelo bloqueio
+          de reativação, pelo bloqueio de loja e pelo cabeçalho da diretoria. */}
+      {showSeats && (
+        <PlanoVagas quota={userQuota} users={users} company={company} currentUser={currentUser}
+          onRecarregar={refreshQuota}
+          onClose={() => setShowSeats(false)}
+          onSaved={(res, mensagem) => {
+            if (res?.quota) setUserQuota(res.quota); else refreshQuota();
+            setShowSeats(false);
+            showToast(mensagem);
+          }} />
       )}
 
       <a className="zc-skip" href="#zc-main-content">Pular para o conteúdo</a>
@@ -9833,6 +10097,7 @@ function AppInner() {
         pushEnabled={pushEnabled} onEnablePush={enablePush} onDisablePush={disablePush}
         trialDaysLeft={billing.state === 'trialing' && currentUser.role === 'gestao' ? billing.daysLeft : null}
         onOpenPlans={() => setShowPlans(true)}
+        onOpenSeats={currentUser.role === 'gestao' && userQuota && !userQuota.exempt ? () => setShowSeats(true) : null}
         company={company}
         onStartTour={() => { setShowJit(false); setShowTour(true); }}
         onOpenAvatar={() => setShowAvatarPicker(true)}
@@ -10012,6 +10277,12 @@ function AppInner() {
 
 
       <main id="zc-main-content" tabIndex={-1} className="zc-content" style={{ flex: 1 }} key={unitId}>
+        {/* Termos v1.2 (franquia de 10 usuários por loja + vaga adicional): a
+            seção 10 dos Termos pede notificação pelo próprio app. Só para a
+            diretoria, que é quem contrata; cortesia não é cobrada. */}
+        {currentUser.role === 'gestao' && userQuota && !userQuota.exempt && (
+          <AvisoTermosVagas userId={currentUser.id} />
+        )}
         {activeTab === 'executar' && (
           <ExecutarView key={unitId} unit={unit} templates={templates} completions={visibleCompletions} closures={closures} currentUser={currentUser} onSaveCompletion={saveCompletion} activeTypes={ACTIVE_TYPES} />
         )}
@@ -10051,10 +10322,23 @@ function AppInner() {
               <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser}
                 unitId={unitId}
                 onGenerateTestData={generateTestData} generatingTestData={generatingTestData}
-                testDataResult={testDataResult} />
+                testDataResult={testDataResult}
+                quota={userQuota} company={company} onOpenSeats={() => setShowSeats(true)}
+                onQuotaChange={q => { if (q) setUserQuota(q); else refreshQuota(); }}
+                onRefreshQuota={refreshQuota} />
             ) : null}
             checklistTypes={dynamicTypes} activeTypes={ACTIVE_TYPES} allUnits={ACTIVE_UNITS} company={company}
-            onSaveUnit={async u => { await import('../../lib/sync').then(m => m.saveUnit(u)); setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; }); }}
+            onSaveUnit={async u => {
+              // Regra 12 também aqui, e não só na tela: é o último ponto antes
+              // do banco para "Ativa desde" que tira a loja da contagem de hoje.
+              const antes = dynamicUnits.find(x => x.id === u.id);
+              const bloqueio = antes && u.activeFrom !== undefined ? await unitSeatBlock(antes, u.activeFrom) : null;
+              if (bloqueio) throw new Error(bloqueio);
+              await import('../../lib/sync').then(m => m.saveUnit(u));
+              setDynamicUnits(prev => { const exists = prev.find(x => x.id === u.id); return exists ? prev.map(x => x.id === u.id ? { ...x, ...u } : x) : [...prev, { ...u, sectors: [] }]; });
+              // Loja nova (ou que estreou) muda a franquia: relê a cota.
+              refreshQuota();
+            }}
             onSaveSector={async s => { await import('../../lib/sync').then(m => m.saveSector(s)); setDynamicSectors(prev => [...prev.filter(x => x.id !== s.id), s]); setDynamicUnits(prev => prev.map(u => u.id === s.unitId ? { ...u, sectors: [...(u.sectors || []).filter(x => x !== s.name), s.name] } : u)); }}
             onSaveChecklistType={async t => { await import('../../lib/sync').then(m => m.saveChecklistType(t)); setDynamicTypes(prev => [...prev.filter(x => x.id !== t.id), t]); }}
             onDeleteChecklistType={async id => { await import('../../lib/sync').then(m => m.deleteChecklistType(id)); setDynamicTypes(prev => prev.filter(t => t.id !== id)); }}
@@ -10065,7 +10349,18 @@ function AppInner() {
                 ? { ...u, sectors: (u.sectors || []).filter(nome => nome !== sec.name) } : u));
             }}
             onReloadTemplates={async () => { const m = await import('../../lib/sync'); const tpl = await m.fetchTemplates([]); setTemplates(tpl); }}
-            onDeleteUnit={async id => { await import('../../lib/sync').then(m => m.deleteUnit(id)); setDynamicUnits(prev => prev.filter(u => u.id !== id)); if (unitId === id) setUnitId(null); }}
+            onDeleteUnit={async id => {
+              // Relê de novo aqui, depois do "tem certeza?" da tela: a pessoa
+              // pode ter ficado minutos no confirm — é o último ponto antes do banco.
+              const bloqueio = await unitSeatBlock(dynamicUnits.find(x => x.id === id));
+              if (bloqueio) throw new Error(bloqueio);
+              await import('../../lib/sync').then(m => m.deleteUnit(id));
+              setDynamicUnits(prev => prev.filter(u => u.id !== id));
+              if (unitId === id) setUnitId(null);
+              refreshQuota();
+            }}
+            unitSeatBlock={unitSeatBlock}
+            onOpenSeats={currentUser.role === 'gestao' && userQuota && !userQuota.exempt ? () => setShowSeats(true) : null}
             onSaveCompany={async patch => {
               await import('../../lib/sync').then(m => m.saveCompany({ id: company.id, ...patch }));
               setCompany(c => ({ ...(c || {}),
@@ -10075,7 +10370,10 @@ function AppInner() {
           />
         )}
         {activeTab === 'usuarios' && (
-          <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser} unitId={unitId} onGenerateTestData={generateTestData} generatingTestData={generatingTestData} testDataResult={testDataResult} />
+          <UsersView users={users} onSaveUsers={saveUsers} currentUser={currentUser} unitId={unitId} onGenerateTestData={generateTestData} generatingTestData={generatingTestData} testDataResult={testDataResult}
+            quota={userQuota} company={company} onOpenSeats={() => setShowSeats(true)}
+            onQuotaChange={q => { if (q) setUserQuota(q); else refreshQuota(); }}
+            onRefreshQuota={refreshQuota} />
         )}
       </main>
 
@@ -10091,32 +10389,104 @@ function AppInner() {
 
 /* --------------------- billing: paywall + nudge de trial ------------------ */
 
-const checkoutError = (reason) => ({
+/**
+ * Motivo da recusa do checkout → frase do painel. `bloqueado` = o painel que
+ * toma a tela (teste vencido): lá "Plano e vagas" não existe, e a única
+ * recusa 'already_subscribed' possível é a do Mercado Pago já ter a
+ * assinatura AUTORIZADA com o status daqui ainda no teste — a pessoa pagou e o
+ * aviso do pagamento não chegou. Mandá-la para uma tela que ela não alcança a
+ * deixaria presa; o que resolve é esperar o aviso (e recarregar) ou o suporte.
+ */
+export const checkoutError = (reason, { bloqueado = false } = {}) => {
+  if (reason === 'already_subscribed' && bloqueado) {
+    return 'O Mercado Pago já registrou a assinatura desta empresa — a liberação do acesso pode levar alguns minutos. Recarregue a página em instantes; se continuar bloqueado, fale com o suporte.';
+  }
+  return CHECKOUT_ERRORS[reason] || 'Não foi possível iniciar o pagamento. Tente de novo.';
+};
+const CHECKOUT_ERRORS = {
   no_payer_email: 'Não encontramos o e-mail do cadastro. Fale com o suporte.',
   forbidden: 'Só a conta de gestão pode assinar.',
   unauthorized: 'Sessão expirada. Entre novamente.',
-  invalid_units: 'Número de lojas inválido.',
+  // Com as lojas vindo das ativas, o único jeito de cair aqui é passar do
+  // teto self-service — conversa comercial.
+  invalid_units: `Mais de ${MAX_SELF_SERVICE_UNITS} lojas ativas — fale com a equipe ZCheck para assinar.`,
+  // A assinatura anterior PENDENTE (checkout abandonado) não pôde ser
+  // cancelada no Mercado Pago: o link velho seguiria pagável ao lado do novo.
+  previous_subscription: 'Não conseguimos encerrar a assinatura anterior no Mercado Pago. Tente de novo em instantes ou fale com o suporte.',
   server_misconfigured: 'Pagamento indisponível no momento.',
   mp_error: 'Não foi possível iniciar o pagamento. Tente de novo.',
-}[reason] || 'Não foi possível iniciar o pagamento. Tente de novo.');
+  already_subscribed: 'Esta empresa já tem uma assinatura ativa. Lojas e vagas se ajustam por ela — vagas em "Plano e vagas".',
+  // O MP mostrou a assinatura em dia (o aviso de pagamento aprovado não tinha
+  // chegado): o servidor regravou o status em vez de abrir uma 2ª cobrança.
+  subscription_resynced: 'O Mercado Pago confirmou o pagamento da sua assinatura — o acesso foi restabelecido. Recarregue a página.',
+  invalid_seats: 'Número de vagas adicionais inválido. Recarregue a página e tente de novo.',
+  below_in_use: 'Há mais usuários ativos do que vagas nesta conta. Recarregue a página para ver as vagas em uso e tente de novo.',
+  // O checkout agora conta lojas e vagas no banco (company_user_quota): se a
+  // migration de vagas ainda não estiver aplicada, ele responde 503 em vez de
+  // cobrar um valor que não conferiu.
+  quota_unavailable: 'Pagamento indisponível no momento. Tente de novo mais tarde.',
+  query_failed: 'Não foi possível conferir lojas e vagas agora. Tente de novo.',
+};
 
 // Painel de assinatura. mode='block' toma a tela quando o teste vence;
 // mode='modal' abre por cima do app (a partir do banner/nudge).
-// Preço por loja com desconto progressivo (lib/plans.js): a gestão escolhe
-// quantas lojas e o ciclo; o valor aparece na hora — a mesma conta pública
-// da landing, sem surpresa no checkout.
-function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogout }) {
+// Preço por loja + vagas adicionais (lib/plans.js): a gestão escolhe o
+// ciclo; o valor aparece na hora — a MESMA conta (priceForUnits) da landing e
+// do checkout no servidor, sem surpresa.
+//
+// Lojas = as lojas ATIVAS da empresa (piso de 1), sem escolha: é a mesma
+// contagem que dá a franquia de vagas e que o cron de cobrança usa (regra 11
+// e Termos). Antes dava para subir o número acima das ativas — e a pessoa
+// pagava lojas cujas 10 vagas não existiam, mais vagas adicionais que essa
+// franquia teria coberto, até o cron baixar o valor no dia seguinte. Loja
+// nova entra quando for ativada, a partir da fatura seguinte. Vagas
+// adicionais = max(as contratadas, as em uso) — a mesma conta do servidor. A
+// pessoa não escolhe vagas aqui: quem ajusta é "Plano e vagas".
+//
+// O valor mostrado tem de ser o que o checkout vai cobrar — e o servidor
+// (checkoutPlan) conta lojas e vagas no banco NA HORA. Por isso o painel relê
+// a cota SEMPRE ao abrir, e não usa a da tela: essa é do login, e não vê a
+// loja cujo "Ativa desde" chegou com o app aberto nem os usuários criados em
+// outra sessão (mostrava R$ 97 e o Mercado Pago cobrava R$ 194). Até a
+// leitura chegar não há preço nem "Assinar"; se ela falha, erro com "Tentar de
+// novo" — nunca o preço de 1 loja sem vagas, que seria um número inventado.
+// `relerCota` devolve a cota ou null (o AppInner passa o refreshQuota, que
+// também atualiza a cota da tela).
+export function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogout, relerCota = fetchUserQuota }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [units, setUnits] = useState(1);
-  const [cycle, setCycle] = useState('annual'); // anual (R$97/loja) é o herói
+  const [cycle, setCycle] = useState('annual'); // anual é o herói
   const isGestao = currentUser?.role === 'gestao';
+  const [cota, setCota] = useState(null);
+  const [leitura, setLeitura] = useState('lendo'); // 'lendo' | 'ok' | 'erro'
+  const [tentativa, setTentativa] = useState(0);
+  useEffect(() => {
+    if (!isGestao) return undefined;
+    let vivo = true;
+    setLeitura('lendo');
+    Promise.resolve()
+      .then(() => relerCota())
+      .then(q => {
+        if (!vivo) return;
+        if (q) { setCota(q); setLeitura('ok'); } else setLeitura('erro');
+      })
+      .catch(() => { if (vivo) setLeitura('erro'); });
+    return () => { vivo = false; };
+  }, [isGestao, tentativa]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cotaOk = leitura === 'ok' && !!cota;
+  const activeUnits = Math.max(0, Math.floor(Number(cota?.active_units) || 0));
+  const units = Math.min(MAX_SELF_SERVICE_UNITS, Math.max(1, activeUnits));
 
-  const price = priceForUnits(units, cycle);
+  const extraSeats = cota && !cota.exempt
+    ? Math.max(cota.extra_seats || 0, cota.extra_seats_in_use || 0)
+    : 0;
+  const price = priceForUnits(units, cycle, extraSeats);
   const annual = cycle === 'annual';
-  const brl = (n) => `R$ ${n.toLocaleString('pt-BR')}`;
+  const vaga = formatBRL(EXTRA_USER_PRICE, { cents: true });
 
   const subscribe = async () => {
+    // Sem a cota de agora não há valor conferido para mostrar — nem para cobrar.
+    if (loading || !cotaOk) return;
     setErr(''); setLoading(true);
     try {
       const res = await fetch('/api/billing/checkout', {
@@ -10126,7 +10496,7 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
       });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.ok && body.init_point) { window.location.href = body.init_point; return; }
-      setErr(checkoutError(body?.reason));
+      setErr(checkoutError(body?.reason, { bloqueado: mode === 'block' }));
     } catch { setErr('Erro de conexão. Tente novamente.'); }
     setLoading(false);
   };
@@ -10168,7 +10538,10 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
           <>
             {/* Plano — anual primeiro e pré-selecionado */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 14 }} role="group" aria-label="Plano">
-              {[['annual', 'Anual · R$ 97/loja · −24%'], ['monthly', 'Mensal · R$ 127/loja']].map(([id, label]) => (
+              {[
+                ['annual', `Anual · ${formatBRL(PRICE_PER_UNIT.annual)}/loja · ${ANNUAL_DISCOUNT_LABEL}`],
+                ['monthly', `Mensal · ${formatBRL(PRICE_PER_UNIT.monthly)}/loja`],
+              ].map(([id, label]) => (
                 <button key={id} type="button" onClick={() => setCycle(id)} aria-pressed={cycle === id}
                   style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: W.semibold, cursor: 'pointer',
                     border: `1.5px solid ${cycle === id ? C.ink : C.border}`,
@@ -10178,35 +10551,59 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
               ))}
             </div>
 
-            {/* Quantidade de lojas */}
+            {/* Lojas: as ativas, sem escolha — ver o comentário do painel. */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
-              <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>Quantas lojas?</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button type="button" aria-label="Menos uma loja" disabled={units <= 1}
-                  onClick={() => setUnits(u => Math.max(1, u - 1))}
-                  style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
-                    fontSize: 18, fontWeight: W.semibold, color: units <= 1 ? C.border : C.ink, cursor: units <= 1 ? 'default' : 'pointer' }}>−</button>
-                <span style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, minWidth: 26, textAlign: 'center' }}>{units}</span>
-                <button type="button" aria-label="Mais uma loja" disabled={units >= MAX_SELF_SERVICE_UNITS}
-                  onClick={() => setUnits(u => Math.min(MAX_SELF_SERVICE_UNITS, u + 1))}
-                  style={{ width: 34, height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, background: 'white',
-                    fontSize: 18, fontWeight: W.semibold, color: units >= MAX_SELF_SERVICE_UNITS ? C.border : C.ink,
-                    cursor: units >= MAX_SELF_SERVICE_UNITS ? 'default' : 'pointer' }}>+</button>
-              </div>
+              <p style={{ fontSize: 14, fontWeight: W.semibold, color: C.ink }}>Lojas ativas</p>
+              <span style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink, minWidth: 26, textAlign: 'center' }}>{cotaOk ? units : '—'}</span>
             </div>
+            {/* "Nenhuma loja ativa" só com a contagem do banco na mão: sem
+                ela, 0 seria só a falta de leitura, não um fato. */}
+            {cotaOk && (
+              <p style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.5, marginTop: -8, marginBottom: 14 }}>
+                {activeUnits >= 1
+                  ? 'A assinatura cobre as lojas ativas da empresa. Loja nova entra quando for ativada, a partir da fatura seguinte.'
+                  : 'Nenhuma loja ativa ainda — a assinatura começa no mínimo de 1 loja. Loja nova entra quando for ativada, a partir da fatura seguinte.'}
+              </p>
+            )}
 
             {/* Conta transparente + assinar */}
-            {price && (
+
+            {!cotaOk && (
+              <div aria-live="polite" style={{ textAlign: 'center', marginBottom: 14 }}>
+                {leitura === 'erro' ? (
+                  <>
+                    <p role="alert" style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical, lineHeight: 1.5 }}>
+                      Não foi possível conferir as lojas e as vagas da empresa agora — sem elas, não dá para mostrar o valor da assinatura.
+                    </p>
+                    <button type="button" onClick={() => setTentativa(n => n + 1)}
+                      style={{ marginTop: 8, padding: '8px 14px', borderRadius: 10, border: `1.5px solid ${C.borderStrong}`, background: 'white', color: C.ink, fontWeight: W.semibold, fontSize: 13, cursor: 'pointer' }}>
+                      Tentar de novo
+                    </button>
+                  </>
+                ) : (
+                  <p style={{ fontSize: 13, color: C.muted }}>Conferindo as lojas e as vagas da empresa…</p>
+                )}
+              </div>
+            )}
+            {cotaOk && (
               <div aria-live="polite" style={{ textAlign: 'center', marginBottom: 14 }}>
                 <p style={{ fontSize: 22, fontWeight: W.bold, color: C.ink }}>
-                  {brl(price.monthlyCharge)}<span style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted }}>/mês</span>
+                  {formatBRL(price.monthlyCharge)}<span style={{ fontSize: 12, fontWeight: W.semibold, color: C.muted }}>/mês</span>
                 </p>
                 <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                  {units} {units === 1 ? 'loja' : 'lojas'} × {brl(price.perUnit)}
+                  {`${units} ${units === 1 ? 'loja' : 'lojas'} × ${formatBRL(price.perUnit)}`}
+                  {extraSeats > 0 && ` + ${extraSeats} ${extraSeats === 1 ? 'vaga' : 'vagas'} × ${vaga}`}
                   {annual
-                    ? <> · 12 meses no cartão · economia de {brl(price.savingsPerYear)}/ano</>
-                    : <> · sem fidelidade, cancele quando quiser</>}
+                    ? ` · 12 meses no cartão · economia de ${formatBRL(price.savingsPerYear)}/ano nas lojas`
+                    : ' · sem fidelidade, cancele quando quiser'}
+                </p>
+                {/* A franquia de usuários, dita na hora de assinar: 10 por loja,
+                    somadas, e a vaga além disso a R$ 17,00 nos dois planos. */}
+                <p style={{ fontSize: 12, color: C.ink, marginTop: 4 }}>
+                  {extraSeats > 0
+                    ? `${price.includedSeats} vagas de usuário inclusas + ${extraSeats} ${extraSeats === 1 ? 'adicional' : 'adicionais'} × ${vaga}`
+                    : `${price.includedSeats} vagas de usuário inclusas (${INCLUDED_USERS_PER_UNIT} por loja) · vaga adicional ${vaga}/mês`}
                 </p>
                 {annual && (
                   <p style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 11.5, fontWeight: W.semibold, color: C.success, marginTop: 6 }}>
@@ -10215,9 +10612,9 @@ function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogou
                 )}
               </div>
             )}
-            <button onClick={subscribe} disabled={loading}
+            <button onClick={subscribe} disabled={loading || !cotaOk}
               style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', fontWeight: W.semibold, fontSize: 15,
-                color: 'white', background: loading ? C.muted : C.ink, cursor: loading ? 'not-allowed' : 'pointer' }}>
+                color: 'white', background: loading || !cotaOk ? C.muted : C.ink, cursor: loading || !cotaOk ? 'not-allowed' : 'pointer' }}>
               {loading ? 'Abrindo pagamento...' : 'Assinar'}
             </button>
             {err && <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical, textAlign: 'center', marginTop: 12 }}>{err}</p>}

@@ -18,6 +18,15 @@ const RULE_LABELS = {
   activated_user_gone: 'Usuário ativado sumiu',
   abandon_streak: 'Abandonos em sequência',
   company_without_cnpj: 'Empresa sem CNPJ',
+  seat_quota_exceeded: 'Usuários acima das vagas',
+  billing_adjust_pending: 'Ajuste de cobrança pendente',
+  // Gravados direto pelo webhook do Mercado Pago (não pelo motor de regras).
+  billing_amount_mismatch: 'Valor cobrado ≠ contratado',
+  billing_intent_missing: 'Assinatura sem intenção de checkout',
+  billing_duplicate_subscription: 'Assinatura em dobro no Mercado Pago',
+  billing_payment_untracked: 'Cobrança em assinatura que não é a atual',
+  billing_possible_double_charge: 'Assinatura substituída já tinha cobrado o mês',
+  billing_owner_mismatch: 'Assinatura apontando para outra empresa',
 };
 
 // Painel de alertas — regras avaliadas de hora em hora (ou sob demanda).

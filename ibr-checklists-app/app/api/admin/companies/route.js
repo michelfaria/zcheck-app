@@ -1,11 +1,17 @@
 import { adminGuard, jsonNoStore, spDaysAgo } from '../../../../lib/adminApi';
 import { normalizeCnpj, isValidCnpj } from '../../../../lib/cnpj';
+import { trialExtensionBlocked, trialExtensionMessage } from '../../../../lib/seats';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Empresas (gestão de tenants).
 //   GET                → lista com saúde · GET ?company_id= → drill-down
+//     Vagas (23/09/2026): a view admin_company_health traz active_users,
+//     included_seats, extra_seats e seat_capacity; billing_accounts completa
+//     com isenção, pendência de ajuste e o valor cobrado, e o drill-down
+//     mostra a trilha de consentimento (billing_seat_changes). Antes da
+//     migration as consultas novas falham e a tela só não mostra as vagas.
 //   POST               → cria empresa (RPC provision_company)
 //   PATCH              → ações: activate | deactivate | extend_trial | delete
 export async function GET(request) {
@@ -21,21 +27,27 @@ export async function GET(request) {
   };
 
   if (!companyId) {
-    const [{ data, error: qErr }, profiles, trials] = await Promise.all([
+    const [{ data, error: qErr }, profiles, trials, accounts] = await Promise.all([
       db.from('admin_company_health').select('*'),
       db.from('companies').select('id, cnpj, legal_name, contact_name, contact_email, contact_whatsapp'),
       db.from('cnpj_trial_history').select('*').order('started_at', { ascending: false }).limit(50),
+      db.from('billing_accounts').select('company_id, exempt, extra_seats, adjust_pending, billed_amount, billed_cycle'),
     ]);
     if (qErr) {
       console.error('companies query falhou:', qErr.message);
       return jsonNoStore({ ok: false, reason: 'query_failed', message: qErr.message }, 502);
     }
     const profileById = new Map((profiles.data || []).map(p => [p.id, p]));
+    const accountById = new Map((accounts.error ? [] : accounts.data || []).map(a => [a.company_id, a]));
     return jsonNoStore({
       ok: true,
       generatedAt: new Date().toISOString(),
       companies: data
-        .map(c => ({ ...c, ...(profileById.get(c.company_id) || {}), health: health(c.last_activity) }))
+        .map(c => ({
+          ...c, ...(profileById.get(c.company_id) || {}),
+          billing: billingOf(accountById.get(c.company_id)),
+          health: health(c.last_activity),
+        }))
         .sort((a, b) => (b.completions_7d || 0) - (a.completions_7d || 0)),
       // Histórico de CNPJs que já consumiram o teste — a trava anti-reuso.
       // `trials.error` acontece antes da migration rodar; a lista some, o resto vive.
@@ -44,10 +56,10 @@ export async function GET(request) {
   }
 
   const since30 = spDaysAgo(30);
-  const [company, contact, units, unitCnpjs, sectors, users, daily, dau] = await Promise.all([
+  const [company, contact, units, unitCnpjs, sectors, users, daily, dau, account, seatChanges] = await Promise.all([
     db.from('admin_company_health').select('*').eq('company_id', companyId).maybeSingle(),
     db.from('companies')
-      .select('contact_email, contact_whatsapp, cnpj, legal_name, contact_name, contact_role, address_city, address_state, billing_mode')
+      .select('contact_email, contact_whatsapp, cnpj, legal_name, contact_name, contact_role, address_city, address_state, billing_mode, plan_tier, unit_limit')
       .eq('id', companyId).maybeSingle(),
     db.from('admin_unit_health').select('*').eq('company_id', companyId),
     db.from('units').select('id, cnpj').eq('company_id', companyId),
@@ -58,6 +70,9 @@ export async function GET(request) {
       .gte('day', since30).limit(3000),
     db.from('admin_active_users_daily').select('*').eq('company_id', companyId)
       .gte('day', since30).limit(200),
+    db.from('billing_accounts').select('*').eq('company_id', companyId).maybeSingle(),
+    db.from('billing_seat_changes').select('*').eq('company_id', companyId)
+      .order('created_at', { ascending: false }).limit(20),
   ]);
 
   const firstErr = [company, units, sectors, users, daily, dau].find(r => r.error);
@@ -66,6 +81,14 @@ export async function GET(request) {
     return jsonNoStore({ ok: false, reason: 'query_failed', message: firstErr.error.message }, 502);
   }
   if (!company.data) return jsonNoStore({ ok: false, reason: 'not_found' }, 404);
+
+  // Nome de quem contratou/reduziu vagas (changed_by é o users.id do token).
+  const changes = seatChanges.error ? [] : seatChanges.data || [];
+  const changerIds = [...new Set(changes.map(c => c.changed_by).filter(Boolean))];
+  const changers = changerIds.length
+    ? await db.from('users').select('id, name').eq('company_id', companyId).in('id', changerIds)
+    : { data: [] };
+  const changerName = new Map((changers.data || []).map(u => [u.id, u.name]));
 
   const byDay = new Map();
   for (let i = 30; i >= 0; i--) byDay.set(spDaysAgo(i), { day: spDaysAgo(i), completions: 0, dau: 0 });
@@ -81,7 +104,13 @@ export async function GET(request) {
   return jsonNoStore({
     ok: true,
     generatedAt: new Date().toISOString(),
-    company: { ...company.data, ...(contact.data || {}), health: health(company.data.last_activity) },
+    company: {
+      ...company.data, ...(contact.data || {}),
+      billing: billingOf(account.error ? null : account.data),
+      health: health(company.data.last_activity),
+    },
+    // Trilha de consentimento das vagas adicionais (quem, de→para, quando).
+    seatChanges: changes.map(c => ({ ...c, changed_by_name: changerName.get(c.changed_by) || null })),
     units: units.data
       .map(u => ({ ...u, health: health(u.last_completion),
         cnpj: (unitCnpjs.data || []).find(x => x.id === u.unit_id)?.cnpj || null,
@@ -90,6 +119,19 @@ export async function GET(request) {
     users: users.data,
     series: [...byDay.values()],
   });
+}
+
+// Conta de cobrança resumida para o Core. Empresa sem linha em
+// billing_accounts (criada depois do backfill) vale como não isenta e sem vaga
+// adicional — a mesma leitura que as rotas de billing fazem.
+function billingOf(a) {
+  return {
+    exempt: a?.exempt === true,
+    extra_seats: Number(a?.extra_seats) || 0,
+    adjust_pending: a?.adjust_pending === true,
+    billed_amount: a?.billed_amount != null ? Number(a.billed_amount) : null,
+    billed_cycle: a?.billed_cycle || null,
+  };
 }
 
 // Cria uma empresa pelo Core, reaproveitando o RPC transacional do onboarding
@@ -158,7 +200,8 @@ export async function PATCH(request) {
   }
 
   const { data: company, error: findErr } = await db.from('companies')
-    .select('id, slug, name, active, trial_ends_at').eq('id', companyId).maybeSingle();
+    .select('id, slug, name, active, trial_ends_at, subscription_status, current_period_end')
+    .eq('id', companyId).maybeSingle();
   if (findErr) return jsonNoStore({ ok: false, reason: 'query_failed' }, 502);
   if (!company) return jsonNoStore({ ok: false, reason: 'not_found' }, 404);
 
@@ -233,6 +276,13 @@ export async function PATCH(request) {
   }
 
   if (action === 'extend_trial') {
+    // Quem assina (ou está em atraso, ou pagou um período ainda vigente) não
+    // tem teste para estender: gravar 'trialing' apagaria o estado da cobrança
+    // (lib/seats.js trialExtensionBlocked).
+    const bloqueio = trialExtensionBlocked(company);
+    if (bloqueio) {
+      return jsonNoStore({ ok: false, reason: 'has_subscription', message: trialExtensionMessage(bloqueio) }, 409);
+    }
     // +7 dias a partir do fim atual do trial (ou de agora, se já venceu).
     const base = Math.max(Date.now(), company.trial_ends_at ? new Date(company.trial_ends_at).getTime() : 0);
     const newEnd = new Date(base + 7 * 864e5).toISOString();
