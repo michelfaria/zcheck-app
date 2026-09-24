@@ -99,6 +99,16 @@ for (const vp of VIEWPORTS) {
         await page.waitForTimeout(800);
       }
 
+      // Imagem lazy (as telas do app na landing) só carrega quando rola até
+      // ela — e o screenshot de página inteira não rola. Sem isto o baseline
+      // gravava molduras de celular vazias. Força o carregamento e espera a
+      // decodificação de toda imagem visível.
+      await page.evaluate(async () => {
+        const imgs = [...document.images];
+        imgs.forEach(i => { i.loading = 'eager'; });
+        await Promise.all(imgs.filter(i => i.offsetParent).map(i => i.decode().catch(() => {})));
+      });
+
       // Último a entrar pode chegar depois de tudo acima (ver waitForStableHeight).
       await waitForStableHeight(page);
 

@@ -20,7 +20,7 @@ App de checklists multi-tenant (SaaS). Landing page + app por subdomínio de emp
 ## Arquivos principais (dentro de `ibr-checklists-app/`)
 
 ```
-app/page.js                      → landing page (tokens; CTA = waitlist /lista)
+app/page.js                      → landing page (tokens; CTA = cadastro self-service /comecar)
 app/lista/page.js                → formulário do waitlist
 app/entrar/page.js               → página de código da empresa
 app/app/page.js                  → app principal (~10.200 linhas)
@@ -53,6 +53,9 @@ lib/serverAuth.js                → assina o token de sessão (NUNCA importar n
 lib/tenant.js                    → detecção de tenant por hostname
 middleware.js                    → redireciona subdomínios para /app
 public/zcheck-logo.png           → logo horizontal 400x100px transparente
+public/landing/*.png             → telas REAIS do app para a landing, com dados fictícios
+scripts/landing-shots/           → gera essas telas: `node scripts/landing-shots/run.mjs`
+                                   (componentes de produção + fixtures.js, fetch dublado)
 public/manifest.json             → PWA, start_url: /app
 ```
 
@@ -90,6 +93,14 @@ const EMPRESAS = {
 - O dia é o do RELÓGIO DA LOJA: `todayStr(tzOf(unit))`, nunca `todayStr()` solto.
   Prazo de checklist é `instantAt(data, hora, tz)` — comparar com `new Date()`
   usa o fuso de quem abriu o painel, não o da loja que executou
+- Imagens da landing são telas reais regeradas por `scripts/landing-shots/run.mjs`
+  (Chromium sobre os componentes de produção, empresa fictícia "Grupo Exemplo",
+  nada sai da máquina). Mudou uma tela que a landing mostra — Painel/Agora,
+  execução de checklist, Meu ID, Unidades — rode de novo e confira as PNGs.
+  NUNCA capturar o app logado em produção para a landing: é dado de gente real
+  num repositório público. Todo nome que a landing usa tem de existir no app
+  com o mesmo nome (o "J.I.T." sobreviveu na landing meses depois de virar
+  o bloco "Agora" do Painel)
 - Preço e limite de usuários NUNCA escritos à mão em texto de tela (landing,
   calculadora, app): sempre das constantes de `lib/plans.js` (`PRICE_PER_UNIT`,
   `INCLUDED_USERS_PER_UNIT`, `EXTRA_USER_PRICE`) via `formatBRL` — a vaga

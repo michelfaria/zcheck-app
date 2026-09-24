@@ -27,7 +27,10 @@ import {
 // ── Config (edite em lib/plans.js, não aqui) ────────────────────────────────
 const ANUAL = PRICE_PER_UNIT.annual;    // por loja/mês · 12 meses no cartão
 const MENSAL = PRICE_PER_UNIT.monthly;  // por loja/mês · sem fidelidade
-const VAGA = formatBRL(EXTRA_USER_PRICE, { cents: true }); // 'R$ 17,00'
+// Espaço inseparável entre "R$" e o número (o comum deixava o "R$" sozinho no
+// fim da linha). Todo valor da calculadora passa por aqui.
+const brl = (v, o) => formatBRL(v, o).replace('R$ ', 'R$\u00A0');
+const VAGA = brl(EXTRA_USER_PRICE, { cents: true }); // 'R$ 17,00'
 const DESCONTO = ANNUAL_DISCOUNT_LABEL.replace(/^[−-]\s*/, ''); // '−24%' → '24%'
 // Teto "menos de R$ X por dia" do anual: mês comercial de 30 dias, arredondado
 // para cima na dezena de centavos e SEMPRE acima do valor real (97/30 = 3,23 →
@@ -39,8 +42,8 @@ const BULLETS = [
   'Checklists ilimitados',
   'Fotos como evidência',
   'Funciona offline',
-  'Briefing diário',
-  'Modelos por setor prontos para uso',
+  'Painel com as prioridades do dia',
+  'Biblioteca de modelos prontos',
 ];
 
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -58,14 +61,16 @@ const stepBtn = (disabled) => ({
 // ficarem na mesma coluna.
 function StepRow({ before, after, minusLabel, plusLabel, canMinus, canPlus, onMinus, onPlus, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, minWidth: 64 }}>{before}</p>
+    // Rótulos e vão encolhem com a tela: a 320px, 64px fixos de cada lado
+    // empurravam "usuários" 3px para fora do viewport (WCAG 1.4.10).
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'clamp(6px, 2.5vw, 12px)' }}>
+      <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, minWidth: 'clamp(48px, 16vw, 64px)' }}>{before}</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button type="button" aria-label={minusLabel} disabled={!canMinus} style={stepBtn(!canMinus)} onClick={onMinus}>−</button>
         {children}
         <button type="button" aria-label={plusLabel} disabled={!canPlus} style={stepBtn(!canPlus)} onClick={onPlus}>+</button>
       </div>
-      <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, minWidth: 64, textAlign: 'right' }}>{after}</p>
+      <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, minWidth: 'clamp(48px, 16vw, 64px)', textAlign: 'right' }}>{after}</p>
     </div>
   );
 }
@@ -112,7 +117,8 @@ export default function PriceCalculator() {
     <div style={{ maxWidth: 460, margin: '0 auto' }}>
       {/* Toggle — anual primeiro e pré-selecionado */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }} role="group" aria-label="Plano">
-        <button type="button" style={toggleBtn(annual)} aria-pressed={annual} onClick={() => setCycle('annual')}>
+        {/* aria-label: sem ele o leitor de tela lia "Anual−24%", colado. */}
+        <button type="button" style={toggleBtn(annual)} aria-pressed={annual} aria-label={`Anual, ${DESCONTO} de desconto na loja`} onClick={() => setCycle('annual')}>
           Anual
           <span style={{ marginLeft: 6, fontSize: 10, fontWeight: W.bold, background: annual ? C.success : C.bg, color: annual ? 'white' : C.success, borderRadius: R.pill, padding: '2px 7px', verticalAlign: 'middle' }}>
             {ANNUAL_DISCOUNT_LABEL}
@@ -132,13 +138,13 @@ export default function PriceCalculator() {
         )}
         <div aria-live="polite">
           <p style={{ fontSize: 54, fontWeight: W.bold, letterSpacing: '-0.03em', color: C.ink, lineHeight: 1 }}>
-            {formatBRL(perUnit)}
+            {brl(perUnit)}
           </p>
           <p style={{ fontSize: T.body, color: C.muted, marginTop: 6 }}>por loja/mês</p>
           <p style={{ fontSize: T.caption, color: annual ? C.success : C.muted, fontWeight: W.semibold, marginTop: 4 }}>
             {annual
-              ? `menos de ${formatBRL(POR_DIA_ANUAL, { cents: true })} por dia, por loja`
-              : `no anual sai por ${formatBRL(ANUAL)}/loja`}
+              ? `menos de ${brl(POR_DIA_ANUAL, { cents: true })} por dia, por loja`
+              : `no anual sai por ${brl(ANUAL)}/loja`}
           </p>
         </div>
         <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8, margin: '20px auto 0', maxWidth: 280, textAlign: 'left' }}>
@@ -154,6 +160,15 @@ export default function PriceCalculator() {
         <p style={{ fontSize: T.caption, color: C.muted, marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
           Vaga de usuário adicional: <strong style={{ color: C.ink }}>{VAGA}/mês</strong>, igual no anual e no mensal.
         </p>
+        {/* A saída antecipada do anual custa a diferença para o mensal (Termos,
+            seção 7). Mora aqui, junto do preço anual, porque "sem taxa
+            escondida" só é verdade se nenhum custo morar só nos Termos. */}
+        {annual && (
+          <p style={{ fontSize: T.caption, color: C.muted, marginTop: 8 }}>
+            Compromisso de 12 meses. Se sair antes, você paga só a diferença para o mensal
+            ({brl(MENSAL - ANUAL)}/loja por mês usado), sem multa.
+          </p>
+        )}
       </div>
 
       {/* Linha dinâmica: Tenho X lojas e Y usuários */}
@@ -176,7 +191,7 @@ export default function PriceCalculator() {
               value={usersText ?? String(included)}
               onChange={(e) => setUsersText(e.target.value.replace(/\D/g, '').slice(0, 4))}
               onBlur={() => setUsersText(String(users))}
-              style={{ width: 44, height: 34, fontSize: T.bodyLg, fontWeight: W.bold, color: C.ink, textAlign: 'center', background: 'white', border: `1.5px solid ${C.border}`, borderRadius: R.sm, padding: 0 }} />
+              style={{ width: 44, height: 34, fontSize: T.bodyLg, fontWeight: W.bold, color: C.ink, textAlign: 'center', background: 'white', border: `1.5px solid ${C.borderStrong}`, borderRadius: R.sm, padding: 0 }} />
           </StepRow>
         </div>
         <div aria-live="polite" style={{ marginTop: 12, textAlign: 'center' }}>
@@ -185,16 +200,16 @@ export default function PriceCalculator() {
             {extras > 0 && <> + {plural(extras, 'vaga adicional', 'vagas adicionais')} <span style={{ whiteSpace: 'nowrap' }}>× {VAGA}</span></>}
           </p>
           <p style={{ fontSize: T.bodySm, color: C.ink }}>
-            <strong>Anual:</strong> {formatBRL(priceAnual.monthlyCharge)}/mês
+            <strong>Anual:</strong> {brl(priceAnual.monthlyCharge)}/mês
             <span style={{ color: C.muted }}> · </span>
-            <strong>Mensal:</strong> {formatBRL(priceMensal.monthlyCharge)}/mês
+            <strong>Mensal:</strong> {brl(priceMensal.monthlyCharge)}/mês
           </p>
           {/* A economia é a diferença entre os dois totais × 12 e acompanha as
               LOJAS na hora. Não muda com usuários porque a vaga adicional custa o
               mesmo nos dois planos — dito na tela, senão parece conta travada. */}
           <p style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginTop: 4 }}>
-            No anual você economiza {formatBRL(priceAnual.savingsPerYear)} por ano
-            {extras > 0 ? <span style={{ fontWeight: W.medium, color: C.muted }}> — a vaga adicional custa igual nos dois planos.</span> : '.'}
+            No anual você economiza {brl(priceAnual.savingsPerYear)} por ano
+            {extras > 0 ? <span style={{ fontWeight: W.medium, color: C.muted }}>. A vaga adicional custa igual nos dois planos.</span> : '.'}
           </p>
         </div>
       </div>
