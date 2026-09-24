@@ -105,7 +105,7 @@ const EMPRESAS = {
 cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && next build
 ```
 
-`verify` inclui os testes desde 11/08/2026. `npm run test` roda os oito de node:
+`verify` inclui os testes desde 11/08/2026. `npm run test` roda os testes de node:
 
 | Teste | O que prova |
 |---|---|
@@ -121,6 +121,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `carryover-marcacao.spec.mjs` | marcação ao vivo em D quita o carryover até D, como uma submissão — e a aderência NÃO muda (o checklist marcado sem "Concluir" continua não entregue). Caso do IBR3, 16/09/2026: 7/7 marcadas, ninguém concluiu, tudo voltou no dia seguinte |
 | `auto-concluir.spec.mjs` | a última tarefa marcada fecha o checklist sozinha (tela real em jsdom): com o colega em 2 de 3, marcar a terceira submete sem "Concluir", com o `doneBy` de cada um; marcar uma que não é a última não submete. Decisão de 17/09/2026: checklist dividido entre pessoas ficava sem registro |
 | `conclusoes-recarga.spec.mjs` | a lista de conclusões em memória se corrige com o banco ao voltar para o app e ao abrir a Rotina/um checklist — o realtime perde o que outro aparelho gravou com o app em segundo plano. Caso do IBR2, 24/09/2026: o app do Nicolas fechou 10/10 sozinho, o celular do Michel seguiu em "Parcial · 2 de 10" com "Concluir" aceso |
+| `produtividade-conferencia.spec.mjs` | o veredito da liderança pesa no score de produtividade: ressalva vale metade, reprovada vale negativo e tira o bônus do 100% — com ou sem motivo, só para conferência a partir de 24/09/2026 (instante de Brasília). Bloco final renderiza o Painel e afirma a linha "Conferência: …" |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
