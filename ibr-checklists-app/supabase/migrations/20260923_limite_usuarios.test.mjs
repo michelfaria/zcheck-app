@@ -21,7 +21,8 @@
  * Os caminhos de escrita são os DE VERDADE: a aprovação roda a
  * `create_user_from_request` de 20260726_tenant_03e e o cadastro roda a
  * `provision_company` v3 de 20260720_cnpj_cadastro (com os gatilhos de CNPJ de
- * 20260820_grupo_cliente), lidas dos próprios arquivos.
+ * 20260820_grupo_cliente) e, por cima, a v4 de 20260924_slugs_reservados_landing
+ * (a v3 com mais slugs reservados), lidas dos próprios arquivos.
  *
  * ATENÇÃO ao nome do arquivo: 20260720_cnpj_cadastro entrou no repositório em
  * 12/09/2026 (7455192), DEPOIS de 20260721_trial_14_dias (21/07) — a data do
@@ -38,6 +39,7 @@ const MIGRATION = ler('./20260923_limite_usuarios.sql');
 const APROVACAO = ler('./20260726_tenant_03e_fecha_create_user_from_request.sql');
 const PROVISION = ler('./20260720_cnpj_cadastro.sql');
 const GRUPO     = ler('./20260820_grupo_cliente.sql');
+const RESERVA   = ler('./20260924_slugs_reservados_landing.sql');
 
 // Qual provision_company está viva não se deduz pelo nome (ver acima). Estas
 // são as migrations que a definem; se aparecer outra, a lista não bate e o
@@ -45,6 +47,7 @@ const GRUPO     = ler('./20260820_grupo_cliente.sql');
 const DEFINEM_PROVISION = [
   '20260709_tenant_04_provision.sql', '20260715_signups.sql', '20260716_billing.sql',
   '20260717_onboarding.sql', '20260720_cnpj_cadastro.sql', '20260721_trial_14_dias.sql',
+  '20260924_slugs_reservados_landing.sql',
 ];
 const definemProvisionHoje = readdirSync(DIR)
   .filter(f => f.endsWith('.sql'))
@@ -154,6 +157,7 @@ await db.exec(`
 await db.exec(APROVACAO);
 await db.exec(PROVISION);
 await db.exec(GRUPO);
+await db.exec(RESERVA);
 
 // Empresas:
 //   ibr     — cortesia, 3 lojas, 30 ativos + 1 suspenso (isenta)
@@ -451,7 +455,7 @@ check(qIbr?.exempt === true && qIbr?.active_users === 32, 'quota da isenta diz e
 
 // ── provision_company com 0 lojas ────────────────────────────────────────────
 check(JSON.stringify(definemProvisionHoje) === JSON.stringify(DEFINEM_PROVISION),
-  `as migrations que definem provision_company são as conhecidas — a viva é a de 20260720_cnpj_cadastro` +
+  `as migrations que definem provision_company são as conhecidas — a viva é a v4 (20260924_slugs_reservados_landing, sobre a v3)` +
   (JSON.stringify(definemProvisionHoje) === JSON.stringify(DEFINEM_PROVISION) ? '' : ` (hoje: ${definemProvisionHoje.join(', ')})`));
 
 await db.exec(comoServidor);
