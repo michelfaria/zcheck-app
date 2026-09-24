@@ -10,7 +10,7 @@ import { verifyAdminTokenEdge, ADMIN_COOKIE } from './lib/adminEdgeAuth';
 //    CRON_SECRET dentro da própria rota.
 const ADMIN_PUBLIC = new Set([
   '/admin/login', '/api/admin/login', '/api/admin/logout', '/api/admin/provision',
-  '/api/admin/cron/alerts', '/api/admin/cron/briefing',
+  '/api/admin/cron/alerts', '/api/admin/cron/briefing', '/api/admin/cron/billing-sync',
 ]);
 
 export async function middleware(request) {

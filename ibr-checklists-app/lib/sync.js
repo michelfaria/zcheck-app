@@ -272,11 +272,13 @@ export async function fetchUsers(seedUsers) {
 //     ninguém ter pedido. Aconteceu de verdade em 30/07/2026, num script de
 //     teste com a lista errada: 5 usuários de uma empresa foram apagados de uma
 //     vez. Exclusão agora só acontece com o id na mão.
+//
+// O cache offline só é gravado DEPOIS de o servidor aceitar. Antes ele era
+// escrito na entrada da função: um INSERT recusado (sem vaga livre, PIN
+// faltando, RLS) deixava no IndexedDB um usuário que nunca existiu, e o
+// fallback offline o mostrava na lista até o próximo fetchUsers bem-sucedido.
+// Em falha o cache fica como estava — que é o estado verdadeiro anterior.
 export async function saveUsers(users, { changedIds = null, deleteIds = null } = {}) {
-  // Cache SEM os PINs: ele é só o fallback de leitura offline (fetchUsers já
-  // descarta `pin` ao ler), e não há por que deixar segredo em repouso no
-  // IndexedDB do aparelho.
-  await cache.set('ibr_users', users.map(({ pin: _pin, ...u }) => u));
   try {
     const baseRow = u => ({
       id: u.id,
@@ -302,6 +304,10 @@ export async function saveUsers(users, { changedIds = null, deleteIds = null } =
     }
 
     const falhas = [];
+    // Recusa do trigger de vagas (`users_seat_quota`). Sai separada das outras
+    // falhas porque a tela não mostra um toast para ela: abre a confirmação de
+    // contratar vaga (usuário novo) ou o bloqueio de reativação.
+    let semVaga = null;
     for (const u of toSave) {
       if (existingIds.has(u.id)) {
         // `pin` só entra quando um PIN novo foi digitado. Sem ele o PIN gravado
@@ -310,15 +316,24 @@ export async function saveUsers(users, { changedIds = null, deleteIds = null } =
         const patch = baseRow(u);
         if (u.pin) patch.pin = u.pin;
         const { error } = await db().from('users').update(patch).eq('id', u.id);
-        if (error) { console.error('saveUsers: update', u.name, error); falhas.push(`${u.name}: ${error.message}`); }
+        if (error) {
+          console.error('saveUsers: update', u.name, error);
+          semVaga = semVaga || asQuotaError(error);
+          falhas.push(`${u.name}: ${error.message}`);
+        }
       } else {
         // `users.pin` é NOT NULL e não tem default: usuário novo sem PIN é
         // recusado pelo banco com 23502. Os formulários já exigem 4 dígitos.
         if (!u.pin) { falhas.push(`${u.name}: usuário novo precisa de um PIN de 4 dígitos`); continue; }
         const { error } = await db().from('users').insert({ ...baseRow(u), pin: u.pin });
-        if (error) { console.error('saveUsers: insert', u.name, error); falhas.push(`${u.name}: ${error.message}`); }
+        if (error) {
+          console.error('saveUsers: insert', u.name, error);
+          semVaga = semVaga || asQuotaError(error);
+          falhas.push(`${u.name}: ${error.message}`);
+        }
       }
     }
+    if (semVaga) throw semVaga;
     if (falhas.length) throw new Error(falhas.join(' | '));
 
     // Exclusão: só os ids pedidos, e só os que existem. Nunca um diff.
@@ -345,10 +360,136 @@ export async function saveUsers(users, { changedIds = null, deleteIds = null } =
         throw new Error(`o servidor não confirmou a gravação de ${faltando.map(u => `"${u.name}"`).join(', ')} — recarregue e tente de novo`);
       }
     }
+
+    // Só agora o servidor aceitou tudo. Cache SEM os PINs: ele é só o
+    // fallback de leitura offline (fetchUsers já descarta `pin` ao ler), e não
+    // há por que deixar segredo em repouso no IndexedDB do aparelho.
+    await cache.set('ibr_users', users.map(({ pin: _pin, ...u }) => u));
   } catch (e) {
     console.warn('saveUsers: Supabase error', e);
     throw e;
   }
+}
+
+// ── Vagas de usuário ──────────────────────────────────────────────────────────
+//
+// Regra de 23/09/2026 (lib/plans.js): cada loja ativa inclui 10 vagas, somadas
+// na empresa, e vaga adicional custa R$ 17,00/mês. Quem trava é o banco — o
+// trigger `users_seat_quota` recusa o usuário que passaria da capacidade, por
+// QUALQUER caminho (este saveUsers, a RPC de aprovação, o REST direto). O
+// cliente só lê a cota para mostrar o medidor e perguntar ANTES, e trata a
+// recusa do banco quando a pergunta não deu tempo (duas gestões ao mesmo tempo).
+
+// Prefixo com que o trigger assina a recusa. A mensagem vem em português para
+// humanos; o prefixo é o que a máquina reconhece.
+export const QUOTA_ERROR_PREFIX = 'ZC_QUOTA';
+
+/**
+ * Erro do banco → erro de vaga, ou null se for outra coisa.
+ *
+ * O PostgREST devolve `{ code: 'P0001', message: 'ZC_QUOTA: …', details:
+ * '{"capacity":N,"active":N,"action":"insert"|"reactivate"}' }`. Devolve um
+ * Error com `code = 'ZC_QUOTA'`, a mensagem sem o prefixo e `quota` = o
+ * detalhe já lido (null se não vier JSON). Aceita também um erro já convertido
+ * ou embrulhado por outra camada (o prefixo continua na mensagem).
+ */
+export function asQuotaError(err) {
+  if (!err) return null;
+  if (err.code === QUOTA_ERROR_PREFIX) return err;
+  const msg = String(err.message || '');
+  if (!msg.includes(QUOTA_ERROR_PREFIX)) return null;
+  let detalhe = null;
+  try {
+    detalhe = typeof err.details === 'string' ? JSON.parse(err.details) : (err.details || null);
+  } catch { detalhe = null; }
+  const e = new Error(msg.slice(msg.indexOf(QUOTA_ERROR_PREFIX) + QUOTA_ERROR_PREFIX.length).replace(/^:\s*/, ''));
+  e.code = QUOTA_ERROR_PREFIX;
+  e.quota = detalhe && typeof detalhe === 'object' ? detalhe : null;
+  return e;
+}
+
+export const isQuotaError = (err) => !!asQuotaError(err);
+
+// jsonb da RPC → números de verdade. `extra_seat_price` vem do banco, mas a
+// tela mostra sempre EXTRA_USER_PRICE de lib/plans.js (o mesmo 17).
+function normalizeQuota(q) {
+  if (!q || typeof q !== 'object') return null;
+  const n = (v) => Math.max(0, Math.floor(Number(v) || 0));
+  return {
+    active_users: n(q.active_users),
+    active_units: n(q.active_units),
+    included_seats: n(q.included_seats),
+    extra_seats: n(q.extra_seats),
+    capacity: n(q.capacity),
+    free_seats: Math.floor(Number(q.free_seats) || 0), // pode ser negativo (loja removida)
+    extra_seat_price: Number(q.extra_seat_price) || 0,
+    exempt: q.exempt === true,
+    extra_seats_in_use: n(q.extra_seats_in_use),
+  };
+}
+
+/**
+ * Cota de vagas da empresa logada — `company_user_quota()`.
+ *
+ * Sem parâmetro de propósito: para `authenticated` a função usa SEMPRE a
+ * empresa do token e ignora o que vier. Devolve null quando não dá para saber:
+ * função ausente (migration 20260923_limite_usuarios ainda não colada —
+ * PGRST202/404/42883) ou falha de rede. Null = a tela não mostra medidor nem
+ * trava nada; o banco continua decidindo. Inventar uma cota aqui travaria
+ * gente de verdade por um número que ninguém mediu.
+ */
+export async function fetchUserQuota() {
+  try {
+    const { data, error, status } = await db().rpc('company_user_quota');
+    if (error) {
+      const ausente = error.code === 'PGRST202' || error.code === '42883' || status === 404;
+      if (ausente) console.warn('[Supabase] company_user_quota ausente — rode 20260923_limite_usuarios.sql');
+      else console.warn('[Supabase] fetchUserQuota falhou:', error.message);
+      return null;
+    }
+    return normalizeQuota(data);
+  } catch (e) {
+    console.warn('[Supabase] fetchUserQuota falhou:', e?.message);
+    return null;
+  }
+}
+
+/**
+ * Muda as vagas ADICIONAIS contratadas — POST /api/billing/seats.
+ *
+ * `extraSeats` é o total desejado, não um delta: duas telas abertas que
+ * pedissem "+1" cada contratariam 2 sem ninguém ter visto o número. E
+ * `expected` é o número contratado que ESTA tela viu: se outra sessão mudou
+ * no meio, a rota recusa com 'stale' (e `current`) em vez de aplicar um alvo
+ * calculado em cima de um número velho. Mesmo padrão de autenticação do
+ * checkout (Bearer com o token da sessão).
+ *
+ * Nunca lança. Devolve o corpo da rota com `ok`:
+ *   · ok: true  → { quota, amount, adjusted, pending } (ou { exempt: true })
+ *   · ok: false → { reason, min?, current? } — reason ∈ forbidden |
+ *     below_in_use (com `min`) | stale (com `current`) | invalid_seats |
+ *     unauthorized | network | server_error | …
+ */
+export async function setExtraSeats(extraSeats, { expected = null } = {}) {
+  const token = getSessionToken();
+  if (!token) return { ok: false, reason: 'unauthorized' };
+  let res;
+  try {
+    res = await fetch('/api/billing/seats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(expected != null ? { extraSeats, expectedExtraSeats: expected } : { extraSeats }),
+    });
+  } catch {
+    return { ok: false, reason: 'network' };
+  }
+  const body = await res.json().catch(() => null);
+  if (res.ok && body?.ok) {
+    return { ...body, ok: true, quota: normalizeQuota(body.quota) };
+  }
+  const reason = body?.reason
+    || (res.status === 401 ? 'unauthorized' : res.status === 403 ? 'forbidden' : 'server_error');
+  return { ok: false, reason, min: body?.min ?? null, current: body?.current ?? null, status: res.status };
 }
 
 // ── Completions ───────────────────────────────────────────────────────────────

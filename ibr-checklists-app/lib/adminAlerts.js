@@ -18,7 +18,7 @@ export async function runAlertRules(db) {
   const yesterday = spDaysAgo(1);
   const weekKey = Math.floor(Date.parse(today) / (7 * 864e5)); // janela semanal p/ regra 4
 
-  const [units, daily, userCompletions, abandons, semCnpj] = await Promise.all([
+  const [units, daily, userCompletions, abandons, semCnpj, seats, accounts] = await Promise.all([
     db.from('admin_unit_health').select('*'),
     db.from('admin_completions_daily').select('*').gte('day', spDaysAgo(9)).limit(5000),
     db.from('admin_user_completions').select('*').limit(5000),
@@ -30,6 +30,12 @@ export async function runAlertRules(db) {
     // não há cobrança nem trava de trial. `is('cnpj', null)` só funciona depois
     // da migration; o erro é tolerado abaixo para o motor não parar.
     db.from('companies').select('id, name').is('cnpj', null).eq('active', true),
+    // Vagas (migration 20260923_limite_usuarios): colunas novas da view e a
+    // conta de cobrança. Antes da migration as duas consultas falham e R7/R8
+    // simplesmente não rodam — como o R6 acima.
+    db.from('admin_company_health')
+      .select('company_id, name, active, subscription_status, active_users, included_seats, extra_seats, seat_capacity'),
+    db.from('billing_accounts').select('company_id, exempt, adjust_pending'),
   ]);
   const firstErr = [units, daily, userCompletions, abandons].find(r => r.error);
   if (firstErr) throw new Error(firstErr.error.message);
@@ -146,6 +152,55 @@ export async function runAlertRules(db) {
       company_id: c.id,
       message: `${c.name || c.id} está sem CNPJ cadastrado — sem identidade fiscal não há cobrança nem trava de teste.`,
       dedupe_key: `company_without_cnpj|${c.id}|w${weekKey}`,
+    });
+  }
+
+  // ── R7: usuários ativos acima da capacidade de vagas ──────────────────────
+  // A trava do banco impede ENTRAR acima da capacidade, mas não tira ninguém:
+  // loja removida/desativada (ou que ainda não estreou) baixa a franquia com
+  // todo mundo ativo. A empresa fica sem poder cadastrar nem reativar, e a
+  // fatura está abaixo do uso. Semanal, como o R6. Isenta (cortesia) não conta.
+  const accountById = new Map((accounts.error ? [] : accounts.data || []).map(a => [a.company_id, a]));
+  const seatRows = seats.error ? [] : seats.data || [];
+  const companyName = new Map(seatRows.map(s => [s.company_id, s.name || s.company_id]));
+  const companyStatus = new Map(seatRows.map(s => [s.company_id, s.subscription_status ?? null]));
+  for (const s of seatRows) {
+    if (s.active === false || accountById.get(s.company_id)?.exempt) continue;
+    // Nulo não é zero: capacidade ausente viraria "0 vagas" e alarme falso.
+    if (s.active_users == null || s.seat_capacity == null) continue;
+    const active = Number(s.active_users);
+    const capacity = Number(s.seat_capacity);
+    if (!Number.isFinite(active) || !Number.isFinite(capacity) || active <= capacity) continue;
+    alerts.push({
+      severity: 'warning',
+      rule: 'seat_quota_exceeded',
+      company_id: s.company_id,
+      message: `${s.name || s.company_id} tem ${active} usuários ativos para ${capacity} vagas `
+        + `(${s.included_seats} da franquia + ${s.extra_seats} adicionais) — provável loja removida ou desativada. `
+        + 'Ninguém novo entra até suspender usuários ou contratar vagas.',
+      dedupe_key: `seat_quota_exceeded|${s.company_id}|w${weekKey}`,
+    });
+  }
+
+  // ── R8: ajuste de valor da assinatura pendente no Mercado Pago ────────────
+  // Vagas contratadas ou lojas ativas mudaram numa assinatura ativa e o valor
+  // no MP não acompanhou: flag MP_ADJUST_ENABLED desligada, PUT que falhou ou
+  // ciclo desconhecido. O cliente paga diferente do contratado até alguém agir.
+  // Só assinatura ATIVA: o billing-sync só visita as ativas, então a pendência
+  // de quem cancelou (ou entrou em atraso) nunca seria limpa, e o alerta
+  // voltaria toda semana por uma assinatura que não cobra mais. Status
+  // desconhecido (view sem a linha) não alerta — mesma regra do R7.
+  for (const a of accounts.error ? [] : accounts.data || []) {
+    if (!a.adjust_pending || a.exempt) continue;
+    if (companyStatus.get(a.company_id) !== 'active') continue;
+    alerts.push({
+      severity: 'warning',
+      rule: 'billing_adjust_pending',
+      company_id: a.company_id,
+      message: `${companyName.get(a.company_id) || a.company_id}: o valor da assinatura no Mercado Pago precisa `
+        + 'ser ajustado (vagas ou lojas ativas mudaram) — MP_ADJUST_ENABLED desligada ou o ajuste falhou. '
+        + 'Veja o billing-sync.',
+      dedupe_key: `billing_adjust_pending|${a.company_id}|w${weekKey}`,
     });
   }
 

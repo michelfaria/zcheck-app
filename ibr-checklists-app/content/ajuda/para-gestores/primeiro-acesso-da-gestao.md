@@ -3,7 +3,7 @@ title: "Primeiro acesso da gestão: tour e biblioteca de modelos"
 description: "O que fazer no primeiro login da gestão: tour guiado e criação dos primeiros checklists a partir da biblioteca."
 category: para-gestores
 order: 1
-updatedAt: "2026-07-20"
+updatedAt: "2026-09-23"
 ---
 
 Sua empresa acabou de entrar no ZCheck? Este é o caminho recomendado para sair do zero e ter a operação rodando no mesmo dia.
@@ -28,6 +28,7 @@ Empresa nova começa sem checklists — e a forma mais rápida de resolver é us
 
 - Confira **lojas, setores e tipos** em [Gerenciar → Estrutura](/ajuda/para-gestores/lojas-setores-e-tipos) e suba o **logo** da empresa.
 - Compartilhe o **código da empresa** com a equipe e peça para cada um [solicitar acesso](/ajuda/primeiros-passos/como-solicitar-acesso) — você aprova na aba [Usuários](/ajuda/para-gestores/aprovar-acessos-e-gerenciar-usuarios).
+- Seu plano inclui **10 usuários por loja**, somados na empresa. Precisa de mais gente? Contrate vagas adicionais em [Plano e vagas](/ajuda/para-gestores/planos-e-vagas).
 
 > 💡 Comece pequeno: um checklist de Abertura e um de Fechamento por setor já mudam a rotina. Refine os itens depois de uma semana de uso real.
 

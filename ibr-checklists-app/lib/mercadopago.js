@@ -19,12 +19,36 @@ function authHeaders() {
   };
 }
 
+// Toda chamada ao MP passa por aqui e NUNCA lança: erro de rede (DNS, socket,
+// timeout) vira { ok:false, status:0, networkError:true }, igual a uma
+// resposta de erro. Antes o `fetch` rejeitado escapava de quem chamava — o
+// ajuste de valor deixava a intenção nova gravada sem restaurar nem marcar
+// pendência, a rota de vagas respondia 500 com as vagas já salvas e o cron
+// parava no meio da lista. status 0/429/5xx = passageiro (vale tentar de novo).
+async function mpRequest(path, init = {}) {
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, { ...init, headers: authHeaders() });
+  } catch (e) {
+    return { ok: false, status: 0, body: null, networkError: true, message: e?.message || String(e) };
+  }
+  const body = await res.json().catch(() => null);
+  return res.ok ? { ok: true, status: res.status, body } : { ok: false, status: res.status, body };
+}
+
+/** Falha que vale tentar de novo: rede (0), limite (429) ou erro do MP (5xx). */
+export function mpTransient(r) {
+  return !!r && !r.ok && (r.status === 0 || r.status === 429 || r.status >= 500);
+}
+
 // Cria a assinatura. Retorna { ok, id, initPoint } ou { ok:false, status, body }.
-// frequencyMonths: 1 (mensal, padrão) ou 12 (anual — cobrança única por ano).
+// frequencyMonths: a periodicidade da COBRANÇA no cartão. Hoje é sempre 1: nos
+// DOIS planos o MP cobra todo mês — o anual é compromisso de 12 meses com
+// preço menor por loja, não uma cobrança única por ano (lib/plans.js). O
+// parâmetro fica para um eventual anual à vista; nada deve assumir 12 aqui.
 export async function createPreapproval({ amount, reason, payerEmail, companyId, backUrl, frequencyMonths = 1 }) {
-  const res = await fetch(`${API}/preapproval`, {
+  const r = await mpRequest('/preapproval', {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify({
       reason,
       external_reference: companyId,
@@ -39,31 +63,39 @@ export async function createPreapproval({ amount, reason, payerEmail, companyId,
       },
     }),
   });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) return { ok: false, status: res.status, body };
-  return { ok: true, id: body?.id, initPoint: body?.init_point || body?.sandbox_init_point };
+  if (!r.ok) return r;
+  return { ok: true, id: r.body?.id, initPoint: r.body?.init_point || r.body?.sandbox_init_point };
 }
 
 export async function getPreapproval(id) {
-  const res = await fetch(`${API}/preapproval/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  const body = await res.json().catch(() => null);
-  return res.ok ? { ok: true, body } : { ok: false, status: res.status, body };
+  return mpRequest(`/preapproval/${encodeURIComponent(id)}`);
 }
 
 export async function getAuthorizedPayment(id) {
-  const res = await fetch(`${API}/authorized_payments/${encodeURIComponent(id)}`, { headers: authHeaders() });
-  const body = await res.json().catch(() => null);
-  return res.ok ? { ok: true, body } : { ok: false, status: res.status, body };
+  return mpRequest(`/authorized_payments/${encodeURIComponent(id)}`);
 }
 
 export async function cancelPreapproval(id) {
-  const res = await fetch(`${API}/preapproval/${encodeURIComponent(id)}`, {
+  return mpRequest(`/preapproval/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    headers: authHeaders(),
     body: JSON.stringify({ status: 'cancelled' }),
   });
-  const body = await res.json().catch(() => null);
-  return res.ok ? { ok: true, body } : { ok: false, status: res.status, body };
+}
+
+// Troca o valor mensal de uma assinatura existente (vagas adicionais ou lojas
+// ativas mudaram). Vale da PRÓXIMA fatura, sem pró-rata — o MP não cobra
+// diferença do mês corrente. Só é chamada atrás de MP_ADJUST_ENABLED === '1'
+// (lib/billingServer.js): o comportamento do PUT (aumento sem reconsentimento
+// do pagador, quando o valor novo passa a valer) precisa ser confirmado no
+// sandbox antes de ligar. O MP re-dispara o webhook 'preapproval' depois do
+// PUT; o webhook resolve pela intenção em billing_checkouts, nunca pelo valor.
+export async function updatePreapprovalAmount(id, amount) {
+  return mpRequest(`/preapproval/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      auto_recurring: { transaction_amount: Number(amount), currency_id: 'BRL' },
+    }),
+  });
 }
 
 // Valida a assinatura x-signature do webhook. Template do MP:

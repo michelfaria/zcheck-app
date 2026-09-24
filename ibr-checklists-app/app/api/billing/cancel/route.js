@@ -1,11 +1,19 @@
 import { cancelPreapproval, mpConfigured } from '../../../../lib/mercadopago';
-import { authCompany, serviceClient, json } from '../../../../lib/billingServer';
+import {
+  authCompany, serviceClient, json, requireGestao, preapprovalOwnership,
+} from '../../../../lib/billingServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Cancela a assinatura no Mercado Pago. "Cancele quando quiser, sem multa": o
 // acesso segue até current_period_end (o webhook não é necessário para isto).
+//
+// O id vem de `companies.mp_preapproval_id`, que o próprio tenant consegue
+// gravar (policy FOR ALL) — e o anon lê o id das outras empresas. Por isso o
+// dono é conferido NO MP (external_reference) antes de cancelar: sem isso, um
+// token de A cancelava a assinatura de B. E o papel é relido no banco.
+
 export async function POST(request) {
   if (!mpConfigured()) return json({ ok: false, reason: 'server_misconfigured' }, 500);
 
@@ -17,9 +25,22 @@ export async function POST(request) {
   const supabase = serviceClient();
   if (!supabase) return json({ ok: false, reason: 'server_misconfigured' }, 500);
 
+  const negado = await requireGestao(supabase, auth);
+  if (negado) return json({ ok: false, reason: negado.reason }, negado.status);
+
   const { data: co } = await supabase
     .from('companies').select('mp_preapproval_id').eq('id', auth.companyId).maybeSingle();
   if (!co?.mp_preapproval_id) return json({ ok: false, reason: 'no_subscription' }, 400);
+
+  const own = await preapprovalOwnership(co.mp_preapproval_id, auth.companyId);
+  if (!own.ok && !own.notFound) {
+    console.error('cancel: assinatura não conferida no MP:', auth.companyId, own.httpStatus);
+    return json({ ok: false, reason: 'mp_error' }, 502);
+  }
+  if (!own.ok || !own.owned) {
+    console.error('cancel: mp_preapproval_id não é desta empresa no MP — nada cancelado:', auth.companyId);
+    return json({ ok: false, reason: 'no_subscription' }, 400);
+  }
 
   const res = await cancelPreapproval(co.mp_preapproval_id);
   if (!res.ok) {

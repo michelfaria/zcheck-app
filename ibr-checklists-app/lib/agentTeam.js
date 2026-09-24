@@ -1,8 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { spDaysAgo } from './adminApi';
 import { todayStr, weekdayOf } from './dates';
-import { PRICE_PER_UNIT, TRIAL_DAYS, monthlyValueFor, billingState } from './plans';
+import {
+  PRICE_PER_UNIT, TRIAL_DAYS, INCLUDED_USERS_PER_UNIT, EXTRA_USER_PRICE,
+  monthlyValueFor, billingState, formatBRL,
+} from './plans';
 import { sendPlainEmail } from './email';
+import { trialExtensionBlocked, trialExtensionMessage } from './seats';
 
 // ============================================================================
 // ZCheck Core — Time de Gestão de IA (Fase 2.1)
@@ -29,7 +33,15 @@ operacionais para negócios físicos (restaurantes, hotéis, varejo). Tagline:
 "Faça bem feito. Todo dia." Modelo de negócio: preço POR LOJA — plano anual
 R$${PRICE_PER_UNIT.annual}/loja/mês (12 meses, o herói) ou mensal
 R$${PRICE_PER_UNIT.monthly}/loja/mês sem fidelidade; trial de ${TRIAL_DAYS} dias.
-Piloto: IBR Group (3 lojas em Ilhabela/SP). Fundador: Michel (único humano).
+Vagas de usuário (desde 23/09/2026): cada loja ativa inclui ${INCLUDED_USERS_PER_UNIT} vagas,
+SOMADAS na empresa (2 lojas = ${INCLUDED_USERS_PER_UNIT * 2} vagas, piso de 1 loja); ocupa vaga todo
+usuário não suspenso, de qualquer papel. Vaga adicional ${formatBRL(EXTRA_USER_PRICE, { cents: true })}/mês cada,
+igual no anual e no mensal (sem o desconto do anual). A fatura segue as vagas
+CONTRATADAS, não o uso: suspender libera a vaga mas não baixa a fatura; só a
+diretoria reduz vagas adicionais (nunca a franquia, nunca abaixo das em uso),
+valendo da próxima fatura. Usuários NÃO são ilimitados — nunca prometa isso.
+Piloto: IBR Group (3 lojas em Ilhabela/SP), conta cortesia isenta de vagas e
+cobrança. Fundador: Michel (único humano).
 
 Objetivo do time: escalar adoção e receita com o MÍNIMO de intervenção do
 fundador, e evoluir o produto com base nos dados de uso.
@@ -41,7 +53,8 @@ Regras inegociáveis:
 - Quando uma ação concreta do sistema resolver (estender trial, follow-up,
   desativar empresa), proponha-a explicitamente na seção "AÇÕES PROPOSTAS"
   no formato: TIPO | alvo | justificativa curta com o dado que a sustenta.
-  Tipos disponíveis: extend_trial, draft_message (rascunho p/ WhatsApp),
+  Tipos disponíveis: extend_trial (só empresa em TESTE — assinante, em
+  atraso ou com período pago é recusado), draft_message (rascunho p/ WhatsApp),
   send_followup (E-MAIL REAL ao contato da empresa — inclua o texto completo),
   deactivate_company, activate_company, resolve_alert, save_memory, set_goal,
   update_prompt (diretriz CURTA de refino para o prompt de um agente — vira
@@ -173,10 +186,11 @@ async function systemFor(db, agentId) {
 
 // ── Metas com valor atual (usado no snapshot e no painel) ───────────────────
 export async function goalsWithCurrent(db) {
-  const [{ data: goals }, { data: health }, { data: companies }] = await Promise.all([
+  const [{ data: goals }, { data: health }, { data: companies }, accounts] = await Promise.all([
     db.from('agent_goals').select('*').eq('status', 'active').order('created_at'),
     db.from('admin_company_health').select('company_id, completions_7d, last_activity'),
     db.from('companies').select('id, plan_tier, unit_limit, subscription_status, trial_ends_at'),
+    loadAccounts(db),
   ]);
   if (!goals?.length) return [];
 
@@ -184,7 +198,8 @@ export async function goalsWithCurrent(db) {
   let mrr = 0, paying = 0, trials = 0;
   for (const c of companies || []) {
     const b = billingState(c, now);
-    const value = monthlyValueFor(c);
+    const acc = accounts.get(c.id);
+    const value = acc?.exempt ? 0 : monthlyValueFor(c, acc);
     if (b.state === 'active' && value > 0) { mrr += value; paying += 1; }
     if (b.state === 'trialing') trials += 1;
   }
@@ -202,10 +217,19 @@ export async function goalsWithCurrent(db) {
   }));
 }
 
+// Conta de cobrança por empresa (vagas contratadas, isenção, valor real no
+// MP). Antes da migration 20260923 a tabela não existe: mapa vazio, e o MRR cai
+// no cálculo legado de monthlyValueFor.
+async function loadAccounts(db) {
+  const { data, error } = await db.from('billing_accounts')
+    .select('company_id, exempt, extra_seats, billed_amount, billed_cycle, adjust_pending');
+  return new Map((error ? [] : data || []).map(a => [a.company_id, a]));
+}
+
 // ── Snapshot de dados (o que o time enxerga) ─────────────────────────────────
 export async function buildSnapshot(db) {
   const since14 = spDaysAgo(14);
-  const [companies, health, units, daily, eventsDaily, userComp, failed, alerts, ranking] =
+  const [companies, health, units, daily, eventsDaily, userComp, failed, alerts, ranking, accounts] =
     await Promise.all([
       db.from('companies').select('id, name, slug, active, plan_tier, unit_limit, subscription_status, trial_ends_at, current_period_end, onboarded_at, contact_email, contact_whatsapp'),
       db.from('admin_company_health').select('*'),
@@ -217,6 +241,7 @@ export async function buildSnapshot(db) {
       db.from('admin_alerts').select('agent:rule, severity, message, created_at').eq('resolved', false)
         .order('created_at', { ascending: false }).limit(10),
       db.from('admin_user_ranking').select('*').order('completions_30d', { ascending: false }).limit(10),
+      loadAccounts(db),
     ]);
 
   const healthById = new Map((health.data || []).map(h => [h.company_id, h]));
@@ -224,12 +249,24 @@ export async function buildSnapshot(db) {
   let mrr = 0;
   const empresas = (companies.data || []).map(c => {
     const h = healthById.get(c.id) || {};
+    const acc = accounts.get(c.id);
     const b = billingState(c, now);
-    if (b.state === 'active') mrr += monthlyValueFor(c);
+    // valor_mensal = o que o MP cobra (já com vagas adicionais); isenta = 0.
+    const valorMensal = b.state === 'active' && !acc?.exempt ? monthlyValueFor(c, acc) : 0;
+    mrr += valorMensal;
+    const temVagas = h.active_users != null && h.seat_capacity != null;
     return {
       id: c.id, nome: c.name, ativa: c.active, estado_billing: b.state,
       tier: c.plan_tier, trial_dias_restantes: b.state === 'trialing' ? b.daysLeft : null,
+      // `usuarios` conta suspensos também; quem ocupa vaga é `usuarios_ativos`.
       unidades: h.units || 0, usuarios: h.users || 0,
+      usuarios_ativos: temVagas ? Number(h.active_users) : null,
+      vagas_inclusas: temVagas ? Number(h.included_seats) : null,
+      vagas_adicionais: Number(acc?.extra_seats ?? h.extra_seats ?? 0),
+      capacidade: temVagas ? Number(h.seat_capacity) : null,
+      isenta_de_vagas: acc?.exempt === true,
+      ajuste_de_valor_pendente: acc?.adjust_pending === true,
+      valor_mensal: valorMensal,
       checklists_7d: h.completions_7d || 0, checklists_30d: h.completions_30d || 0,
       ultima_atividade: h.last_activity || null,
       tem_email_contato: !!c.contact_email, tem_whatsapp_contato: !!c.contact_whatsapp,
@@ -442,8 +479,12 @@ export async function executeAction(db, action) {
     }
     if (type === 'extend_trial') {
       const { data: co } = await db.from('companies')
-        .select('id, trial_ends_at').eq('id', payload.company_id).maybeSingle();
+        .select('id, trial_ends_at, subscription_status, current_period_end')
+        .eq('id', payload.company_id).maybeSingle();
       if (!co) return { ok: false, error: `empresa ${payload.company_id} não existe` };
+      // Mesma trava do Core: assinante não vira 'trialing' (lib/seats.js).
+      const bloqueio = trialExtensionBlocked(co);
+      if (bloqueio) return { ok: false, error: trialExtensionMessage(bloqueio) };
       const base = Math.max(Date.now(), co.trial_ends_at ? new Date(co.trial_ends_at).getTime() : 0);
       const newEnd = new Date(base + 7 * 864e5).toISOString();
       const { error } = await db.from('companies')

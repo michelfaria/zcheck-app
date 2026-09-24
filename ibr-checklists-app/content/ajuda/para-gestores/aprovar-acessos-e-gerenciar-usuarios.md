@@ -3,7 +3,7 @@ title: "Como aprovar solicitações e gerenciar usuários"
 description: "Aprove novos colaboradores (com selfie), defina papel e loja, suspenda acessos e aprove alterações de dados."
 category: para-gestores
 order: 6
-updatedAt: "2026-07-20"
+updatedAt: "2026-09-23"
 ---
 
 A aba **Usuários** (perfil diretoria) concentra o controle de quem acessa o app.
@@ -17,6 +17,8 @@ Quando alguém [solicita acesso](/ajuda/primeiros-passos/como-solicitar-acesso),
 3. Se precisar, corrija o nome ou defina um novo PIN.
 4. Toque em **Aprovar cadastro**. A pessoa já pode fazer login com o PIN que criou.
 
+> 💡 Cada loja do plano inclui 10 vagas de usuário, somadas na empresa. Sem vaga livre, aprovar um cadastro ou criar um usuário pede a confirmação de uma vaga adicional (R$ 17,00/mês). Veja [Plano e vagas](/ajuda/para-gestores/planos-e-vagas).
+
 Solicitações recusadas também ficam registradas — a pessoa vê o status na consulta por CPF.
 
 <!-- TODO: screenshot -->
@@ -28,7 +30,7 @@ Pedidos feitos pela equipe no ícone **⚙️** do app (trocar nome, telefone, P
 ## Gerenciar a equipe
 
 - **Criar/editar** usuário: nome, papel, loja, setor e PIN.
-- **Suspender** um acesso: a pessoa some da lista de login na hora (útil em desligamentos). Dá para reativar depois.
+- **Suspender** um acesso: a pessoa some da lista de login na hora (útil em desligamentos) e a vaga dela fica livre para outra pessoa. Dá para reativar depois, desde que haja vaga livre.
 - O ponto **verde** ao lado do nome mostra quem está online agora.
 
 > ⚠️ Papel define poder: gerência e diretoria veem todas as lojas e editam checklists. Dê a cada pessoa o menor papel que resolve o trabalho dela.
