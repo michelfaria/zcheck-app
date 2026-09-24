@@ -1,4 +1,9 @@
 -- ============================================================================
+-- LEITURA SUBSTITUÍDA por 20260924_colaboradores_selfie_diretoria.sql, que
+-- derruba a `colaboradores_signed_read` criada aqui: ela deixava a anon key
+-- (pública) listar e baixar a selfie de todos os cadastros. NÃO rodar esta de
+-- novo — o bloco (2) recriaria a policy.
+--
 -- Torna o bucket `colaboradores` privado.
 --
 -- Contexto: o bucket guarda a selfie enviada no /cadastro, e até esta migration
