@@ -154,7 +154,7 @@ export default function ComecarPage() {
     wrong_code: 'Código incorreto. Confira o e-mail.',
     expired: 'O código expirou. Peça um novo.',
     rate_limited: 'Muitas tentativas. Peça um novo código.',
-    not_found: 'Sessão de cadastro não encontrada. Recomece.',
+    not_found: 'Este código não vale mais — o e-mail pode não ter saído. Toque em "Reenviar código".',
     already_used: 'Este cadastro já foi usado. Recomece.',
   }[reason] || 'Não foi possível validar o código. Tente novamente.');
 
@@ -304,7 +304,7 @@ export default function ComecarPage() {
         {step === 2 && (
           <div className="space-y-4">
             <h2 style={{ fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 4 }}>Digite o código</h2>
-            <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Enviamos um código de 6 dígitos para <strong>{email}</strong>.</p>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>Enviamos um código de 6 dígitos para <strong>{email}</strong>. Pode levar um minuto — confira também a caixa de spam.</p>
             <input type="tel" inputMode="numeric" maxLength={6} value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••"
               style={{ width: '100%', fontSize: 28, fontWeight: 700, letterSpacing: '0.4em', color: C.ink, background: 'white', padding: '12px 14px', border: `1.5px solid ${C.border}`, borderRadius: 10, outline: 'none', textAlign: 'center' }} />

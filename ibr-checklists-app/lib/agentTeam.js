@@ -5,7 +5,7 @@ import {
   PRICE_PER_UNIT, TRIAL_DAYS, INCLUDED_USERS_PER_UNIT, EXTRA_USER_PRICE,
   monthlyValueFor, billingState, formatBRL,
 } from './plans';
-import { sendPlainEmail } from './email';
+import { sendPlainEmail, raiseEmailAlert } from './email';
 import { trialExtensionBlocked, trialExtensionMessage } from './seats';
 
 // ============================================================================
@@ -462,7 +462,10 @@ export async function executeAction(db, action) {
         payload.subject || `ZCheck · um toque rápido sobre a ${co.name || co.id}`,
         payload.message,
       );
-      if (!sent.ok) return { ok: false, error: `Brevo: ${sent.reason}` };
+      if (!sent.ok) {
+        await raiseEmailAlert(db, 'follow-up do time de gestão', sent);
+        return { ok: false, error: `Brevo: ${sent.reason}${sent.detail ? ` — ${sent.detail}` : ''}` };
+      }
       return { ok: true, sent_to: co.contact_email };
     }
     if (type === 'set_goal') {

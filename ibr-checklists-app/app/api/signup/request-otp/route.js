@@ -1,6 +1,6 @@
 import { after } from 'next/server';
 import { verifyTurnstile } from '../../../../lib/turnstile';
-import { sendOtpEmail } from '../../../../lib/email';
+import { sendOtpEmail, raiseEmailAlert } from '../../../../lib/email';
 import {
   json, serviceClient, hashSecret, sixDigitCode, clientIp, isEmail,
   OTP_TTL_MS, MAX_OTP_PER_EMAIL_HOUR, MAX_OTP_PER_IP_HOUR,
@@ -14,7 +14,9 @@ export const dynamic = 'force-dynamic';
 // no banco fica apenas o hash. O envio acontece DEPOIS da resposta (after()):
 // a Brevo era o item mais lento do caminho crítico e o usuário ficava preso
 // no "Aguarde...". Se o envio falhar, a linha é apagada em background — o
-// código não verificável some e não conta contra o rate-limit.
+// código não verificável some e não conta contra o rate-limit — e a falha vira
+// alerta no Core: a tela já disse "Enviamos um código", então sem o alerta
+// ninguém fica sabendo (caso de 24/09/2026: bloqueio de IP do Brevo).
 export async function POST(request) {
   const supabase = serviceClient();
   const pepperOk = hashSecret('probe') !== null;
@@ -76,7 +78,10 @@ export async function POST(request) {
     const sent = await sendOtpEmail(email, code);
     if (!sent.ok) {
       console.error('envio do OTP falhou pós-resposta; apagando signup', data.id, sent.reason);
-      const { error: delError } = await supabase.from('signups').delete().eq('id', data.id);
+      const [{ error: delError }] = await Promise.all([
+        supabase.from('signups').delete().eq('id', data.id),
+        raiseEmailAlert(supabase, 'código do cadastro /comecar', sent),
+      ]);
       if (delError) console.error('não consegui apagar o signup órfão:', delError.message);
     }
   });
