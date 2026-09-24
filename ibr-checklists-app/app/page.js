@@ -640,7 +640,7 @@ export default function LandingPage() {
                 ['“Peça uma cotação.”', 'O preço é público.'],
                 ['“Fale com um consultor.”', 'Comece o teste agora.'],
                 ['Fidelidade na letra miúda.', 'Plano mensal, sem fidelidade. Plano anual: 12 meses.'],
-                ['Taxa de implantação escondida.', 'Sem taxa. Está escrito aqui em cima.'],
+                ['Taxa de implantação escondida.', 'Sem taxa.'],
               ].map(([mercado, zcheck], i) => (
                 <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
                   <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.muted, background: C.bg }}>{mercado}</p>
