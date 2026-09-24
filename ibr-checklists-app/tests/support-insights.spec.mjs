@@ -63,6 +63,20 @@ const daysAgo = d => new Date(NOW - d * 864e5).toISOString();
 }
 
 {
+  // Chave de organização: autentica e mesmo assim não faz chamada. Vem como 400,
+  // o mesmo código de "sem crédito" — por isso precisa de caso próprio.
+  const h = healthFrom({
+    hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
+    lastProbe: { ok: false, error: '400 {"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}' },
+  });
+  assert.equal(h.status, 'inativo');
+  const r = h.reasons.find(x => x.code === 'key_no_workspace');
+  assert.ok(r, 'chave sem workspace não pode ser lida como falta de crédito');
+  assert.ok(!h.reasons.some(x => x.code === 'no_credit'));
+  assert.match(r.fix, /workspace/);
+}
+
+{
   const h = healthFrom({
     hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
     lastProbe: { ok: false, error: '404 model claude-x not found' },

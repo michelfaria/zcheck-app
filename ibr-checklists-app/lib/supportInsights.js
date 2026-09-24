@@ -140,6 +140,18 @@ function probeReason(rawError) {
       fix: 'Gere uma chave nova em console.anthropic.com, atualize ANTHROPIC_API_KEY na Vercel e PUBLIQUE de novo — variável alterada só vale no próximo deploy.',
     };
   }
+  // Chave criada no nível da organização (Admin key): existe, autentica, e
+  // mesmo assim toda chamada volta 400 pedindo o header anthropic-workspace-id.
+  // Aconteceu em 24/09/2026 ao substituir a chave revogada — o erro é 400, então
+  // sem este caso ele seria lido como "sem crédito".
+  if (/not scoped to a workspace|anthropic-workspace-id/.test(msg)) {
+    return {
+      code: 'key_no_workspace',
+      label: 'Chave sem workspace',
+      detail: `A chave autentica, mas não pertence a nenhum workspace: ${error}`,
+      fix: 'No console da Anthropic, entre no workspace (Default) e gere a chave POR DENTRO dele — chave criada no nível da organização não faz chamadas. Depois atualize a variável e publique de novo.',
+    };
+  }
   if (/credit|billing|quota|insufficient/.test(msg)) {
     return {
       code: 'no_credit',
