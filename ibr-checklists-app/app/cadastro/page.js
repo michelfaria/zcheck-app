@@ -27,6 +27,43 @@ function formatPhone(v) {
     .replace(/(\d{5})(\d)/,'$1-$2');
 }
 
+/**
+ * Rascunho do formulário no `sessionStorage`.
+ *
+ * No celular, "Tirar selfie" e "Escolher da galeria" abrem outro app (câmera,
+ * seletor de fotos) e mandam o navegador para segundo plano. Com pouca memória
+ * o sistema mata a aba — e, ao voltar, a página recarrega do zero: nome, CPF,
+ * telefone, e-mail e PIN, digitados ANTES da selfie, sumiam. O rascunho é
+ * gravado a cada tecla e relido ao montar a página.
+ *
+ * `sessionStorage`, não `localStorage`: ele sobrevive ao recarregamento e à
+ * restauração da aba, mas morre com ela. Guardar o PIN e o CPF ali não expõe
+ * nada além do que a própria aba aberta já mostra na tela — e nada fica no
+ * aparelho depois que a aba fecha, o que importa quando o celular é da loja.
+ * O envio com sucesso apaga o rascunho.
+ */
+const RASCUNHO_KEY = 'zc-cadastro-rascunho';
+const CAMPOS_RASCUNHO = ['name', 'cpf', 'phone', 'email', 'pin', 'pinConfirm'];
+
+function lerRascunho() {
+  try {
+    const r = JSON.parse(window.sessionStorage.getItem(RASCUNHO_KEY) || 'null');
+    return r && typeof r === 'object' ? r : null;
+  } catch { return null; }
+}
+
+function gravarRascunho(dados) {
+  try {
+    // Formulário vazio não é rascunho: não deixa chave à toa na sessão.
+    if (CAMPOS_RASCUNHO.every(k => !dados[k])) window.sessionStorage.removeItem(RASCUNHO_KEY);
+    else window.sessionStorage.setItem(RASCUNHO_KEY, JSON.stringify(dados));
+  } catch {} // aba anônima antiga / cota cheia: segue sem rascunho
+}
+
+function apagarRascunho() {
+  try { window.sessionStorage.removeItem(RASCUNHO_KEY); } catch {}
+}
+
 async function notifyGestao(name, companyId) {
   try {
     await fetch(`${SUPABASE_URL}/functions/v1/notify-request`, {
@@ -75,6 +112,39 @@ export default function CadastroPage() {
   const galeriaRef = useRef(null);
   const turnstileRef = useRef(null);
 
+  // Relê o rascunho ao montar (ver RASCUNHO_KEY). Roda no mesmo ciclo em que
+  // `step` sai de null, então o formulário já aparece preenchido.
+  useEffect(() => {
+    const r = lerRascunho();
+    if (!r) return;
+    const texto = (v) => (typeof v === 'string' ? v : '');
+    setName(texto(r.name));
+    setCpf(formatCPF(texto(r.cpf)));
+    setPhone(formatPhone(texto(r.phone)));
+    setEmail(texto(r.email));
+    setPin(texto(r.pin).replace(/\D/g, '').slice(0, 4));
+    setPinConfirm(texto(r.pinConfirm).replace(/\D/g, '').slice(0, 4));
+  }, []);
+
+  // Grava só com o formulário na tela. No primeiro ciclo `step` ainda é null e
+  // os campos ainda estão vazios — gravar ali apagaria o rascunho recém-lido.
+  useEffect(() => {
+    if (step !== 'form') return;
+    gravarRascunho({ name, cpf, phone, email, pin, pinConfirm });
+  }, [step, name, cpf, phone, email, pin, pinConfirm]);
+
+  // Prévia por object URL, não por data URL: `readAsDataURL` copiava a foto
+  // inteira (4–5 MB numa câmera comum) para uma string base64 ~33% maior, no
+  // exato momento em que o navegador volta da câmera com pouca memória — que é
+  // quando o sistema escolhe qual aba matar. O object URL só aponta para o
+  // arquivo que o navegador já tem.
+  useEffect(() => {
+    if (!selfie) { setSelfiePreview(null); return; }
+    const url = URL.createObjectURL(selfie);
+    setSelfiePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selfie]);
+
   // Load Cloudflare Turnstile script
   useEffect(() => {
     if (document.querySelector('script[src*="turnstile"]')) return;
@@ -114,9 +184,6 @@ export default function CadastroPage() {
     }
     setError('');
     setSelfie(file);
-    const reader = new FileReader();
-    reader.onload = () => setSelfiePreview(reader.result);
-    reader.readAsDataURL(file);
   };
 
   const validate = () => {
@@ -163,6 +230,7 @@ export default function CadastroPage() {
       // já está gravada e não pode virar "erro" na cara de quem se cadastrou.
       try { await notifyGestao(name.trim(), companyId); }
       catch (e) { console.error('notifyGestao falhou (solicitação já gravada):', e); }
+      apagarRascunho();
       setStep('success');
     } catch (e) {
       console.error(e);
@@ -291,7 +359,7 @@ export default function CadastroPage() {
           {selfiePreview ? (
             <div style={{ position: 'relative', marginBottom: 0 }}>
               <img src={selfiePreview} alt="Selfie" style={{ width: '100%', maxHeight: 280, objectFit: 'cover', borderRadius: 10, display: 'block' }} />
-              <button onClick={() => { setSelfie(null); setSelfiePreview(null); }} style={{
+              <button onClick={() => setSelfie(null)} style={{
                 position: 'absolute', top: 8, right: 8, background: 'white',
                 border: '1px solid ' + C.border, borderRadius: 20, padding: '4px 12px',
                 fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
