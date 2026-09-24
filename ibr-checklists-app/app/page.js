@@ -554,7 +554,7 @@ export default function LandingPage() {
               Seu restaurante no padrão, com ou sem você na loja.
             </h2>
             <p style={{ fontSize: T.body, color: C.muted }}>
-              Um preço por loja, com {FRANQUIA} usuários inclusos · vaga adicional <span style={{ whiteSpace: 'nowrap' }}>{VAGA}/mês</span>. Sem pacote, sem surpresa.
+              Um preço por loja, sem surpresa.
             </p>
           </div>
 
@@ -637,10 +637,10 @@ export default function LandingPage() {
             </h3>
             <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
               {[
-                ['“Peça uma cotação.”', `O preço está na página: ${ANUAL}/loja com ${FRANQUIA} usuários; vaga adicional ${VAGA}/mês.`],
+                ['“Peça uma cotação.”', 'O preço é público.'],
                 ['“Fale com um consultor.”', 'Comece o teste agora.'],
-                ['Fidelidade na letra miúda.', 'Mensal sem fidelidade; anual claro: 12 meses.'],
-                ['Taxa de implantação escondida.', 'Sem taxa. Está escrito aqui em cima.'],
+                ['Fidelidade na letra miúda.', 'Plano mensal, sem fidelidade. Plano anual: 12 meses.'],
+                ['Taxa de implantação escondida.', 'Sem taxa.'],
               ].map(([mercado, zcheck], i) => (
                 <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
                   <p style={{ flex: '1 1 220px', padding: '13px 16px', fontSize: T.bodySm, color: C.muted, background: C.bg }}>{mercado}</p>

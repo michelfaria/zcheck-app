@@ -13,6 +13,7 @@ const NAV = [
   { href: '/admin/empresas', label: 'Empresas' },
   { href: '/admin/financeiro', label: 'Financeiro' },
   { href: '/admin/agentes', label: 'Time de Gestão' },
+  { href: '/admin/assistente', label: 'Assistente (Zeca)' },
   { href: '/admin/alertas', label: 'Alertas' },
   { href: '/admin/config', label: 'Config' },
 ];
