@@ -9,7 +9,7 @@
  *    If offline, queue the write and drain the queue when connectivity returns.
  */
 
-import { supabase, authedSupabase, getSessionToken } from './supabase';
+import { supabase, authedSupabase, getSessionToken, getSessionCompanyId } from './supabase';
 // `getSyncQueue`/`clearSyncQueue` também eram importados daqui e NÃO existem em
 // `storage.js` — nunca existiram. Ninguém os chamava, então o defeito ficou
 // invisível: o bundler do Next não reclama de named import inexistente, e
@@ -18,6 +18,9 @@ import { supabase, authedSupabase, getSessionToken } from './supabase';
 import { storageGet, storageSet } from './storage';
 import { daysAgoStr } from './dates';
 import { COMPLETIONS_HORIZON, capCompletions } from './completions';
+import {
+  PHOTOS_BUCKET, qualifyPath, pathCandidates, evidencePath, roundPath, refDocPath,
+} from './photoPaths';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,8 +28,9 @@ import { COMPLETIONS_HORIZON, capCompletions } from './completions';
 // authedSupabase() devolve o cliente anônimo; depois, o token viaja no header e
 // o RLS escopa as linhas por company_id.
 //
-// `supabase` (anônimo) segue em uso de propósito para storage e para os canais
-// de realtime — ver setSessionToken(), que reautoriza o socket no login.
+// `supabase` (anônimo) segue em uso de propósito só para os canais de realtime
+// — ver setSessionToken(), que reautoriza o socket no login. O storage de fotos
+// e POPs saiu dele em 24/09/2026: ver "Photos" abaixo.
 const db = () => authedSupabase();
 
 // Escopo do cache local. As chaves eram globais ('ibr_templates', 'ibr_users',
@@ -887,6 +891,36 @@ export async function fetchDisputes() {
 // e nunca expira. (Havia um `uploadRefPhoto` que gravava no bucket privado
 // `checklist-photos` e devolvia getPublicUrl — URL que nunca resolvia. Removido:
 // era código morto que só produziria imagem quebrada se alguém o religasse.)
+//
+// Fotos de prova, da rodada e POPs vivem no bucket `checklist-photos`, SEMPRE
+// pelo cliente autenticado e SEMPRE na pasta da empresa do token
+// (`{company_id}/...`, ver lib/photoPaths.js). Até 24/09/2026 iam pelo cliente
+// ANÔNIMO, em caminhos sem empresa, e o bucket abria para a anon key — que é
+// pública (vai no bundle e neste repositório): qualquer pessoa listava, baixava,
+// sobrescrevia e apagava a foto e o POP de qualquer empresa. A policy agora
+// compara a 1ª pasta do objeto com o company_id do token
+// (20260924_storage_01_checklist_photos_tenant.sql).
+//
+// Objetos antigos, sem a pasta, continuam legíveis para a empresa dona até a
+// cópia do legado — por isso a leitura tenta os dois nomes (`signFirst`).
+
+// Pasta da empresa para GRAVAR. Sem sessão não há pasta — e o storage recusaria
+// de qualquer jeito; lançar deixa a foto na fila offline, que só drena logada.
+function photoFolder() {
+  const cid = getSessionCompanyId();
+  if (!cid) throw new Error('sem sessão: a foto espera na fila até o login');
+  return cid;
+}
+
+// URL assinada do primeiro nome que existir (e que a policy deixar ler). Um
+// caminho vindo do banco pode ser antigo ou novo — ver pathCandidates.
+async function signFirst(paths, expiresIn) {
+  for (const p of pathCandidates(getSessionCompanyId(), paths)) {
+    const { data } = await db().storage.from(PHOTOS_BUCKET).createSignedUrl(p, expiresIn);
+    if (data?.signedUrl) return data.signedUrl;
+  }
+  return null;
+}
 
 export async function uploadPhoto(completionId, itemId, dataUrl) {
   // Persiste ANTES de tentar subir. "Salvei e fechei o app" matou um upload no
@@ -914,9 +948,9 @@ async function pushPhoto(completionId, itemId, dataUrl) {
   // Convert data URL to blob
   const res = await fetch(dataUrl);
   const blob = await res.blob();
-  const path = `${completionId}/${itemId}.jpg`;
-  const { error } = await supabase.storage
-    .from('checklist-photos')
+  const path = qualifyPath(photoFolder(), evidencePath(completionId, itemId));
+  const { error } = await db().storage
+    .from(PHOTOS_BUCKET)
     .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
   if (error) throw error;
 
@@ -948,12 +982,11 @@ async function pushPhoto(completionId, itemId, dataUrl) {
 export async function uploadRoundPhoto({ templateId, unitId, date, itemId, dataUrl }) {
   if (!isOnline()) return null;
   try {
+    const path = qualifyPath(photoFolder(), roundPath({ templateId, unitId, date, itemId }));
     const res = await fetch(dataUrl);
     const blob = await res.blob();
-    const safe = s => String(s).replace(/[^\w.-]+/g, '_');
-    const path = `rodada/${safe(templateId)}/${safe(unitId)}/${safe(date)}/${safe(itemId)}.jpg`;
-    const { error } = await supabase.storage
-      .from('checklist-photos')
+    const { error } = await db().storage
+      .from(PHOTOS_BUCKET)
       .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
     if (error) throw error;
     return path;
@@ -971,10 +1004,7 @@ export async function uploadRoundPhoto({ templateId, unitId, date, itemId, dataU
 export async function getRoundPhotoUrl(storagePath) {
   if (!storagePath || !isOnline()) return null;
   try {
-    const { data } = await supabase.storage
-      .from('checklist-photos')
-      .createSignedUrl(storagePath, 300);
-    return data?.signedUrl || null;
+    return await signFirst([storagePath], 300);
   } catch (e) {
     console.warn('getRoundPhotoUrl falhou:', e.message);
     return null;
@@ -1007,9 +1037,17 @@ export async function linkRoundPhoto(completionId, itemId, storagePath) {
 }
 
 // Lança em falha, pelo mesmo motivo de pushPhoto: o dreno precisa saber.
+//
+// O caminho entra no banco JÁ com a pasta da empresa, mesmo quando vem da
+// convenção antiga (`submittedTasksFrom` em lib/rounds.js monta sem empresa) ou
+// de uma fila gravada antes de 24/09/2026. Se o objeto ainda for o antigo, a
+// leitura acha pelo segundo nome; depois da cópia, pelo primeiro. E é por este
+// campo que o `cleanup-photos` apaga — com o nome velho ele apagaria o objeto
+// errado e deixaria a cópia para sempre.
 async function pushPhotoLink(completionId, itemId, storagePath) {
   const { error } = await db().from('photos').upsert({
-    completion_id: completionId, item_id: itemId, storage_path: storagePath,
+    completion_id: completionId, item_id: itemId,
+    storage_path: qualifyPath(photoFolder(), storagePath),
   }, { onConflict: 'completion_id,item_id', ignoreDuplicates: true });
   if (error) throw error;
 }
@@ -1025,21 +1063,14 @@ export async function getPhotoUrl(completionId, itemId) {
         .eq('completion_id', completionId)
         .eq('item_id', itemId)
         .maybeSingle();
-      if (data?.storage_path) {
-        const { data: signed } = await supabase.storage
-          .from('checklist-photos')
-          .createSignedUrl(data.storage_path, 300); // 5 min expiry
-        if (signed?.signedUrl) return signed.signedUrl;
-      }
       // Sem linha em `photos`, tenta o caminho pela CONVENÇÃO antes de desistir.
       // O arquivo e o metadado são duas escritas separadas, e o histórico deste
       // projeto é o de perder a segunda: em 12/07 por constraint ausente, em
       // 30/07 por ordem de gravação. O arquivo sempre esteve lá — o gestor é que
       // recebia "Não foi possível carregar a foto". Isto o entrega assim mesmo.
-      const { data: convencional } = await supabase.storage
-        .from('checklist-photos')
-        .createSignedUrl(`${completionId}/${itemId}.jpg`, 300);
-      if (convencional?.signedUrl) return convencional.signedUrl;
+      const signed = await signFirst(
+        [data?.storage_path, evidencePath(completionId, itemId)], 300); // 5 min
+      if (signed) return signed;
     } catch (e) { /* fall through to local cache */ }
   }
   // Offline fallback — return locally cached data URL
@@ -1056,21 +1087,21 @@ export async function getPhotoUrl(completionId, itemId) {
 // guarda só { name, path }. A leitura usa signed URL, como as fotos de prova.
 
 export async function uploadRefDoc(file) {
-  const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-80);
-  const path = `refdocs/${Date.now()}-${Math.random().toString(36).slice(2, 8)}/${safeName}`;
-  const { error } = await supabase.storage
-    .from('checklist-photos')
+  const path = qualifyPath(photoFolder(), refDocPath(file.name));
+  const { error } = await db().storage
+    .from(PHOTOS_BUCKET)
     .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
   if (error) throw error;
   return { name: file.name, path };
 }
 
+// O `path` vem do JSON do template e pode ser o antigo (sem empresa): templates
+// gravados antes de 24/09/2026 guardam `refdocs/...` puro. signFirst acha o
+// objeto pelos dois nomes.
 export async function getRefDocUrl(path) {
-  const { data, error } = await supabase.storage
-    .from('checklist-photos')
-    .createSignedUrl(path, 3600); // 1h — abre e pode ser lido com calma
-  if (error) throw error;
-  return data?.signedUrl || null;
+  const url = await signFirst([path], 3600); // 1h — abre e pode ser lido com calma
+  if (!url) throw new Error('documento não encontrado no storage');
+  return url;
 }
 
 // ── Closures ──────────────────────────────────────────────────────────────────

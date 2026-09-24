@@ -149,6 +149,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `cadastro-rascunho.spec.mjs` | o /cadastro não perde o que foi digitado quando o celular mata a aba ao abrir câmera/galeria (24/09/2026): rascunho em `sessionStorage` a cada tecla, relido ao montar — o primeiro ciclo (campos vazios) não pode apagá-lo; prévia da selfie por object URL (revogado no "Refazer"); envio com sucesso apaga o rascunho |
 | `plans.spec.mjs` | a conta do plano em `lib/plans.js`, **afirmada em reais, não pela fórmula**: franquia de 10 vagas por loja SOMADA (1/2/3 lojas = 10/20/30, piso de 1 loja), o 11º ativo pede vaga adicional, redução nunca abaixo das adicionais em uso, vaga a "R$ 17,00" igual nos dois ciclos (o −24% é só da loja) e `monthlyValueFor` vale o `billed_amount` real. E `unitsForAmount`/`getTierByPrice` não podem voltar: 381 = anual 2 lojas + 11 vagas = mensal 3 lojas — o valor não identifica o plano |
 | `seats.spec.mjs` | o lado do servidor (`lib/seats.js`), sem sessão, banco nem MP: o mínimo da redução vem do banco, nunca do cliente; o checkout cobra as lojas ATIVAS e no mínimo as vagas em uso; o webhook grava o plano pela intenção do checkout e **nunca grava null** (o webhook antigo zerava `plan_tier` e o pagante virava "cortesia" no MRR); o cron só reajusta quando esperado ≠ cobrado em centavos; o `cancelled` de uma assinatura velha não bloqueia quem está em teste |
+| `photo-storage.spec.mjs` | fotos de prova, da rodada e POPs (`checklist-photos`) sobem e são lidas **só pelo cliente autenticado** e **só na pasta da empresa do token** (`{company_id}/…`, `lib/photoPaths.js`) — o cliente anônimo não é nem tocado; caminho da convenção antiga entra em `photos` já qualificado; a leitura tenta o nome novo e depois o antigo (objeto ainda não copiado). Até 24/09/2026 o bucket abria para a anon key |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
@@ -159,6 +160,13 @@ prova o trigger `users_seat_quota` em PGlite (11º sem vaga barrado com `ZC_QUOT
 renomear/trocar PIN acima da capacidade passa; reativar sem vaga é barrado; roda
 2× sem erro) — `npm i --no-save @electric-sql/pglite` antes, como os outros
 `.test.mjs` de migration.
+
+Também fora: `supabase/migrations/20260924_storage_checklist_photos.test.mjs`
+prova as policies do bucket `checklist-photos` (fases 01/02/03) numa bancada de
+`storage.objects` em PGlite: sessão só alcança a pasta da própria empresa; objeto
+antigo só para a empresa dona no inventário (ponteiro em `photos`/template não dá
+posse); anon na transição lê e cria em caminho antigo, mas não apaga, não move,
+não sobrescreve nem entra em pasta de empresa; a 03 recusa com dono sem cópia.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
