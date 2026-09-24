@@ -3,7 +3,7 @@ title: "Meu checklist não aparece na lista"
 description: "Dias da semana, folga da loja e setor: os motivos mais comuns para um checklist não estar visível hoje."
 category: problemas-comuns
 order: 3
-updatedAt: "2026-07-20"
+updatedAt: "2026-09-24"
 ---
 
 Abriu a aba Executar e o checklist que você esperava não está lá? Quase sempre é um destes motivos — confira na ordem:
@@ -14,7 +14,7 @@ Se o dia foi marcado como folga pela gestão, a aba Executar avisa: "está fecha
 
 ## 2. Os itens do checklist não valem hoje
 
-Itens podem ser configurados para **dias específicos** (ex.: só seg/qua/sex). Um checklist cujos itens não valem hoje **não aparece na lista de hoje** — é o comportamento esperado.
+Itens podem ser configurados para **dias específicos** (ex.: só seg/qua/sex) ou com **frequência periódica** (ex.: todo dia 10, a cada 3 meses). Um checklist cujos itens não valem hoje **não aparece na lista de hoje**. É o comportamento esperado: um checklist de manutenção mensal, por exemplo, só aparece no dia dele (ou nos dias seguintes, se ficou pendente).
 
 ## 3. Você está vendo outro setor
 

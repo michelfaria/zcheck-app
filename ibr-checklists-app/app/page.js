@@ -35,7 +35,8 @@ import logo from '../public/zcheck-logo.png';
 // O antigo "J.I.T." virou o bloco "Agora" do Painel em 08/2026 e saiu daqui em
 // 24/09/2026.
 // Público (decisão de 24/09/2026): qualquer negócio com operação física e
-// rotina padronizada, todo dia ou em dias certos da semana — não só food
+// rotina padronizada, todo dia ou periodicamente (dia da semana, mês, a cada
+// N semanas/meses — lib/recurrence.js, 24/09/2026) — não só food
 // service. O card de segmento diz se há modelo pronto na biblioteca
 // (lib/library.js); onde não há, a promessa é montar do zero ou importar a
 // planilha, nunca "modelo pronto" nem conformidade com norma do setor.
@@ -522,7 +523,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-grid-3">
             {[
-              { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, Intermediário e Fechamento, com prazo se você quiser. Uma tarefa pode valer todo dia ou só nos dias da semana que você escolher.' },
+              { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, Intermediário e Fechamento, com prazo se você quiser. Cada tarefa tem a sua frequência: todo dia, em dias da semana, todo dia 10 do mês ou a cada 3 meses. Extintor e dedetização entram na mesma rotina.' },
               { Icon: LayoutGrid, title: 'Painel para a gestão', text: 'Você vê como a operação está agora, com base no que a equipe marcou, e pode olhar por loja, por setor ou por pessoa.' },
               { Icon: ClipboardCheck, title: 'Conferência de checklists', text: 'Liderança, gerência e diretoria aprovam, fazem ressalva ou reprovam cada tarefa. O que for reprovado não conta como feito.' },
               // Pendência que volta é por tarefa (opção "cobrar no dia seguinte"
@@ -556,7 +557,7 @@ export default function LandingPage() {
               Feito para o seu negócio
             </h2>
             <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.6 }}>
-              Se o seu negócio tem operação física e rotinas que precisam ser cumpridas todo dia ou em dias certos da semana, o ZCheck serve para você.
+              Se o seu negócio tem operação física e rotinas que precisam ser cumpridas todo dia ou periodicamente, da limpeza diária à manutenção do mês, o ZCheck serve para você.
             </p>
           </div>
           <div className="lp-grid-3">
