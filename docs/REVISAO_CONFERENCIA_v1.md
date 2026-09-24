@@ -216,6 +216,26 @@ booleano da explicação, nunca o texto.
 `taskCounts` NÃO mudou: a dupla penalidade da reprovação (derruba conclusão *e*
 qualidade) fica para depois, se ficar.
 
+### Produtividade — a conferência também pesa no score (24/09/2026)
+
+O score de produtividade (pts/h, 100 = média da empresa — `computeProductivity`)
+contava `i.done` e mais nada: tarefa reprovada valia ponto cheio e garantia o
+bônus do checklist 100%. Decisão do Michel em 24/09/2026:
+
+```
+aprovada / não julgada   × 1     (1 comum, 2 crítica)
+ressalva                 × 0,5
+reprovada                × −1    e o checklist perde o bônus de +3
+```
+
+Duas diferenças deliberadas em relação à Qualidade: **conta com ou sem motivo**
+(na Qualidade o mudo não desconta), e o **corte é 24/09/2026 00h de Brasília**,
+comparado como instante sobre `reviewed_at` — julgamento dado antes, quando
+ressalva não custava produtividade, não passa a custar. Ritmo com piso em 0;
+pontos podem aparecer negativos. Regra em `REVIEW_POINT_FACTOR` /
+`PRODUCTIVITY_REVIEW_CUTOFF` (lib/stats.js), provada em
+`tests/produtividade-conferencia.spec.mjs`.
+
 ### Pontualidade — e por que ela NÃO tem corte de data
 
 Pedido de 08/08: quem entrega no prazo tem que ficar acima de quem entrega

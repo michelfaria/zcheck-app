@@ -226,9 +226,95 @@ export function punctualityStats(filtered, templates, units) {
 //   Ritmo       pontos por hora ativa (pts/h).
 //   Score       ritmo ÷ ritmo médio da EMPRESA no período × 100.
 //               100 = na média da empresa · >100 acima · <100 abaixo.
+//   Conferência o veredito da liderança muda o valor da tarefa (ver
+//               `REVIEW_POINT_FACTOR` logo abaixo).
 // O mesmo cálculo agrega colaborador, setor, loja e empresa — comparáveis entre si.
+
+/**
+ * A CONFERÊNCIA dentro da produtividade — decisão do Michel em 24/09/2026.
+ *
+ * Até aqui o score contava `i.done` e mais nada: tarefa REPROVADA pela
+ * liderança valia ponto cheio e ainda garantia o bônus do checklist 100%. Era
+ * o único lugar do app que media execução ignorando o veredito — o índice do
+ * colaborador já tratava reprovada como não feita (`taskCounts`, ranking.js).
+ *
+ * A régua é um MULTIPLICADOR do valor da tarefa, porque é a frase que cabe
+ * para quem é medido: "ressalva vale metade; reprovada custa o que valeria".
+ *
+ *   aprovado / não julgada  × 1    — 1 pt comum, 2 pts crítica
+ *   ressalva                × 0,5  — 0,5 / 1: o trabalho foi entregue, com
+ *                                    observação, e vale menos que o limpo
+ *   reprovado               × −1   — −1 / −2: não só deixa de pontuar, DESCONTA.
+ *                                    E o checklist deixa de ser "100%": o
+ *                                    bônus de +3 some para todos que o fizeram
+ *
+ * DUAS DIFERENÇAS DELIBERADAS em relação à Qualidade do índice
+ * (`computeOperationalProfile`), e as duas foram escolha, não descuido:
+ *
+ *   1. Apontamento SEM MOTIVO escrito também pesa aqui. Na Qualidade o mudo
+ *      não desconta (regra de 08/08, para empurrar a liderança a explicar); na
+ *      produtividade o Michel decidiu que o veredito vale por si.
+ *
+ *   2. O corte é outro. Só pesa veredito dado a partir de
+ *      `PRODUCTIVITY_REVIEW_CUTOFF`: julgamento feito quando ressalva ainda
+ *      não custava produtividade não passa a custar depois do fato — mesmo
+ *      princípio do corte da Qualidade, data diferente porque a régua é nova.
+ *      Reconferir uma execução antiga regrava `reviewed_at` (a RPC faz upsert
+ *      com `now()`), e aí o veredito é um julgamento novo e passa a valer.
+ *
+ * O corte é um INSTANTE, não um dia: `reviewedAt` chega em UTC, e cortar pelo
+ * `slice(0, 10)` dele faria uma conferência das 21h de 23/09 em Brasília
+ * contar como 24/09. O horário oficial do corte é o de Brasília.
+ */
+export const PRODUCTIVITY_REVIEW_CUTOFF = '2026-09-24T00:00:00-03:00';
+const PRODUCTIVITY_REVIEW_CUTOFF_MS = Date.parse(PRODUCTIVITY_REVIEW_CUTOFF);
+
+export const REVIEW_POINT_FACTOR = { aprovado: 1, ressalva: 0.5, reprovado: -1 };
+
+// A regra por extenso, para as telas que explicam o score. Mora aqui, colada
+// aos números, pelo mesmo motivo de `collabIndexSentence`: texto repetido à mão
+// em duas telas continua dizendo a régua antiga depois que ela muda.
+export const PRODUCTIVITY_REVIEW_RULE =
+  'Conferência da liderança (a partir de 24/09/2026): tarefa com ressalva vale metade; '
+  + 'tarefa reprovada vale o mesmo em negativo (−1 comum, −2 crítica) e tira o bônus do checklist 100%. '
+  + 'Vale com ou sem motivo escrito.';
+
+/**
+ * O veredito que PESA na produtividade desta tarefa — ou null, quando ela não
+ * foi julgada ou foi julgada antes do corte (e então conta como antes: valor
+ * cheio). Veredito sem `reviewedAt` também é null: sem saber QUANDO foi dado
+ * não há como saber se a régua nova vale para ele, e na dúvida não se tira
+ * ponto de ninguém.
+ */
+export function verdictInForce(item) {
+  const r = item?.review;
+  if (!r?.verdict || !r.reviewedAt) return null;
+  const t = Date.parse(r.reviewedAt);
+  return Number.isFinite(t) && t >= PRODUCTIVITY_REVIEW_CUTOFF_MS ? r.verdict : null;
+}
+
+// "Conferência: 12 aprovadas · 2 ressalvas · 1 reprovada · −4 pts" — a linha
+// que mostra, ao lado do score, de onde veio o desconto. Null quando nada do
+// período foi julgado sob a régua: uma linha "0 de 0" só ocuparia espaço.
+export function reviewSummary(entry) {
+  if (!entry?.julgadas) return null;
+  const partes = [];
+  if (entry.aprovadas) partes.push(`${entry.aprovadas} aprovada${entry.aprovadas !== 1 ? 's' : ''}`);
+  if (entry.ressalvas) partes.push(`${entry.ressalvas} ressalva${entry.ressalvas !== 1 ? 's' : ''}`);
+  if (entry.reprovadas) partes.push(`${entry.reprovadas} reprovada${entry.reprovadas !== 1 ? 's' : ''}`);
+  const perda = Math.round(entry.reviewLoss * 10) / 10;
+  if (perda > 0) partes.push(`−${String(perda).replace('.', ',')} pts`);
+  return `Conferência: ${partes.join(' · ')}`;
+}
+
 export function computeProductivity(completions) {
-  const mkAgg = (key, name) => ({ key, name, points: 0, timedPoints: 0, minutes: 0, tasks: 0, criticals: 0, fullChecklists: 0, unitIds: new Set() });
+  const mkAgg = (key, name) => ({
+    key, name, points: 0, timedPoints: 0, minutes: 0, tasks: 0, criticals: 0, fullChecklists: 0, unitIds: new Set(),
+    // O que a conferência fez com o placar: quantas tarefas foram julgadas sob
+    // a régua, com que veredito, e quantos pontos isso custou (tarefa + bônus
+    // perdido). É o que deixa quem é medido refazer a conta.
+    julgadas: 0, aprovadas: 0, ressalvas: 0, reprovadas: 0, reviewLoss: 0,
+  });
   const collabs = new Map(), units = new Map(), sectors = new Map();
   const company = mkAgg('empresa', 'Empresa');
   const ensure = (map, key, name) => { if (!map.has(key)) map.set(key, mkAgg(key, name)); return map.get(key); };
@@ -238,27 +324,53 @@ export function computeProductivity(completions) {
     const items = c.items || [];
     const doneItems = items.filter(i => i.done);
     if (doneItems.length === 0) return;
-    const isFull = doneItems.length === items.length;
+    const allDone = doneItems.length === items.length;
+    // Uma tarefa reprovada tira o checklist do "100%": ele foi marcado inteiro,
+    // mas a liderança disse que não foi feito inteiro.
+    const isFull = allDone && !doneItems.some(i => verdictInForce(i) === 'reprovado');
+    const bonusPerdido = allDone && !isFull;
     const subKey = c.operatorUserId || c.operatorName || '—';
 
     // Agrupa as tarefas concluídas por quem executou (colaborativo ou não)
     const byExec = new Map();
     doneItems.forEach(i => {
       const key = i.doneBy || subKey;
-      if (!byExec.has(key)) byExec.set(key, { key, name: i.doneByName || c.operatorName || 'Sem responsável', pts: 0, tasks: 0, criticals: 0, times: [] });
+      if (!byExec.has(key)) byExec.set(key, { key, name: i.doneByName || c.operatorName || 'Sem responsável', pts: 0, marcadas: 0, tasks: 0, criticals: 0, times: [], julgadas: 0, aprovadas: 0, ressalvas: 0, reprovadas: 0, loss: 0 });
       const e = byExec.get(key);
-      e.pts += i.critical ? 2 : 1;
-      e.tasks += 1;
-      if (i.critical) e.criticals += 1;
+      const base = i.critical ? 2 : 1;
+      const v = verdictInForce(i);
+      const valor = base * (REVIEW_POINT_FACTOR[v] ?? 1);
+      e.pts += valor;
+      e.loss += base - valor;
+      // `marcadas` é a fatia da pessoa no checklist (divide o bônus); `tasks`
+      // é o que conta como FEITO — reprovada não entra, como em `taskCounts`.
+      e.marcadas += 1;
+      if (v !== 'reprovado') {
+        e.tasks += 1;
+        if (i.critical) e.criticals += 1;
+      }
+      if (v) {
+        e.julgadas += 1;
+        if (v === 'aprovado') e.aprovadas += 1;
+        else if (v === 'ressalva') e.ressalvas += 1;
+        else if (v === 'reprovado') e.reprovadas += 1;
+      }
+      // O tempo fica mesmo na reprovada: ele foi gasto, e é justamente o que
+      // faz o ritmo cair — pontos a menos no mesmo intervalo.
       if (i.doneAt) e.times.push(new Date(i.doneAt).getTime());
     });
 
     byExec.forEach(e => {
-      const pts = e.pts + (isFull ? 3 * (e.tasks / doneItems.length) : 0);
+      const share = e.marcadas / doneItems.length;
+      const pts = e.pts + (isFull ? 3 * share : 0);
+      const loss = e.loss + (bonusPerdido ? 3 * share : 0);
       const minutes = e.times.length ? Math.max(1, (Math.max(...e.times) - Math.min(...e.times)) / 60000) : null;
       const apply = agg => {
         agg.points += pts; agg.tasks += e.tasks; agg.criticals += e.criticals;
-        if (isFull) agg.fullChecklists += e.tasks / doneItems.length; // participação proporcional
+        if (isFull) agg.fullChecklists += share; // participação proporcional
+        agg.julgadas += e.julgadas; agg.aprovadas += e.aprovadas;
+        agg.ressalvas += e.ressalvas; agg.reprovadas += e.reprovadas;
+        agg.reviewLoss += loss;
         agg.unitIds.add(c.unitId);
         if (minutes != null) { agg.timedPoints += pts; agg.minutes += minutes; }
       };
@@ -269,7 +381,11 @@ export function computeProductivity(completions) {
     });
   });
 
-  const finish = agg => ({ ...agg, rate: agg.minutes > 0 ? agg.timedPoints / (agg.minutes / 60) : null });
+  // Ritmo com piso em zero. Com reprovações o saldo de pontos pode ficar
+  // negativo, e "−2 pts/h" não é ritmo de ninguém — o score só vai até 0. Os
+  // pontos, esses sim, aparecem negativos: esconder o saldo seria esconder a
+  // conta.
+  const finish = agg => ({ ...agg, rate: agg.minutes > 0 ? Math.max(0, agg.timedPoints) / (agg.minutes / 60) : null });
   const companyF = finish(company);
   const withScore = agg => {
     const f = finish(agg);

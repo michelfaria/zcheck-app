@@ -72,7 +72,7 @@ import { UnitsContext, useUnits, SectorsContext, useSectors } from '../../compon
 import { JitPanel, buildJit } from '../../components/painel/JitPanel';
 import { PainelConsolidado } from '../../components/painel/PainelConsolidado';
 import { truncName, ddmm, fmtDataCurta } from '../../lib/format';
-import { PERIODS, countApplicableTemplatesOnDate, computeProductivity } from '../../lib/stats';
+import { PERIODS, countApplicableTemplatesOnDate, computeProductivity, reviewSummary, PRODUCTIVITY_REVIEW_RULE } from '../../lib/stats';
 // Átomos visuais que Painel, J.I.T. e Relatórios desenham em comum.
 import {
   ROLE_LABELS, MANAGER_ROLES, STATUS_CFG, Eyebrow, Ticket, Avatar,
@@ -7904,6 +7904,15 @@ export function OperationalIdView({ targetUser, viewer, completions, templates, 
                 ? 'O score aparece conforme as novas execuções registram o horário de cada tarefa.'
                 : `${prodScore.rate.toFixed(1)} pts/h · ${Math.round(prodScore.points)} pontos no período · tarefa crítica vale 2 pts e checklist 100% dá bônus.`}
             </p>
+            {/* O desconto da conferência, com os brutos: quem perde ponto por
+                uma reprovação tem que ver QUANTAS e QUANTO, não só um score
+                mais baixo sem explicação. */}
+            {reviewSummary(prodScore) && (
+              <p style={{ fontSize: 10.5, marginTop: 4, lineHeight: 1.5, color: prodScore.reprovadas ? C.critical : prodScore.ressalvas ? C.warning : C.muted }}>
+                {reviewSummary(prodScore)}
+              </p>
+            )}
+            <p style={{ fontSize: 10.5, color: C.mutedLight, marginTop: 4, lineHeight: 1.5 }}>{PRODUCTIVITY_REVIEW_RULE}</p>
           </div>
         );
       })()}
@@ -9492,9 +9501,17 @@ function AppInner() {
           // `executedBy` espelha a MESMA regra da RPC (doneBy, com fallback no
           // submissor). Sem ele aqui, o briefing e o índice só passariam a
           // enxergar o destinatário certo no carregamento seguinte.
+          //
+          // `reviewedAt` e `comMotivo` pelo mesmo motivo: sem data, o veredito
+          // novo fica fora do corte da Qualidade e da produtividade (ver
+          // `verdictInForce`) até o reload — a liderança reprovava e o score
+          // não se mexia. A RPC regrava `reviewed_at = now()` em toda tarefa
+          // da conferência, então o relógio local é a mesma resposta.
           return { ...it, review: {
             verdict: v.verdict, note: v.note || null, byName: currentUser.name,
             executedBy: it.doneBy || c.operatorUserId || null,
+            comMotivo: !!(v.note || '').trim(),
+            reviewedAt: new Date().toISOString(),
           } };
         }),
       } : c)));

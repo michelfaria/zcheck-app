@@ -28,7 +28,7 @@ import { roundKey } from '../../lib/rounds';
 import { CHECKLIST_TYPE_ORDER, completionOnTime, deadlineIndex } from '../../lib/checklists';
 // O motor destas contas mora em `useRelatorio`; aqui sobra só o rótulo do
 // seletor de período.
-import { PERIODS } from '../../lib/stats';
+import { PERIODS, reviewSummary, PRODUCTIVITY_REVIEW_RULE } from '../../lib/stats';
 import { classificarRodada, agruparPorChecklist } from '../../lib/conferencia';
 import { truncName } from '../../lib/format';
 import {
@@ -66,10 +66,17 @@ function ProdRow({ entry, accent }) {
       </div>
       <p style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
         {entry.rate != null ? `${entry.rate.toFixed(1)} pts/h · ` : ''}
-        {Math.round(entry.points)} ponto{Math.round(entry.points) !== 1 ? 's' : ''} · {entry.tasks} tarefa{entry.tasks !== 1 ? 's' : ''}
+        {Math.round(entry.points)} ponto{Math.abs(Math.round(entry.points)) !== 1 ? 's' : ''} · {entry.tasks} tarefa{entry.tasks !== 1 ? 's' : ''}
         {entry.criticals > 0 && ` (${entry.criticals} crítica${entry.criticals > 1 ? 's' : ''})`}
         {entry.fullChecklists >= 0.5 && ` · ${Math.round(entry.fullChecklists)} checklist${Math.round(entry.fullChecklists) !== 1 ? 's' : ''} 100%`}
       </p>
+      {/* De onde veio o desconto. Em cor de alerta só quando houve apontamento:
+          "12 aprovadas" sozinho é informação, não aviso. */}
+      {reviewSummary(entry) && (
+        <p style={{ fontSize: 11, marginTop: 2, color: entry.reprovadas ? C.critical : entry.ressalvas ? C.warning : C.muted }}>
+          {reviewSummary(entry)}
+        </p>
+      )}
     </Ticket>
   );
 }
@@ -1180,6 +1187,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
               <div style={{ textAlign: 'right', fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
                 <p>{Math.round(prod.company.points)} pontos · {prod.company.tasks} tarefas</p>
                 <p>{prod.company.criticals} críticas · {Math.round(prod.company.fullChecklists)} checklists 100%</p>
+                {reviewSummary(prod.company) && <p>{reviewSummary(prod.company)}</p>}
               </div>
             </div>
           </Ticket>
@@ -1211,7 +1219,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
             Como o score é calculado: tarefa comum = 1 pt · tarefa crítica = 2 pts · checklist 100% completo = +3 pts
             divididos entre quem executou. O ritmo (pts/h) usa o tempo ativo dentro do checklist — da primeira à última
             tarefa marcada por cada pessoa. Score = ritmo ÷ ritmo médio da empresa × 100. Execuções antigas, sem horário
-            por tarefa, contam pontos mas ficam fora do ritmo.
+            por tarefa, contam pontos mas ficam fora do ritmo. {PRODUCTIVITY_REVIEW_RULE}
           </p>
         </>
       )}

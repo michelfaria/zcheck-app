@@ -3,7 +3,7 @@ title: "Análise no Painel: desempenho, produtividade e evidências"
 description: "Acompanhe taxas de conclusão por período, produtividade por pessoa e as fotos registradas nos checklists — tudo na parte de baixo do Painel."
 category: para-gestores
 order: 7
-updatedAt: "2026-08-11"
+updatedAt: "2026-09-24"
 ---
 
 O **Painel** (liderança, gerência e diretoria) responde a três perguntas
@@ -63,6 +63,25 @@ Além deles:
   horário. Diferente de "atrasados", que conta o que ainda **não** foi feito e
   já venceu.
 - **Evidências**: toque nos registros para ver as **fotos** anexadas em cada item.
+
+## O score de produtividade e a conferência
+
+O score compara o ritmo de cada pessoa (pontos por hora ativa) com a média da
+empresa: **100 = na média**. Tarefa comum vale 1 ponto, tarefa crítica vale 2, e
+checklist 100% completo dá +3 divididos entre quem executou.
+
+A **conferência da liderança** muda o valor da tarefa (para conferências feitas
+a partir de 24/09/2026):
+
+- **Aprovada** — vale o normal.
+- **Com ressalva** — vale **metade**.
+- **Reprovada** — vale o mesmo **em negativo** (−1 comum, −2 crítica), e o
+  checklist deixa de contar como 100%: o bônus some para todos que o fizeram.
+
+Vale com ou sem motivo escrito — mas escreva o motivo: é ele que diz à pessoa o
+que corrigir. Abaixo do score de cada colaborador aparece a linha
+**Conferência**, com quantas tarefas foram aprovadas, com ressalva e reprovadas,
+e quantos pontos isso custou.
 
 ## Exportar
 
