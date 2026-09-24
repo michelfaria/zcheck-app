@@ -20,6 +20,7 @@ const RULE_LABELS = {
   company_without_cnpj: 'Empresa sem CNPJ',
   seat_quota_exceeded: 'Usuários acima das vagas',
   billing_adjust_pending: 'Ajuste de cobrança pendente',
+  support_agent_down: 'Assistente da Central fora do ar',
   // Gravados direto pelo webhook do Mercado Pago (não pelo motor de regras).
   billing_amount_mismatch: 'Valor cobrado ≠ contratado',
   billing_intent_missing: 'Assinatura sem intenção de checkout',

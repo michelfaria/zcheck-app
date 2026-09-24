@@ -18,7 +18,7 @@ export async function runAlertRules(db) {
   const yesterday = spDaysAgo(1);
   const weekKey = Math.floor(Date.parse(today) / (7 * 864e5)); // janela semanal p/ regra 4
 
-  const [units, daily, userCompletions, abandons, semCnpj, seats, accounts] = await Promise.all([
+  const [units, daily, userCompletions, abandons, semCnpj, seats, accounts, probe] = await Promise.all([
     db.from('admin_unit_health').select('*'),
     db.from('admin_completions_daily').select('*').gte('day', spDaysAgo(9)).limit(5000),
     db.from('admin_user_completions').select('*').limit(5000),
@@ -36,6 +36,10 @@ export async function runAlertRules(db) {
     db.from('admin_company_health')
       .select('company_id, name, active, subscription_status, active_users, included_seats, extra_seats, seat_capacity'),
     db.from('billing_accounts').select('company_id, exempt, adjust_pending'),
+    // Última verificação ao vivo do assistente de suporte (R9). Fica em
+    // agent_reports para não precisar de tabela própria.
+    db.from('agent_reports').select('data_snapshot, created_at').eq('kind', 'support_probe')
+      .order('created_at', { ascending: false }).limit(1),
   ]);
   const firstErr = [units, daily, userCompletions, abandons].find(r => r.error);
   if (firstErr) throw new Error(firstErr.error.message);
@@ -202,6 +206,33 @@ export async function runAlertRules(db) {
         + 'Veja o billing-sync.',
       dedupe_key: `billing_adjust_pending|${a.company_id}|w${weekKey}`,
     });
+  }
+
+  // ── R9: assistente de suporte (Zeca) fora do ar ──────────────────────────
+  // Sem chave, a rota pública /api/ajuda/assistente devolve 503 para TODO
+  // usuário que perguntar — o cliente vê "assistente indisponível" e ninguém
+  // fica sabendo. A verificação ao vivo (probe) é o que distingue "chave
+  // existe" de "chave funciona": crédito zerado só aparece numa chamada real.
+  // Probe com mais de 48h é ignorado (dado velho não vira alerta de hoje).
+  if (!process.env.ANTHROPIC_API_KEY) {
+    alerts.push({
+      severity: 'critical',
+      rule: 'support_agent_down',
+      message: 'O assistente da Central de Ajuda (Zeca) está inativo: ANTHROPIC_API_KEY ausente. '
+        + 'Toda pergunta de usuário recebe "assistente indisponível".',
+      dedupe_key: `support_agent_down|no_key|${today}`,
+    });
+  } else if (!probe.error && probe.data?.[0]) {
+    const last = probe.data[0];
+    const snap = last.data_snapshot || {};
+    if (snap.ok === false && hoursAgo(last.created_at) <= 48) {
+      alerts.push({
+        severity: 'critical',
+        rule: 'support_agent_down',
+        message: `O assistente da Central de Ajuda (Zeca) falhou na última verificação: ${String(snap.error || 'erro desconhecido').slice(0, 200)}`,
+        dedupe_key: `support_agent_down|probe|${today}`,
+      });
+    }
   }
 
   // ── Grava (ignorando janelas já alertadas) + registra a execução ──────────
