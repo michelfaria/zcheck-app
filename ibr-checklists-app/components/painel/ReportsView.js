@@ -29,7 +29,7 @@ import { CHECKLIST_TYPE_ORDER, completionOnTime, deadlineIndex } from '../../lib
 // O motor destas contas mora em `useRelatorio`; aqui sobra só o rótulo do
 // seletor de período.
 import { PERIODS, reviewSummary, PRODUCTIVITY_REVIEW_RULE } from '../../lib/stats';
-import { classificarRodada, agruparPorChecklist } from '../../lib/conferencia';
+import { classificarRodada, agruparPorChecklist, tarefaFeita } from '../../lib/conferencia';
 import { truncName } from '../../lib/format';
 import {
   Eyebrow, Ticket, EmptyState, PillButton, StatCard, RateBar, PhotoModal,
@@ -1240,7 +1240,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
           // próxima pessoa a mexer na hora e quebrar sem o build reclamar.
           const dow = weekdayOf(c.date);
           const items = c.items || [];
-          byDow[dow].done += items.filter(i => i.done).length;
+          byDow[dow].done += items.filter(tarefaFeita).length;
           byDow[dow].total += items.length;
           byDow[dow].count += 1;
         });

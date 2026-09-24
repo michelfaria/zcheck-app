@@ -16,6 +16,7 @@
 
 import { todayStr, addDays, lastDays } from './dates';
 import { latestPerRound, templateExistedOn } from './rounds';
+import { verdictInForce, tarefaFeita } from './conferencia';
 import {
   CHECKLIST_TYPE_ORDER, isItemApplicable, matchesShift,
   completionOnTime, deadlineIndex,
@@ -78,13 +79,16 @@ export function countApplicableTemplatesOnDate(templates, f, dateStr) {
   }).length;
 }
 
+// `tarefaFeita` e não `i.done` em todo o resumo: tarefa reprovada pela
+// liderança (a partir do corte, ver lib/conferencia.js) não conta como feita —
+// e crítica reprovada volta a ser crítica pendente.
 export function summarizeCompletions(filtered) {
   let totalItems = 0, doneItems = 0, criticalPending = 0, photos = 0;
   filtered.forEach(c => {
     totalItems += c.items.length;
     c.items.forEach(i => {
-      if (i.done) doneItems += 1;
-      if (i.critical && !i.done) criticalPending += 1;
+      if (tarefaFeita(i)) doneItems += 1;
+      if (i.critical && !tarefaFeita(i)) criticalPending += 1;
       if (i.hasPhoto) photos += 1;
     });
   });
@@ -115,9 +119,9 @@ export function collaboratorStats(entrada) {
     s.totalItems += c.items.length;
     if (c.completedAt > s.last) s.last = c.completedAt;
     c.items.forEach(i => {
-      if (i.critical && !i.done) s.criticalPending += 1;
+      if (i.critical && !tarefaFeita(i)) s.criticalPending += 1;
       if (i.hasPhoto) s.photos += 1;
-      if (!i.done) return;
+      if (!tarefaFeita(i)) return;
       s.doneItems += 1; // realização do checklist que a pessoa submeteu
       const ex = i.doneBy && i.doneBy !== subKey
         ? ensure(i.doneBy, i.doneByName, i.doneAt || c.completedAt)
@@ -158,8 +162,8 @@ export function groupStats(filtered, groupBy, units = [], types = CHECKLIST_TYPE
     s.checklists += 1;
     s.totalItems += c.items.length;
     c.items.forEach(i => {
-      if (i.done) s.doneItems += 1;
-      if (i.critical && !i.done) s.criticalPending += 1;
+      if (tarefaFeita(i)) s.doneItems += 1;
+      if (i.critical && !tarefaFeita(i)) s.criticalPending += 1;
     });
   });
   return [...map.values()]
@@ -230,6 +234,10 @@ export function punctualityStats(filtered, templates, units) {
 //               `REVIEW_POINT_FACTOR` logo abaixo).
 // O mesmo cálculo agrega colaborador, setor, loja e empresa — comparáveis entre si.
 
+// Reexportados para quem já os pedia daqui (testes, telas). A fonte é
+// lib/conferencia.js.
+export { verdictInForce, CONFERENCIA_CUTOFF } from './conferencia';
+
 /**
  * A CONFERÊNCIA dentro da produtividade — decisão do Michel em 24/09/2026.
  *
@@ -256,19 +264,12 @@ export function punctualityStats(filtered, templates, units) {
  *      produtividade o Michel decidiu que o veredito vale por si.
  *
  *   2. O corte é outro. Só pesa veredito dado a partir de
- *      `PRODUCTIVITY_REVIEW_CUTOFF`: julgamento feito quando ressalva ainda
- *      não custava produtividade não passa a custar depois do fato — mesmo
- *      princípio do corte da Qualidade, data diferente porque a régua é nova.
- *      Reconferir uma execução antiga regrava `reviewed_at` (a RPC faz upsert
- *      com `now()`), e aí o veredito é um julgamento novo e passa a valer.
- *
- * O corte é um INSTANTE, não um dia: `reviewedAt` chega em UTC, e cortar pelo
- * `slice(0, 10)` dele faria uma conferência das 21h de 23/09 em Brasília
- * contar como 24/09. O horário oficial do corte é o de Brasília.
+ *      `CONFERENCIA_CUTOFF` (lib/conferencia.js): julgamento feito quando
+ *      ressalva ainda não custava produtividade não passa a custar depois do
+ *      fato — mesmo princípio do corte da Qualidade, data diferente porque a
+ *      régua é nova. O corte e `verdictInForce` moram em conferencia.js porque
+ *      a regra do checklist 100% (`tarefaFeita`, lib/rounds.js) usa os mesmos.
  */
-export const PRODUCTIVITY_REVIEW_CUTOFF = '2026-09-24T00:00:00-03:00';
-const PRODUCTIVITY_REVIEW_CUTOFF_MS = Date.parse(PRODUCTIVITY_REVIEW_CUTOFF);
-
 export const REVIEW_POINT_FACTOR = { aprovado: 1, ressalva: 0.5, reprovado: -1 };
 
 // A regra por extenso, para as telas que explicam o score. Mora aqui, colada
@@ -278,20 +279,6 @@ export const PRODUCTIVITY_REVIEW_RULE =
   'Conferência da liderança (a partir de 24/09/2026): tarefa com ressalva vale metade; '
   + 'tarefa reprovada vale o mesmo em negativo (−1 comum, −2 crítica) e tira o bônus do checklist 100%. '
   + 'Vale com ou sem motivo escrito.';
-
-/**
- * O veredito que PESA na produtividade desta tarefa — ou null, quando ela não
- * foi julgada ou foi julgada antes do corte (e então conta como antes: valor
- * cheio). Veredito sem `reviewedAt` também é null: sem saber QUANDO foi dado
- * não há como saber se a régua nova vale para ele, e na dúvida não se tira
- * ponto de ninguém.
- */
-export function verdictInForce(item) {
-  const r = item?.review;
-  if (!r?.verdict || !r.reviewedAt) return null;
-  const t = Date.parse(r.reviewedAt);
-  return Number.isFinite(t) && t >= PRODUCTIVITY_REVIEW_CUTOFF_MS ? r.verdict : null;
-}
 
 // "Conferência: 12 aprovadas · 2 ressalvas · 1 reprovada · −4 pts" — a linha
 // que mostra, ao lado do score, de onde veio o desconto. Null quando nada do

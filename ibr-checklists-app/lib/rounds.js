@@ -20,6 +20,7 @@
  */
 
 import { deadlineEnd, APP_TZ } from './dates';
+import { tarefaFeita, reprovadaVigente } from './conferencia';
 
 /** Chave da rodada. `templateName` é o fallback de registros antigos sem id. */
 export function roundKey(c) {
@@ -148,17 +149,31 @@ export function templateExistedOn(t, dateStr) {
  *
  * Uma passada só, sem alocar mapa de evidência: isto roda por checklist a cada
  * render das listas.
+ *
+ * `descontaReprovadas` é a régua de MEDIÇÃO (Painel): tarefa reprovada pela
+ * liderança deixa de contar como feita, e o checklist marcado inteiro vira
+ * "parcial" (decisão de 24/09/2026, ver `tarefaFeita` em lib/conferencia.js).
+ * Opt-in de propósito: a tela de quem EXECUTA também chama isto, e lá a tarefa
+ * reprovada continua marcada — ninguém refaz um checklist porque o badge dele
+ * mudou depois da conferência. A reprovação vence a união: reprovada numa
+ * submissão da rodada está reprovada, mesmo que outra a traga marcada.
  */
-export function roundProgress(completions, { templateId, unitId, date }, applicableItemIds) {
+export function roundProgress(completions, { templateId, unitId, date }, applicableItemIds, { descontaReprovadas = false } = {}) {
   const previstas = new Set(applicableItemIds || []);
   const feitas = new Set();
+  const reprovadas = new Set();
   let submissions = 0;
   (completions || []).forEach(c => {
     if (!c || c.templateId !== templateId || c.unitId !== unitId || c.date !== date) return;
     submissions++;
-    (c.items || []).forEach(i => { if (i?.done && previstas.has(i.id)) feitas.add(i.id); });
+    (c.items || []).forEach(i => {
+      if (!i?.done || !previstas.has(i.id)) return;
+      feitas.add(i.id);
+      if (descontaReprovadas && reprovadaVigente(i)) reprovadas.add(i.id);
+    });
   });
-  return { submissions, done: feitas.size, total: previstas.size };
+  reprovadas.forEach(id => feitas.delete(id));
+  return { submissions, done: feitas.size, total: previstas.size, reprovadas: reprovadas.size };
 }
 
 /**
@@ -175,9 +190,22 @@ export function roundProgress(completions, { templateId, unitId, date }, applica
  *
  * Usa a MESMA fonte do badge da tela (`roundProgress`/`applicableItems`) de
  * propósito: aderência e rótulo discordando seria pior que os dois errados.
+ *
+ * Tarefa REPROVADA pela liderança não conta como feita (24/09/2026, a partir
+ * do corte — ver `tarefaFeita`): o checklist marcado inteiro com uma tarefa
+ * reprovada não é entrega completa. Esta função só serve à medição (aderência,
+ * "Checklists 100%", J.I.T., índice da loja), então o padrão é descontar.
+ *
+ * A exceção é o ÍNDICE DA LIDERANÇA, que passa `descontaReprovadas: false`
+ * (decisão do Michel, 24/09/2026): a aderência da equipe é 30% da nota de quem
+ * confere, e com o desconto cada reprovação baixaria a nota de quem reprovou.
+ * Isso empurraria a liderança a aprovar tudo — o contrário do que a
+ * conferência precisa (docs/REVISAO_CONFERENCIA_v1.md §2: discordância perto
+ * de zero é fracasso).
  */
-export function roundIsComplete(completion, applicableItemIds) {
-  const feitas = new Set((completion?.items || []).filter(i => i?.done).map(i => i.id));
+export function roundIsComplete(completion, applicableItemIds, { descontaReprovadas = true } = {}) {
+  const conta = descontaReprovadas ? tarefaFeita : i => !!i?.done;
+  const feitas = new Set((completion?.items || []).filter(conta).map(i => i.id));
   const previstas = applicableItemIds && applicableItemIds.length
     ? applicableItemIds
     : (completion?.items || []).map(i => i?.id).filter(Boolean);

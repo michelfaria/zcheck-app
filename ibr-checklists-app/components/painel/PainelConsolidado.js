@@ -52,6 +52,11 @@ import {
 import { PERIODS, PUNCTUALITY_PERIODS, PUNCTUALITY_GROUPS } from '../../lib/stats';
 import { track } from '../../lib/track';
 import { useRelatorio } from './useRelatorio';
+
+// O Painel MEDE: tarefa reprovada pela liderança não conta como feita aqui, e o
+// checklist marcado inteiro com uma reprovada aparece "parcial" (24/09/2026).
+// A tela de quem executa chama as mesmas funções SEM isto — ver `roundProgress`.
+const MEDICAO = { descontaReprovadas: true };
 import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades, AgoraBase } from './agora';
 import { ReportsBody, ConferenceQueue, DisputeCard, useFilaConferencia } from './ReportsView';
 import { NotificationHistory } from './NotificationHistory';
@@ -584,6 +589,7 @@ function PainelCorpo({
         completions,
         { templateId: t.id, unitId, date },
         applicableItems(t, date).map(i => i.id),
+        MEDICAO,
       );
       total += p.total;
       done += p.done;
@@ -619,7 +625,7 @@ function PainelCorpo({
       sectors.includes(t.sector) &&
       applicableItems(t, viewDate).length > 0
     );
-    const status = prev.map(t => templateStatus(t, completions, viewDate, tz));
+    const status = prev.map(t => templateStatus(t, completions, viewDate, tz, MEDICAO));
     return {
       expected: prev.length,
       done: status.filter(s => s === 'done').length,
@@ -699,6 +705,7 @@ function PainelCorpo({
         completions,
         { templateId: t.id, unitId: u.id, date: viewDate },
         applicableItems(t, viewDate).map(i => i.id),
+        MEDICAO,
       );
       total += p.total;
       done += p.done;
@@ -926,7 +933,7 @@ function PainelCorpo({
               applicableItems(t, viewDate).length > 0
             );
             if (typeTemplates.length === 0) return null;
-            const tipoStatus = typeTemplates.map(t => templateStatus(t, completions, viewDate, tz));
+            const tipoStatus = typeTemplates.map(t => templateStatus(t, completions, viewDate, tz, MEDICAO));
             const allDone = tipoStatus.every(s => s === 'done');
             const anyOverdue = tipoStatus.some(s => s === 'overdue');
             const anyPartial = tipoStatus.some(s => s === 'partial');
@@ -947,11 +954,11 @@ function PainelCorpo({
                   {sectors.map(sector => {
                     const t = typeTemplates.find(t => t.sector === sector);
                     if (!t) return null;
-                    const status = templateStatus(t, completions, viewDate, tz);
+                    const status = templateStatus(t, completions, viewDate, tz, MEDICAO);
                     // A ÚLTIMA submissão do dia, não a primeira: com duas, a
                     // primeira mostrava contagem e fotos desatualizadas.
                     const comp = latestPerRound(completions.filter(c => c.templateId === t.id && c.unitId === t.unitId && c.date === viewDate))[0];
-                    const prog = templateProgress(t, completions, viewDate);
+                    const prog = templateProgress(t, completions, viewDate, MEDICAO);
                     const doneItems = prog.done;
                     const totalItems = prog.total || (comp ? comp.items.length : 0);
                     const photoItems = comp ? comp.items.filter(i => i.hasPhoto) : [];
@@ -964,6 +971,14 @@ function PainelCorpo({
                               {comp
                                 ? `${comp.operatorName} · ${new Date(comp.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
                                 : t.deadline ? `até ${t.deadline}` : 'pendente'}
+                              {/* O porquê do "parcial" num checklist que a equipe
+                                  marcou inteiro: sem isto, 7/8 depois de todo
+                                  mundo ter visto 8/8 parece defeito. */}
+                              {prog.reprovadas > 0 && (
+                                <span style={{ color: C.critical, fontWeight: W.semibold }}>
+                                  {` · ${prog.reprovadas} reprovada${prog.reprovadas > 1 ? 's' : ''} na conferência`}
+                                </span>
+                              )}
                             </p>
                           </div>
                           <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>

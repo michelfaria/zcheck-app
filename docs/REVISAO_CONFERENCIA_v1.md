@@ -236,6 +236,25 @@ pontos podem aparecer negativos. Regra em `REVIEW_POINT_FACTOR` /
 `PRODUCTIVITY_REVIEW_CUTOFF` (lib/stats.js), provada em
 `tests/produtividade-conferencia.spec.mjs`.
 
+### Checklist 100% — reprovada não conta como feita (24/09/2026)
+
+Pedido do Michel no mesmo dia: checklist marcado inteiro com uma tarefa
+reprovada não conta como executado 100%. Régua única em `tarefaFeita`
+(lib/conferencia.js), mesmo corte da produtividade. Vale para a MEDIÇÃO —
+`roundIsComplete` (aderência, "Checklists 100%", J.I.T., índices de loja e
+liderança), `summarizeCompletions`/`collaboratorStats`/`groupStats`, CSV/PDF e
+o Painel Dia (status "Parcial" + "N reprovada(s) na conferência", via
+`descontaReprovadas`). NÃO vale para a execução: Executar, "Concluir",
+auto-concluir e carryover seguem em `i.done`.
+
+EXCEÇÃO — o índice da liderança (decisão do Michel no mesmo dia): a aderência
+da equipe é 30% da nota de quem confere, e com o desconto cada reprovação
+baixaria o índice de quem reprovou — o contrário do incentivo que §2 pede
+(discordância não pode cair a zero). Lá a reprovada conta como feita:
+`completeRoundChecker(tpl, { descontaReprovadas: false })` em
+`computeLeadershipProfile`. Provado no bloco 4 de
+`tests/conclusao-reprovada.spec.mjs`.
+
 ### Pontualidade — e por que ela NÃO tem corte de data
 
 Pedido de 08/08: quem entrega no prazo tem que ficar acima de quem entrega

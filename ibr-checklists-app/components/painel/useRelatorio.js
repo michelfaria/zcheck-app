@@ -26,6 +26,7 @@
 import { useState, useEffect } from 'react';
 import { todayStr, tzOf } from '../../lib/dates';
 import { latestPerRound, roundKey } from '../../lib/rounds';
+import { tarefaFeita } from '../../lib/conferencia';
 import { CHECKLIST_TYPE_ORDER, completeRoundChecker, isUnitOff } from '../../lib/checklists';
 import {
   PERIODS, periodDates, filterCompletions, countApplicableTemplatesOnDate,
@@ -222,10 +223,11 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
       // impede a desduplicação de virar perda: quem precisa auditar uma
       // reexecução vê que ela existiu e quantas foram.
       ...filtered.map(c => {
-        const done = c.items.filter(i => i.done).length;
+        // Reprovada na conferência não é tarefa feita, como na tela.
+        const done = c.items.filter(tarefaFeita).length;
         const total = c.items.length;
         const rate = total ? ((done / total) * 100).toFixed(0) + '%' : '—';
-        const crit = c.items.filter(i => i.critical && !i.done).length;
+        const crit = c.items.filter(i => i.critical && !tarefaFeita(i)).length;
         return [
           c.date,
           units.find(u => u.id === c.unitId)?.name || c.unitId,
@@ -320,7 +322,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
     const execRows = execOrdenadas
       .slice(0, EXEC_MAX_PDF)
       .map(c => {
-        const done = c.items.filter(i => i.done).length;
+        const done = c.items.filter(tarefaFeita).length;
         const fotos = c.items.filter(i => i.hasPhoto).length;
         const subs = submissoesPorRodada.get(roundKey(c)) || 1;
         return `<tr>

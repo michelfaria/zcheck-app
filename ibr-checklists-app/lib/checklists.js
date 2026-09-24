@@ -62,7 +62,10 @@ export const templateAtiva = t => t.active !== false;
  * (checklist, data), porque a aderência varre 30 dias × todas as execuções e sem
  * o cache seria um `find` + `applicableItems` por linha, a cada render.
  */
-export function completeRoundChecker(templates) {
+//
+// `opts` vai direto para `roundIsComplete` — o índice da liderança passa
+// `{ descontaReprovadas: false }`, e só ele (ver o porquê lá).
+export function completeRoundChecker(templates, opts = {}) {
   const byId = new Map((templates || []).map(t => [t.id, t]));
   const cache = new Map();
   return c => {
@@ -71,7 +74,7 @@ export function completeRoundChecker(templates) {
       const t = byId.get(c.templateId);
       cache.set(k, t ? applicableItems(t, c.date).map(i => i.id) : null);
     }
-    return roundIsComplete(c, cache.get(k));
+    return roundIsComplete(c, cache.get(k), opts);
   };
 }
 
@@ -171,9 +174,12 @@ export const isUnitOff = (units, closures, unitId, dateStr) =>
  * está pendente. Quem nunca foi submetido segue em `pending`/`overdue`, com a
  * regra de prazo intacta.
  */
-export function templateStatus(t, completions, today, tz = APP_TZ) {
+//
+// `opts.descontaReprovadas` liga a régua de medição (ver `roundProgress`): o
+// Painel passa, a tela de quem executa não.
+export function templateStatus(t, completions, today, tz = APP_TZ, opts = {}) {
   const previstas = applicableItems(t, today).map(i => i.id);
-  const p = roundProgress(completions, { templateId: t.id, unitId: t.unitId, date: today }, previstas);
+  const p = roundProgress(completions, { templateId: t.id, unitId: t.unitId, date: today }, previstas, opts);
   // A regra (e o porquê do prazo ser um INSTANTE no relógio da loja, não uma
   // comparação com o relógio de quem olha) está em lib/rounds.js, com teste.
   return statusFromProgress(p, { deadline: t.deadline, date: today, tz });
@@ -359,10 +365,11 @@ export function itensDoDia(template, completions, closures, dateStr, teto = 7, u
 
 // Quantas das tarefas do dia foram feitas — para a tela dizer "5 de 8" em vez de
 // só "parcial", que informa o estado mas não o tamanho do que falta.
-export function templateProgress(t, completions, today) {
+export function templateProgress(t, completions, today, opts = {}) {
   return roundProgress(
     completions,
     { templateId: t.id, unitId: t.unitId, date: today },
     applicableItems(t, today).map(i => i.id),
+    opts,
   );
 }

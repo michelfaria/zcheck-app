@@ -78,6 +78,11 @@ a partir de 24/09/2026):
 - **Reprovada** — vale o mesmo **em negativo** (−1 comum, −2 crítica), e o
   checklist deixa de contar como 100%: o bônus some para todos que o fizeram.
 
+Tarefa reprovada também deixa de contar como feita: o checklist que a equipe
+marcou inteiro passa a aparecer como **Parcial** no Painel (com "1 reprovada na
+conferência" ao lado) e sai da aderência e dos **Checklists 100%**. Na tela de
+quem executa nada muda — a tarefa continua marcada e não volta para a lista.
+
 Vale com ou sem motivo escrito — mas escreva o motivo: é ele que diz à pessoa o
 que corrigir. Abaixo do score de cada colaborador aparece a linha
 **Conferência**, com quantas tarefas foram aprovadas, com ressalva e reprovadas,
