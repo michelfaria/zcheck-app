@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import {
   CheckSquare, LayoutGrid, Camera, WifiOff, EyeOff, MessagesSquare, RotateCcw,
-  Check, Eye, Target, TrendingUp, ClipboardCheck, History, ArrowLeftRight,
+  Check, Eye, Target, TrendingUp, ClipboardCheck, History, ArrowLeftRight, PackageX,
   Trash2, ShieldCheck, Store, Coffee, BedDouble, UtensilsCrossed,
   Pill, PawPrint, Stethoscope, Building2,
 } from 'lucide-react';
@@ -69,8 +69,10 @@ const Eyebrow = ({ color = C.muted, children }) => (
 
 // Telas REAIS do app, capturadas por scripts/landing-shots/run.mjs: os
 // componentes de produção montados sobre uma empresa fictícia (Grupo Exemplo,
-// 3 lojas). O produto é o de verdade; os dados são de exemplo — e a legenda diz
-// isso, porque a landing nunca apresenta dado inventado como se fosse cliente.
+// 3 lojas). O produto é o de verdade; os dados são de exemplo. As lojas e as
+// pessoas têm nome genérico de propósito: a landing nunca apresenta dado
+// inventado como se fosse cliente. Hero e Unidades ficaram sem o aviso por
+// decisão de 24/09/2026; só o Meu ID ainda diz "dados de exemplo".
 // Mudou uma dessas telas no app? Rode o script de novo.
 const URL_APP = 'suaempresa.zcheckapp.com/app';
 
@@ -149,10 +151,10 @@ const PILLARS = [
   { Icon: Eye, title: 'Você enxerga a operação inteira',
     text: 'Com uma loja ou várias, o que foi feito ou não e o que atrasou ficam à vista no Painel. Você não precisa garimpar planilha nem rolar o grupo do WhatsApp atrás de resposta.' },
   { Icon: Target, title: 'O crítico vem primeiro',
-    // "O resumo do Agora", e não "o ZCheck só interrompe": durante o teste a
-    // diretoria vê o convite para assinar a cada entrada, e isso contradizia a
-    // frase mais larga.
-    text: 'Quando um item crítico falha mais de uma vez, ele entra nas prioridades automaticamente. E o resumo do Agora só se abre sozinho quando tem algo pedindo a sua atenção.' },
+    // Sem promessa sobre quando o app interrompe: "o ZCheck só interrompe
+    // quando há sinal real" não valia no teste grátis (o convite para assinar
+    // aparece a cada entrada da diretoria).
+    text: 'Quando um item crítico falha mais de uma vez, ele entra nas prioridades automaticamente.' },
   { Icon: TrendingUp, title: 'A rotina vira hábito da equipe',
     text: 'Consistência na execução constrói cultura, e cultura mantém o padrão mesmo quando você não está.' },
 ];
@@ -177,6 +179,7 @@ export default function LandingPage() {
         .lp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
         .lp-hero-top { display: grid; grid-template-columns: 1.15fr 1fr; gap: 56px; align-items: end; }
         .lp-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .lp-grid-2x2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
         details.lp-faq summary { cursor: pointer; font-size: ${T.body}px; font-weight: ${W.semibold}; color: ${C.ink}; padding: 16px 0; list-style: none; display: flex; justify-content: space-between; align-items: center; }
         /* A segunda declaração dá texto alternativo vazio ao sinal: sem ela o
            leitor de tela anunciava "mais" depois de cada pergunta. A primeira
@@ -270,7 +273,7 @@ export default function LandingPage() {
         }
         @media (max-width: 820px) {
           .lp-container { padding-left: 20px; padding-right: 20px; }
-          .lp-grid-2, .lp-grid-3 { grid-template-columns: 1fr; }
+          .lp-grid-2, .lp-grid-3, .lp-grid-2x2 { grid-template-columns: 1fr; }
           .lp-hero-top { grid-template-columns: 1fr; gap: 20px; }
           .lp-nav-links { display: none; }
           .lp-hero-ctas { flex-direction: column; align-items: stretch; }
@@ -314,10 +317,10 @@ export default function LandingPage() {
         <div className="lp-container" style={{ paddingTop: 64, paddingBottom: 64 }}>
           <div className="lp-hero-top">
             <div>
-              {/* Quem é o cliente, no primeiro olhar: negócios com operação
-                  física e rotina diária. Cinco exemplos concretos dizem mais
-                  que "empresas" — a lista completa está em "Feito para o seu negócio". */}
-              <Eyebrow color={C.success}>Para restaurantes, hotéis, farmácias, consultórios e lojas</Eyebrow>
+              {/* Quem é o cliente, no primeiro olhar, em três grandes setores
+                  (decisão de 24/09/2026). A lista completa de segmentos está em
+                  "Feito para o seu negócio". */}
+              <Eyebrow color={C.success}>Para negócios de Gastronomia, Hospitalidade e Varejo</Eyebrow>
               <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em' }}>
                 Saiba onde sua operação precisa de atenção antes que vire problema.
               </h1>
@@ -347,7 +350,7 @@ export default function LandingPage() {
               celular. O outro de cada par tem sizes de 16px, então o preload
               dele baixa uma variante minúscula. Mudou uma porcentagem de
               .lp-stage ou de .lp-phone-solo no CSS? Refaça esta conta. */}
-          <figure>
+          <div>
             <div className="lp-stage lp-only-desk">
               <LaptopShot src={shotPainel} priority fetchPriority="high"
                 sizes="(max-width: 820px) 16px, (max-width: 1080px) calc(82vw - 90px), 796px"
@@ -361,8 +364,7 @@ export default function LandingPage() {
                 sizes="(max-width: 408px) calc(76vw - 45px), (max-width: 820px) 266px, 16px"
                 alt="Painel no celular da diretoria: o bloco Agora com o que você marcou para tratar, a falha crítica que se repete na Loja Praia e as prioridades agora." />
             </div>
-            <ShotCaption as="figcaption" style={{ marginTop: 20 }}>Telas reais do ZCheck · dados de exemplo</ShotCaption>
-          </figure>
+          </div>
         </div>
       </section>
 
@@ -375,11 +377,13 @@ export default function LandingPage() {
               Você só fica sabendo quando já virou prejuízo.
             </h2>
           </div>
-          <div className="lp-grid-3">
+          {/* Quatro cards em 2×2: numa grade de três o quarto ficava sozinho. */}
+          <div className="lp-grid-2x2">
             {[
               { Icon: EyeOff, title: 'O desvio aparece tarde', text: 'Papel e planilha registram, mas não avisam. A geladeira que falhou na terça vira perda na sexta.' },
               { Icon: MessagesSquare, title: 'O WhatsApp engole a rotina', text: 'A cobrança se perde no meio das mensagens do grupo, e depois ninguém sabe dizer quem fez o quê e quando.' },
               { Icon: RotateCcw, title: 'Retrabalho sem dono', text: 'Sem evidência, a mesma tarefa é feita duas vezes ou fica por fazer. E você só vê o resultado no fim do mês.' },
+              { Icon: PackageX, title: 'O produto que ninguém percebeu que acabou', text: 'Você deixa de vender, prejudica a expectativa do cliente e a imagem da empresa.' },
             ].map(({ Icon, title, text }) => (
               <div key={title} style={{ border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: R.md, background: C.bg, marginBottom: 14 }}>
@@ -437,7 +441,7 @@ export default function LandingPage() {
           <div className="lp-grid-3">
             {[
               ['Crie sua conta e monte sua rotina', 'Em poucos minutos, você escolhe um modelo pronto do seu segmento ou começa do zero e ajusta do seu jeito. Se já usa uma planilha, dá para importar.'],
-              ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só os checklists do seu setor. Você escolhe quais tarefas pedem foto, e o app funciona sem internet.'],
+              ['A equipe executa pelo celular', 'Cada colaborador entra com um PIN e vê só os checklists do seu setor. Você escolhe quais tarefas pedem foto para comprovação, e o app funciona sem internet, sem precisar instalar no celular.'],
               ['Você abre o Painel e age', 'Ali você vê, ao longo do dia, o que foi feito ou não e por onde começar. E o que você marcar para tratar volta a aparecer até ser resolvido.'],
             ].map(([t, d], i) => (
               <div key={t} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 24 }}>
@@ -469,7 +473,7 @@ export default function LandingPage() {
             </div>
             <figcaption style={{ marginTop: 16, textAlign: 'center', fontSize: T.bodySm, color: C.muted, lineHeight: 1.6 }}>
               <strong style={{ color: C.ink }}>Para quem tem mais de uma loja,</strong> a aba Unidades ordena todas pelo índice
-              operacional e mostra onde cada uma escorrega. <span style={{ whiteSpace: 'nowrap' }}>Tela real · dados de exemplo.</span>
+              operacional e mostra onde cada uma escorrega.
             </figcaption>
           </figure>
         </div>
@@ -523,7 +527,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-grid-3">
             {[
-              { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, Intermediário e Fechamento, com prazo se você quiser. Cada tarefa tem a sua frequência: todo dia, em dias da semana, todo dia 10 do mês ou a cada 3 meses. Extintor e dedetização entram na mesma rotina.' },
+              { Icon: CheckSquare, title: 'Checklists por loja, setor e turno', text: 'Abertura, Intermediário e Fechamento, com prazo se você quiser. Cada tarefa tem a sua frequência: todo dia, em dias da semana, todo dia 10 do mês ou a cada 3 meses. Manutenções periódicas podem ter checklist específico, para você não esquecer o que importa.' },
               { Icon: LayoutGrid, title: 'Painel para a gestão', text: 'Você vê como a operação está agora, com base no que a equipe marcou, e pode olhar por loja, por setor ou por pessoa.' },
               { Icon: ClipboardCheck, title: 'Conferência de checklists', text: 'Liderança, gerência e diretoria aprovam, fazem ressalva ou reprovam cada tarefa. O que for reprovado não conta como feito.' },
               // Pendência que volta é por tarefa (opção "cobrar no dia seguinte"
@@ -533,7 +537,7 @@ export default function LandingPage() {
               // (lib/completions.js), e as fotos somem em 90 dias (Política de
               // Privacidade).
               { Icon: Camera, title: 'Evidência com foto', text: 'Qualquer item pode exigir foto, guardada por 90 dias. No Painel, filtre por período, loja e setor e exporte em CSV ou PDF.' },
-              { Icon: WifiOff, title: 'Funciona offline', text: 'Dá para instalar como app no celular. Sem sinal, a equipe continua marcando e tudo sincroniza depois.' },
+              { Icon: WifiOff, title: 'Funciona offline', text: 'Dá para salvar como app no celular, sem precisar instalar. Sem sinal de internet, a equipe continua marcando e tudo sincroniza depois.' },
             ].map(({ Icon, title, text }) => (
               <div key={title} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 22 }}>
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: R.md, background: 'rgba(21,128,61,0.08)', marginBottom: 12 }}>
@@ -557,7 +561,7 @@ export default function LandingPage() {
               Feito para o seu negócio
             </h2>
             <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.6 }}>
-              Se o seu negócio tem operação física e rotinas que precisam ser cumpridas todo dia ou periodicamente, da limpeza diária à manutenção do mês, o ZCheck serve para você.
+              Se o seu negócio tem operação física e rotinas que precisam ser cumpridas todo dia ou periodicamente, da limpeza diária à manutenção do mês, o ZCheck é para você.
             </p>
           </div>
           <div className="lp-grid-3">
@@ -581,7 +585,7 @@ export default function LandingPage() {
             })}
           </div>
           <p style={{ textAlign: 'center', fontSize: T.bodySm, fontWeight: W.semibold, color: C.ink, marginTop: 24 }}>
-            O seu negócio não está na lista? Você monta os checklists em minutos ou importa a sua planilha. O preço é o mesmo para todos.
+            O seu negócio não está na lista? Você monta os checklists em minutos ou importa a sua planilha.
           </p>
         </div>
       </section>
@@ -651,7 +655,7 @@ export default function LandingPage() {
             <p style={{ fontSize: T.body, color: C.muted, lineHeight: 1.8 }}>
               Na maioria dos softwares de operação, o preço só aparece depois de uma
               conversa com um consultor. No ZCheck, o preço é público, a calculadora faz a conta em
-              10 segundos e até o custo de sair do anual antes do prazo está aqui. Se a nossa
+              segundos e até o custo de sair do anual antes do prazo está aqui. Se a nossa
               proposta é mostrar o que acontece na sua operação, não faz sentido esconder quanto custa.
             </p>
           </div>
@@ -753,9 +757,6 @@ export default function LandingPage() {
           saía na cor do ink — o mesmo fundo, 1:1, invisível no Tab. */}
       <section className="zc-on-dark" style={{ background: C.ink, color: 'white', padding: '96px 0', textAlign: 'center' }}>
         <div className="lp-container" style={{ maxWidth: 660 }}>
-          <p style={{ fontSize: T.bodySm, fontWeight: W.semibold, opacity: 0.75, marginBottom: 20 }}>
-            No Painel, você vê a sua operação do jeito que ela está. Com o nosso preço é igual, e qualquer um pode conferir.
-          </p>
           <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: W.bold, marginBottom: 14 }}>
             Comece hoje e configure em minutos.
           </h2>
