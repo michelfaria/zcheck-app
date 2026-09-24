@@ -5985,7 +5985,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
 }
 
 /* ── UserDataChangeModal ── */
-function UserDataChangeModal({ currentUser, onClose }) {
+export function UserDataChangeModal({ currentUser, onClose }) {
   const FIELDS = [
     { id: 'nome', label: 'Nome completo', placeholder: 'Novo nome completo', type: 'text' },
     { id: 'telefone', label: 'Telefone / WhatsApp', placeholder: '(00) 00000-0000', type: 'tel' },
@@ -6021,15 +6021,36 @@ function UserDataChangeModal({ currentUser, onClose }) {
         const f = FIELDS.find(f=>f.id===id);
         return `${f.label}: ${values[id].trim()}`;
       }).join(' | ');
-      await supabase.from('user_requests').insert({
+      // O supabase-js NÃO lança quando o banco recusa (RLS, constraint): devolve
+      // `{ error }`. Sem conferir, a tela dizia "enviado" e nada era gravado —
+      // diretoria (unit_id nulo) e gerência de várias lojas ("u1,u2"): o
+      // gatilho user_requests_company não acha a empresa pela loja e o WITH
+      // CHECK recusa. NÃO acrescentar `.select()`: depois da
+      // 20260924_user_requests_gestao só a diretoria LÊ user_requests, e o
+      // RETURNING com coluna viraria erro de RLS para todo o resto.
+      //
+      // `pin`: o pedido de alteração não tem PIN próprio. O PIN novo, quando
+      // pedido, vai no `note` ("PIN de acesso: …") e é de lá que a aprovação o
+      // aplica; a coluna `pin` só é lida pela create_user_from_request, que a
+      // aprovação chama apenas para cadastro novo. O valor fixo fica porque a
+      // coluna pode ser NOT NULL em produção (o /cadastro sempre a preenche) —
+      // `currentUser.pin` não existe no cliente desde 20260709_secure_pin_validation,
+      // então isto já gravava '0000' sempre.
+      const { error: insertErr } = await supabase.from('user_requests').insert({
         name: currentUser.name,
         unit_id: currentUser.unitId,
         status: 'pendente',
         note: `[ALTERAÇÃO DE DADOS] ${changes}${note.trim() ? ' | Obs: '+note.trim() : ''}`,
-        pin: currentUser.pin || '0000',
+        pin: '0000',
       });
+      if (insertErr) throw insertErr;
       setSent(true);
-    } catch(e) { setError('Erro ao enviar. Tente novamente.'); }
+    } catch (e) {
+      console.warn('Solicitação de alteração não gravada:', e);
+      setError(currentUser.role === 'gestao'
+        ? 'A solicitação não foi enviada. Tente de novo; se o erro continuar, fale com o suporte.'
+        : 'A solicitação não foi enviada. Tente de novo; se o erro continuar, avise a diretoria.');
+    }
     setLoading(false);
   };
 
