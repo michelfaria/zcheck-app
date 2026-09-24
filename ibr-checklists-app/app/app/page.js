@@ -7022,11 +7022,11 @@ function WelcomeScreen({ role, onClose }) {
   ];
 
   const liderSteps = [
-    { Icon: BarChart3,      title: 'Relatórios', desc: 'Acesse a aba Relatórios para ver o desempenho da equipe por período, setor e colaborador. Exporte em PDF ou CSV.' },
-    { Icon: LayoutGrid,     title: 'Painel', desc: 'Acompanhe o score diário, ranking da equipe e o comparativo entre lojas com tendência dos últimos 7 dias.' },
+    { Icon: LayoutGrid,     title: 'Painel', desc: 'Acompanhe o score do dia, o que está atrasado e a Conferência de checklists — revise o que a equipe entregou. Abaixo, a aderência dos últimos 7 dias.' },
+    { Icon: BarChart3,      title: 'Análise no Painel', desc: 'Mais abaixo no Painel, veja o desempenho da equipe por período nas lentes Tendência, Pessoas e Registros. Exporte em PDF ou CSV.' },
     { Icon: ClipboardCheck, title: 'Executar', desc: 'Você também pode executar checklists e ver o progresso de todos os setores da sua loja.' },
-    { Icon: Calendar,       title: 'Filtros de período', desc: 'Nos relatórios, filtre por dia, semana, mês completo ou período personalizado.' },
-    { Icon: Users,          title: 'Ranking de equipe', desc: 'Veja quem está se destacando no Painel — ranking por % de realização nos últimos 7 dias.' },
+    { Icon: Calendar,       title: 'Filtros de período', desc: 'Na análise do Painel, filtre por hoje, 7 ou 30 dias, mês completo ou período personalizado.' },
+    { Icon: Users,          title: 'Ranking de equipe', desc: `Veja quem está se destacando na aba Equipe — ranking pelo índice operacional do mês: ${collabIndexSentence()}.` },
     { Icon: Settings2,      title: 'Solicitar alterações', desc: 'Use a engrenagem no cabeçalho para solicitar alteração dos seus dados cadastrais.' },
   ];
 
