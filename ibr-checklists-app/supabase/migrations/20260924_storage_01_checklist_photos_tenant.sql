@@ -17,6 +17,18 @@
 -- repositório é público. Foi por isso que o "Isolados por empresa" saiu do FAQ
 -- da landing em 24/09/2026.
 --
+-- ── Medido em produção (auditoria de 24/09/2026, supabase/auditoria/) ───────
+--   · `anon_storage_all` JÁ estava confinada a `checklist-photos` (o passo 2
+--     da 20260731 foi aplicado; o passo 1 não — não há policy de
+--     authenticated no bucket). Continua `for all`: o anon lista, baixa, move,
+--     sobrescreve e APAGA qualquer foto e POP;
+--   · bucket privado, 2.062 objetos, TODOS em caminho antigo e subidos sem
+--     token: 977 provas (58 MB), 1.083 de rodada (62 MB), 2 POPs (4 MB);
+--   · uma empresa só em `companies` (`ibr-li53392s`). Prévia do inventário:
+--     1.976 `dono` (todos dela), 86 `sem_dono` (77 provas e 7 de rodada sem
+--     conclusão/loja correspondente; os 2 POPs, que nenhum template cita mais),
+--     nenhum `revisar`/`conflito`, nenhuma colisão de id.
+--
 -- ── O desenho ───────────────────────────────────────────────────────────────
 -- Objeto novo nasce em `{company_id}/<caminho de antes>` e sobe pelo cliente
 -- AUTENTICADO. A policy compara a 1ª pasta com o company_id do token — o mesmo
