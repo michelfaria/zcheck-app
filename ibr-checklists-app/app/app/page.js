@@ -4859,6 +4859,9 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
   const [approvalUnits, setApprovalUnits] = useState([]); // array — gerência multi-select
   const [approvalSector, setApprovalSector] = useState(null);
   const [processingId, setProcessingId] = useState(null);
+  // { id, texto } — o que deu errado no último aprovar/recusar deste pedido.
+  // Fica na tela de revisão (o toast some em 2,6 s e corta frase longa).
+  const [erroPedido, setErroPedido] = useState(null);
   const sectorRows = useSectors(); // setores reais da empresa, para a aprovação
 
   // Conta a empresa inteira, não o escopo: é o que protege o último usuário de
@@ -4969,14 +4972,34 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     load();
   }, [currentUser?.role]);
 
+  /**
+   * O acesso criado por um pedido de cadastro tem o id DERIVADO do pedido, não
+   * sorteado. Aprovar são duas escritas — a RPC cria a pessoa, o update dá
+   * baixa no pedido — e a segunda pode falhar depois da primeira (RLS, rede).
+   * Com `uid()`, o pedido voltava `pendente` no próximo carregamento e aprovar
+   * de novo criava uma SEGUNDA pessoa. Com o id do pedido, a tela acha o
+   * acesso na lista de usuários — em qualquer aparelho, depois de recarregar —
+   * e oferece só "Tirar da fila". E, se a lista estiver velha, a RPC de hoje
+   * (20260726_tenant_03e, ON CONFLICT (id)) atualiza a mesma pessoa em vez de
+   * criar outra; a da 20260923_users_escrita_gestao recusa o id repetido.
+   */
+  const idDoAcesso = req => `p${String(req.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+  const acessoDoPedido = req => (req.note?.startsWith('[ALTERAÇÃO DE DADOS]')
+    ? null
+    : users.find(u => u.id === idDoAcesso(req)) || null);
+
   const approveRequest = async (req, { jaConfirmado = false, contratadas = 0, pendente = false } = {}) => {
     const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
+    // Aprovação anterior criou o acesso e não conseguiu dar baixa: aqui só
+    // falta a baixa. Nada de vaga, nada de RPC.
+    const jaCriado = acessoDoPedido(req);
     // Cadastro novo ocupa vaga; alteração de dados não. Sem vaga livre, a
     // pergunta vem ANTES da RPC — depois dela a pessoa já estaria criada.
     // O "Processando…" liga antes da releitura da cota: ela é uma ida ao
     // banco, e o botão livre nesse meio-tempo aprovaria duas vezes.
     setProcessingId(req.id);
-    if (!isAlteracao && !jaConfirmado && await semVagaNoBanco()) {
+    setErroPedido(null);
+    if (!isAlteracao && !jaCriado && !jaConfirmado && await semVagaNoBanco()) {
       setProcessingId(null);
       setSemVaga({
         tipo: 'insert', acao: 'aprovar', nome: editingReq.name ?? req.name,
@@ -4993,8 +5016,13 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       const finalName = editingReq.name ?? req.name;
       const finalPin  = editingReq.pin || '';
       const finalNote = editingReq.note !== undefined ? `[ALTERAÇÃO DE DADOS] ${editingReq.note}` : req.note;
+      // Os dados da pessoa já foram gravados (acesso criado, alteração
+      // aplicada)? Decide o que dizer se a baixa falhar.
+      let gravou = !!jaCriado;
 
-      if (!isAlteracao) {
+      if (jaCriado) {
+        // Só a baixa, logo abaixo.
+      } else if (!isAlteracao) {
         // Create new user
         const finalUnitId = approvalRole === 'gerencia'
           ? (approvalUnits.length === 0 ? null : approvalUnits.length === 1 ? approvalUnits[0] : approvalUnits.join(','))
@@ -5002,7 +5030,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
 
         // Sem `pin` no objeto do cliente — o PIN nunca volta ao bundle.
         const newUser = {
-          id: uid(),
+          id: idDoAcesso(req),
           name: finalName,
           role: approvalRole,
           unitId: ['gestao'].includes(approvalRole) ? null : finalUnitId,
@@ -5034,6 +5062,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // reescrever nada. A RPC já gravou; reescrever daqui só criaria uma
         // segunda chance de falhar DEPOIS de o acesso já existir, e aí a
         // solicitação voltaria para a fila e seria aprovada duas vezes.
+        gravou = true;
         await onSaveUsers([...users, newUser], { changedIds: [] });
       } else {
         // Apply changes to existing user
@@ -5068,22 +5097,51 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
               users.map(u => u.id === existingUser.id ? { ...u, ...updates } : u),
               { changedIds: [existingUser.id] },
             );
+            gravou = true;
           }
         }
       }
 
       // Update request status. Só reescreve `pin` se a gestão informou um novo;
-      // caso contrário o PIN já gravado é mantido intacto.
-      await supabase.from('user_requests').update({
+      // caso contrário o PIN já gravado é mantido intacto. Na baixa de um
+      // acesso já criado, nome, papel e setor são os DA PESSOA criada — os
+      // seletores desta tela não valem mais (depois de recarregar, estariam
+      // no padrão).
+      //
+      // O supabase-js não lança em recusa do banco nem em queda de rede:
+      // devolve `{ error }`. Sem `.select()` (a leitura da tabela é só da
+      // diretoria desde a 20260924_user_requests_gestao — não é preciso pedir
+      // a linha de volta) e sem `count`: quem vê o pedido nesta fila passa no
+      // mesmo predicado de SELECT e de UPDATE, então casar 0 linhas é o pedido
+      // ter sumido do banco — e aí sair da fila é o certo.
+      const { error: baixaErr } = await supabase.from('user_requests').update({
         status: 'aprovado',
-        name: finalName,
-        ...(finalPin ? { pin: finalPin } : {}),
+        name: jaCriado?.name ?? finalName,
+        ...(finalPin && !jaCriado ? { pin: finalPin } : {}),
         note: finalNote,
-        role: isAlteracao ? undefined : approvalRole,
-        sector_id: isAlteracao ? undefined : approvalSector,
+        role: isAlteracao ? undefined : (jaCriado?.role ?? approvalRole),
+        sector_id: isAlteracao ? undefined : (jaCriado ? (jaCriado.sectorId ?? null) : approvalSector),
         reviewed_at: new Date().toISOString(),
         reviewed_by: currentUser.id,
       }).eq('id', req.id);
+      if (baixaErr) {
+        // Nada é desfeito: a pessoa criada fica (desfazer seria outra escrita
+        // que pode falhar). O pedido continua na fila e a tela de revisão
+        // continua aberta; no cadastro ela passa a mostrar "Acesso já
+        // criado" e "Tirar da fila" (acessoDoPedido), não "Aprovar".
+        const motivo = baixaErr.message || 'sem resposta do servidor';
+        const nome = jaCriado?.name ?? finalName;
+        setErroPedido({
+          id: req.id,
+          texto: gravou
+            ? `${isAlteracao ? 'Os dados já foram atualizados' : `O acesso de ${nome} já foi criado`}, mas o pedido não saiu da fila (${motivo}).`
+            : `O pedido não saiu da fila (${motivo}).`,
+        });
+        showToast(gravou
+          ? (isAlteracao ? `Dados de ${nome} atualizados — o pedido segue na fila` : `Acesso de ${nome} criado — o pedido segue na fila`)
+          : 'O pedido não saiu da fila. Tente de novo.');
+        return;
+      }
 
       // Send push notification to gestao/gerencia confirming action
       // and try to notify the user if they have a subscription
@@ -5122,7 +5180,8 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
       setRequests(r => r.filter(x => x.id !== req.id));
       setReviewingRequest(null);
       setEditingReq({});
-      if (contratadas) showToast(`Cadastro aprovado${avisoVagasContratadas(contratadas, { pendente })}`);
+      if (jaCriado) showToast(`Pedido de ${jaCriado.name} fora da fila`);
+      else if (contratadas) showToast(`Cadastro aprovado${avisoVagasContratadas(contratadas, { pendente })}`);
     } catch (e) {
       console.error(e);
       if (e?.code === 'ZC_QUOTA') {
@@ -5138,26 +5197,37 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         // semanas: a solicitação sumia da fila e ninguém sabia que o acesso não
         // tinha sido criado. Falhou, a gestão precisa ver — e a solicitação
         // continua na fila para tentar de novo.
-        showToast(e?.message || 'Não foi possível aprovar. Tente de novo.');
+        const texto = e?.message || 'Não foi possível aprovar. Tente de novo.';
+        setErroPedido({ id: req.id, texto });
+        showToast(texto);
       }
+    } finally {
+      setProcessingId(null);
     }
-    setProcessingId(null);
   };
 
   const rejectRequest = async (req, confirmed = false) => {
     setProcessingId(req.id);
+    setErroPedido(null);
     try {
       const supabase = (await import('../../lib/supabase')).authedSupabase();
-      await supabase.from('user_requests').update({
+      // Mesma regra da baixa da aprovação: o erro vem em `{ error }`, não
+      // lançado. Sem conferir, o pedido sumia da tela e voltava no reload.
+      const { error } = await supabase.from('user_requests').update({
         status: confirmed ? 'aprovado' : 'rejeitado',
         reviewed_at: new Date().toISOString(),
         reviewed_by: currentUser.id,
       }).eq('id', req.id);
+      if (error) {
+        throw new Error(`O pedido não foi ${confirmed ? 'concluído' : 'recusado'} e continua na fila (${error.message || 'sem resposta do servidor'}).`);
+      }
       setRequests(r => r.filter(x => x.id !== req.id));
       setReviewingRequest(null);
     } catch (e) {
       console.error(e);
-      showToast(e?.message || 'Não foi possível concluir. Tente de novo.');
+      const texto = e?.message || 'Não foi possível concluir. Tente de novo.';
+      setErroPedido({ id: req.id, texto });
+      showToast(texto);
     }
     setProcessingId(null);
   };
@@ -5237,6 +5307,10 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
     const req = reviewingRequest;
     const unitObj = units.find(u => u.id === req.unit_id);
     const isAlteracao = req.note?.startsWith('[ALTERAÇÃO DE DADOS]');
+    // Acesso criado por uma aprovação cuja baixa falhou (aqui ou em outro
+    // aparelho): a tela não oferece aprovar de novo nem rejeitar quem já entra.
+    const jaCriado = acessoDoPedido(req);
+    const erro = erroPedido?.id === req.id ? erroPedido.texto : null;
     // Setores da loja escolhida NESTE modal. Antes a condição era
     // `req.unit_id === 'ibr1'`: chumbada no IBR, então nenhuma outra empresa via
     // o seletor — e, como o cadastro passou a nascer sem loja (unit_id nulo),
@@ -5259,7 +5333,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
 
     return (
       <div className="zc-view space-y-3" style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom, 0px))" }}>
-        <BackBar onBack={() => { setReviewingRequest(null); setEditingReq({}); setApprovalUnit(null); setApprovalUnits([]); }} label="Solicitações" accent={C.ink} />
+        <BackBar onBack={() => { setReviewingRequest(null); setEditingReq({}); setApprovalUnit(null); setApprovalUnits([]); setErroPedido(null); }} label="Solicitações" accent={C.ink} />
 
         {/* Tipo badge + cabeçalho */}
         <Ticket accent={isAlteracao ? C.ink : C.warning}>
@@ -5275,6 +5349,21 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
           <p style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{unitObj?.name || req.unit_id || '—'}</p>
         </Ticket>
 
+        {jaCriado && (
+          <Ticket accent={C.warning}>
+            <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink }}>Acesso já criado</p>
+            <p style={{ fontSize: 13, color: C.ink, marginTop: 4, lineHeight: 1.5 }}>
+              {jaCriado.name} já está na lista de usuários e entra com o PIN do cadastro. Falta só tirar este pedido da fila.
+            </p>
+          </Ticket>
+        )}
+        {erro && (
+          <div className="flex items-start gap-2 px-3 py-2" role="alert" style={{ background: '#FDEDED', borderRadius: 8, border: `1px solid ${C.critical}` }}>
+            <AlertTriangle size={16} color={C.critical} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
+            <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.critical }}>{erro}</p>
+          </div>
+        )}
+
         {/* Dados completos da solicitação */}
         {!isAlteracao && (
           <>
@@ -5287,10 +5376,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                 { label: 'E-mail', field: 'email', value: req.email },
                 // O PIN não é mais legível pelo anon — mostra vazio com dica.
                 // Em branco = mantém o PIN escolhido no cadastro; digitar = substitui.
-                { label: 'PIN de acesso', field: 'pin', value: '', placeholder: '•••• (mantido — digite para alterar)' },
+                // Acesso já criado: o PIN já está nele; trocar é no editor.
+                ...(jaCriado ? [] : [{ label: 'PIN de acesso', field: 'pin', value: '', placeholder: '•••• (mantido — digite para alterar)' }]),
                 { label: 'Loja', field: null, value: unitObj?.name || req.unit_id },
-              ].map(({ label, field, value, placeholder }, i) => (
-                <div key={label} style={{ padding: '10px 14px', borderBottom: i < 5 ? `1px solid ${C.border}` : 'none' }}>
+              ].map(({ label, field, value, placeholder }, i, linhas) => (
+                <div key={label} style={{ padding: '10px 14px', borderBottom: i < linhas.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                   <p style={{ fontSize: 10, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 4 }}>{label}</p>
                   {field ? (
                     <input
@@ -5314,6 +5404,9 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
               </>
             )}
 
+            {/* Nível de acesso, loja e setor: escolhas de quem vai ser CRIADO.
+                Com o acesso já criado, mudar é no editor do usuário. */}
+            {!jaCriado && (<>
             {/* Nível de acesso */}
             <Eyebrow>Nível de acesso</Eyebrow>
             <div className="space-y-2">
@@ -5406,6 +5499,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                 </div>
               </>
             )}
+            </>)}
           </>
         )}
 
@@ -5453,13 +5547,15 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
 
         {/* Botões de ação */}
         <div className="zc-actionbar fixed left-0 right-0 p-3 flex gap-2" style={{ bottom: "calc(var(--zc-nav-h) + env(safe-area-inset-bottom, 0px))", background: 'rgba(250,246,239,0.96)', borderTop: `1px solid ${C.border}`, zIndex: 90 }}>
-          <button onClick={() => rejectRequest(req)} disabled={!!processingId} className="flex-1 py-3"
-            style={{ borderRadius: 6, border: `1px solid ${C.critical}`, fontWeight: W.semibold, color: C.critical, background: 'white', cursor: 'pointer' }}>
-            {isAlteracao ? 'Recusar' : 'Rejeitar'}
-          </button>
+          {!jaCriado && (
+            <button onClick={() => rejectRequest(req)} disabled={!!processingId} className="flex-1 py-3"
+              style={{ borderRadius: 6, border: `1px solid ${C.critical}`, fontWeight: W.semibold, color: C.critical, background: 'white', cursor: 'pointer' }}>
+              {isAlteracao ? 'Recusar' : 'Rejeitar'}
+            </button>
+          )}
           <button onClick={() => approveRequest(req)} disabled={!!processingId} className="flex-1 py-3"
             style={{ borderRadius: 6, border: 'none', fontWeight: W.semibold, color: 'white', background: C.success, cursor: 'pointer' }}>
-            {processingId ? 'Processando…' : isAlteracao ? 'Confirmar alteração' : 'Aprovar cadastro'}
+            {processingId ? 'Processando…' : isAlteracao ? 'Confirmar alteração' : jaCriado ? 'Tirar da fila' : 'Aprovar cadastro'}
           </button>
         </div>
         {dialogoSemVaga}
@@ -5491,7 +5587,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                   // O cadastro não pede loja (unit_id nasce nulo): o padrão tem de
                   // ser a primeira loja DESTA empresa — 'ibr1' chumbado
                   // pré-selecionava loja de outro tenant.
-                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || unitId || units[0]?.id || ''); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); }}
+                  onClick={() => { setReviewingRequest(req); setApprovalRole('colaborador'); setApprovalUnit(req.unit_id || unitId || units[0]?.id || ''); setApprovalUnits([]); setApprovalSector(null); setEditingReq({}); setErroPedido(null); }}
                   className="w-full text-left"
                   style={{ background: 'none', border: 'none', padding: 0 }}
                 >
@@ -5505,6 +5601,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
                         {isAlteracao && (
                           <p style={{ fontSize: 11, color: C.ink, marginTop: 3, fontStyle: 'italic' }}>
                             {req.note?.replace('[ALTERAÇÃO DE DADOS] ', '').slice(0, 60)}…
+                          </p>
+                        )}
+                        {acessoDoPedido(req) && (
+                          <p style={{ fontSize: 11, fontWeight: W.semibold, color: C.ink, marginTop: 3 }}>
+                            Acesso já criado — falta tirar da fila
                           </p>
                         )}
                       </div>
