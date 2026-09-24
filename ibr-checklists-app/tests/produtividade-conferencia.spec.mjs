@@ -41,7 +41,7 @@ await mkdir(dir, { recursive: true });
 const entry = join(dir, 'entry.js');
 const out = join(dir, 'bundle.mjs');
 await writeFile(entry, `
-  export { computeProductivity, verdictInForce, reviewSummary, PRODUCTIVITY_REVIEW_CUTOFF, PRODUCTIVITY_REVIEW_RULE } from '${process.cwd()}/lib/stats.js';
+  export { computeProductivity, verdictInForce, reviewSummary, CONFERENCIA_CUTOFF, PRODUCTIVITY_REVIEW_RULE } from '${process.cwd()}/lib/stats.js';
   export { ReportsBody } from '${process.cwd()}/components/painel/ReportsView.js';
   export { useRelatorio } from '${process.cwd()}/components/painel/useRelatorio.js';
   export { UnitsContext } from '${process.cwd()}/components/painel/context.js';
@@ -56,7 +56,7 @@ await build({
 });
 const {
   computeProductivity, verdictInForce, reviewSummary,
-  PRODUCTIVITY_REVIEW_CUTOFF, PRODUCTIVITY_REVIEW_RULE, ReportsBody, useRelatorio,
+  CONFERENCIA_CUTOFF, PRODUCTIVITY_REVIEW_RULE, ReportsBody, useRelatorio,
   UnitsContext, OperationalIdView,
 } = await import(out);
 
@@ -129,7 +129,7 @@ check(verdictInForce({ review: { verdict: 'reprovado' } }) === null,
 
 // O corte é um INSTANTE em Brasília, não o dia do UTC. 01h UTC de 24/09 são
 // 22h de 23/09 em Brasília: pelo `slice(0, 10)` passaria a valer, e não pode.
-check(PRODUCTIVITY_REVIEW_CUTOFF === '2026-09-24T00:00:00-03:00', 'corte em 24/09/2026, meia-noite de Brasília');
+check(CONFERENCIA_CUTOFF === '2026-09-24T00:00:00-03:00', 'corte em 24/09/2026, meia-noite de Brasília');
 check(verdictInForce({ review: { verdict: 'ressalva', reviewedAt: '2026-09-24T01:00:00.000Z' } }) === null,
   '22h de 23/09 em Brasília ainda é antes do corte, mesmo sendo 24/09 em UTC');
 check(verdictInForce({ review: { verdict: 'ressalva', reviewedAt: '2026-09-24T03:00:00.000Z' } }) === 'ressalva',

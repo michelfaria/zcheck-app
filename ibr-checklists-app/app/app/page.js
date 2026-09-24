@@ -7134,7 +7134,7 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
  * correto para medir esforço individual, mas significa que as duas não podem
  * chegar a 100% ao mesmo tempo.
  */
-function computeLeadershipProfile({ completions, templates, closures, units, leader, periodo, today }) {
+export function computeLeadershipProfile({ completions, templates, closures, units, leader, periodo, today }) {
   // `isUnitOff` e `countApplicableTemplatesOnDate` assumem array; este cálculo
   // roda num useMemo que dispara antes de templates/closures terminarem de
   // carregar, e um `undefined.some` derrubaria a aba inteira.
@@ -7182,7 +7182,13 @@ function computeLeadershipProfile({ completions, templates, closures, units, lea
   // Uma rodada por checklist/dia (reexecução não conta como dois entregues) E só
   // as COMPLETAS: entrega pela metade deixou de contar como entrega em 30/07/2026.
   // O teto de 100 abaixo vira defesa, não a correção principal.
-  const completa = completeRoundChecker(tpl);
+  //
+  // `descontaReprovadas: false`: aqui a tarefa reprovada CONTA como feita. Em
+  // todo o resto do app ela tira o checklist do 100% (24/09/2026), mas esta é a
+  // nota de quem confere — com o desconto, reprovar baixaria o índice de quem
+  // reprovou, e a saída mais barata para o líder seria aprovar tudo. Decisão
+  // do Michel no mesmo dia. Ver `roundIsComplete`.
+  const completa = completeRoundChecker(tpl, { descontaReprovadas: false });
   team.filter(completa).forEach(c => {
     const k = `${c.unitId}|${c.date}`;
     doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);

@@ -112,3 +112,55 @@ export function agruparPorChecklist(analisadas, prazoDe = () => null) {
     .sort((a, b) => b.gravidade - a.gravidade
       || (a.rodadas[0]?.c.date || '').localeCompare(b.rodadas[0]?.c.date || ''));
 }
+
+/**
+ * O CORTE da conferência — a partir de quando o veredito da liderança passa a
+ * ter consequência no placar (decisão do Michel em 24/09/2026).
+ *
+ * Duas regras nasceram juntas e usam o mesmo corte:
+ *   · a produtividade (`REVIEW_POINT_FACTOR`, lib/stats.js): ressalva vale
+ *     metade, reprovada vale negativo;
+ *   · o checklist 100% (`tarefaFeita`, logo abaixo): tarefa reprovada não
+ *     conta como feita, e o checklist deixa de contar como completo.
+ *
+ * Julgamento dado antes, quando reprovar não mexia nesses números, não passa a
+ * mexer depois do fato — o passado da aderência fica como foi medido.
+ * Reconferir uma execução antiga regrava `reviewed_at` (a RPC faz upsert com
+ * `now()`), e aí é um julgamento novo e passa a valer.
+ *
+ * É um INSTANTE, não um dia: `reviewedAt` chega em UTC, e cortar pelo
+ * `slice(0, 10)` dele faria uma conferência das 21h de 23/09 em Brasília contar
+ * como 24/09. O horário oficial do corte é o de Brasília.
+ *
+ * Fica FORA desta régua o `taskCounts` do índice do colaborador (ranking.js),
+ * que desde 26/07 trata reprovada como não feita sem corte nenhum. Mudar aquele
+ * agora mexeria no ranking de dois meses para trás.
+ */
+export const CONFERENCIA_CUTOFF = '2026-09-24T00:00:00-03:00';
+const CONFERENCIA_CUTOFF_MS = Date.parse(CONFERENCIA_CUTOFF);
+
+/**
+ * O veredito que VALE para o placar desta tarefa — ou null, quando ela não foi
+ * julgada ou foi julgada antes do corte (e então conta como antes). Veredito
+ * sem `reviewedAt` também é null: sem saber QUANDO foi dado não há como saber
+ * se a régua vale para ele, e na dúvida não se tira nada de ninguém.
+ */
+export function verdictInForce(item) {
+  const r = item?.review;
+  if (!r?.verdict || !r.reviewedAt) return null;
+  const t = Date.parse(r.reviewedAt);
+  return Number.isFinite(t) && t >= CONFERENCIA_CUTOFF_MS ? r.verdict : null;
+}
+
+export const reprovadaVigente = item => verdictInForce(item) === 'reprovado';
+
+/**
+ * A tarefa conta como FEITA para as métricas? Marcada E não reprovada.
+ *
+ * É a régua de MEDIÇÃO — aderência, "Checklists 100%", "feito do entregue",
+ * status e taxa do Painel, J.I.T., índices de loja e liderança. Não é a régua
+ * de EXECUÇÃO: a tela de quem executa, o "Concluir" e o carryover seguem
+ * olhando `i.done`. Reprovar não desmarca a tarefa nem a devolve para a lista
+ * de ninguém — ela foi feita, a liderança disse que não serve, e isso é placar.
+ */
+export const tarefaFeita = item => !!item?.done && !reprovadaVigente(item);

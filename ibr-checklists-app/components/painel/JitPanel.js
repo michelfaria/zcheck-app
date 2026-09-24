@@ -20,6 +20,7 @@ import { C, R, W, greenOnDark } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
 import { todayStr, addDays, lastDays, weekStartStr, tzOfUnit } from '../../lib/dates';
 import { latestPerRound, earliestPerRound } from '../../lib/rounds';
+import { tarefaFeita } from '../../lib/conferencia';
 import {
   applicableItems, templateAtiva, templateStatus, completeRoundChecker,
   isUnitOff, isUnitActiveOn,
@@ -96,7 +97,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   const f7 = latestPerRound(filterCompletions(completions, scopeUnitId ? { dates: last7, unitId: scopeUnitId } : { dates: last7 }));
   const hotspot = new Map();
   f7.forEach(c => (c.items || []).forEach(i => {
-    if (i.critical && !i.done) { const k = `${c.unitId}|${i.id}`; hotspot.set(k, (hotspot.get(k) || 0) + 1); }
+    if (i.critical && !tarefaFeita(i)) { const k = `${c.unitId}|${i.id}`; hotspot.set(k, (hotspot.get(k) || 0) + 1); }
   }));
   [...hotspot.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([k, n]) => {
     const [uid, iid] = k.split('|');
@@ -305,7 +306,7 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, item
     if (wk !== wkThis && wk !== wkPrev) return;
     perUnitWk[c.unitId] = perUnitWk[c.unitId] || {};
     const slot = (perUnitWk[c.unitId][wk] = perUnitWk[c.unitId][wk] || { total: 0, done: 0 });
-    (c.items || []).forEach(i => { slot.total++; if (i.done) slot.done++; });
+    (c.items || []).forEach(i => { slot.total++; if (tarefaFeita(i)) slot.done++; });
   });
 
   // 1. Maior queda de tendência semana-a-semana (≥15 p.p., base mínima de 5 itens).
