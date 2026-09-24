@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import {
   CheckCircle2, Circle, AlertTriangle, ChevronRight, ArrowLeft,
   Plus, Trash2, X, Settings2, Clock, Lock, Camera,
@@ -6158,6 +6158,44 @@ export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitch
   const dateLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
   const roleColor = ROLE_COLORS[currentUser.role];
   const [showDataChange, setShowDataChange] = useState(false);
+
+  // No desktop o cabeçalho é uma linha só — [data + usuário][lojas][ações]
+  // (globals.css, `.zc-headerbar`). Com três lojas de nome médio a 1280px a
+  // linha não comporta os três, e os botões de loja desenhavam por cima de
+  // "Ajuda" e "Sair". Se cabe ou não depende de quantas lojas, do nome delas e
+  // das ações do papel — CSS não sabe medir isso. A conta é feita aqui: não
+  // coube, as lojas descem para uma linha própria (`.zc-hdr--stack`, só no
+  // desktop). As larguras somadas são as naturais, iguais nos dois arranjos,
+  // então trocar de arranjo não muda o resultado da conta (não oscila).
+  const barRef = useRef(null);
+  const [unitsOwnRow, setUnitsOwnRow] = useState(false);
+  const unitsKey = canSwitchUnit ? unitList.map(u => u.name).join('|') : '';
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !unitsKey || typeof ResizeObserver === 'undefined' || !window.matchMedia) return undefined;
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const width = el => el.getBoundingClientRect().width;
+    const gap = el => parseFloat(getComputedStyle(el).columnGap) || 0;
+    const measure = () => {
+      const info = bar.querySelector('.zc-hdr-info');
+      const actions = bar.querySelector('.zc-hdr-actions');
+      const picker = bar.querySelector('.zc-unitpicker');
+      if (!desktop.matches || !info || !actions || !picker) { setUnitsOwnRow(false); return; }
+      const buttons = [...picker.children];
+      const needed = width(info) + width(actions) + 2 * gap(bar)
+        + buttons.reduce((sum, b) => sum + width(b), 0) + gap(picker) * (buttons.length - 1);
+      const cs = getComputedStyle(bar);
+      const free = bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      setUnitsOwnRow(needed > free);
+    };
+    measure();
+    // A barra muda com a janela; data/usuário, ações e cada botão mudam com a
+    // fonte carregando, o logo da empresa chegando e o "Notif. ON/OFF".
+    const ro = new ResizeObserver(measure);
+    [bar, ...bar.querySelectorAll('.zc-hdr-info, .zc-hdr-actions, .zc-unitpicker > button')].forEach(el => ro.observe(el));
+    return () => ro.disconnect();
+  }, [unitsKey]);
+
   return (
     <header className="sticky top-0 z-10" style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
       {showDataChange && (
@@ -6203,7 +6241,7 @@ export function Header({ unit, onSelectUnit, allSelected, currentUser, canSwitch
         </a>
       </div>
 
-      <div className="zc-headerbar px-4 pt-3 pb-2">
+      <div ref={barRef} className={`zc-headerbar${unitsOwnRow && unitsKey ? ' zc-hdr--stack' : ''} px-4 pt-3 pb-2`}>
       {/* Linha de data: logo PRÓPRIO da empresa quando existe; senão, nada
           (sem fallback do ZCheck aqui — ele já está no cabeçalho). */}
       <div className="zc-hdr-info flex items-center justify-between mb-3">

@@ -345,8 +345,35 @@ input, textarea, button, select {
   /* O seletor de loja usava `flex: 1` por botão: com 3 lojas em 1677px cada
      botão virava 463px de largura — e o "Ver o J.I.T." ocupava 1409px.
      Juntos, empurravam o conteúdo 133px para baixo. Enquanto a topbar de
-     verdade não existe (fase 7), pelo menos param de esticar. */
-  .zc-unitpicker > button { flex: 0 1 auto !important; min-width: 120px; }
+     verdade não existe (fase 7), pelo menos param de esticar.
+     Também não ENCOLHEM nem quebram o nome: encolher cortava o nome da loja
+     (e "Loja C…" / "Loja S…" não se distinguem) e deixava o texto vazar por
+     cima de "Ajuda". Quando a linha não comporta, quem cede é o arranjo —
+     `.zc-hdr--stack`, abaixo. O padding lateral é para nome longo não encostar
+     na borda; nome curto continua no piso de 120px. */
+  .zc-unitpicker > button {
+    flex: 0 0 auto !important;
+    min-width: 120px;
+    padding-inline: 12px;
+    white-space: nowrap;
+  }
+
+  /* Lojas numa linha própria. Quem liga é o Header (page.js), que mede se
+     [data + usuário][lojas][ações] cabem lado a lado — depende de quantas
+     lojas, do nome de cada uma e das ações do papel, e CSS não mede conteúdo.
+     A primeira linha fica com data/usuário à esquerda e ações à direita, a
+     segunda é das lojas, e se nem a largura inteira bastar (muitas lojas a
+     1024px) os botões quebram em mais linhas: todas à vista, nenhuma por cima
+     de nada. */
+  .zc-headerbar.zc-hdr--stack {
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding-bottom: 12px !important;
+  }
+  .zc-hdr--stack > .zc-hdr-info,
+  .zc-hdr--stack > .zc-hdr-actions { min-height: 56px; }
+  .zc-hdr--stack > .zc-hdr-actions { order: 2; margin-left: auto; }
+  .zc-hdr--stack > .zc-hdr-units   { order: 3; flex: 1 0 100%; flex-wrap: wrap; }
 
   /* ── Overlays: bottom sheet deixa de existir no desktop ──────────────────
      Uma gaveta de 480px colada na borda de baixo de um monitor de 1440px é
