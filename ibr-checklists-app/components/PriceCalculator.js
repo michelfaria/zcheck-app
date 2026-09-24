@@ -40,7 +40,7 @@ const BULLETS = [
   'Fotos como evidência',
   'Funciona offline',
   'Briefing diário',
-  'Templates por setor',
+  'Modelos por setor prontos para uso',
 ];
 
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -72,7 +72,10 @@ function StepRow({ before, after, minusLabel, plusLabel, canMinus, canPlus, onMi
 
 export default function PriceCalculator() {
   const [cycle, setCycle] = useState('annual'); // anual pré-selecionado
-  const [units, setUnits] = useState(2);
+  // Começa em 1 loja e 10 usuários (a franquia de 1 loja): o caso mais comum
+  // e o preço de entrada. Qualquer mudança nos steppers ou no campo refaz a
+  // conta no mesmo render — o total acompanha na hora.
+  const [units, setUnits] = useState(1);
   // Texto do campo de usuários. `null` = o visitante ainda não mexeu, e o
   // campo acompanha a franquia (10 × lojas): quem só troca o número de lojas
   // não pode ver vaga adicional surgir do nada. Guardar o TEXTO (e não o
@@ -138,7 +141,7 @@ export default function PriceCalculator() {
               : `no anual sai por ${formatBRL(ANUAL)}/loja`}
           </p>
         </div>
-        <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8, margin: '20px auto 0', maxWidth: 240, textAlign: 'left' }}>
+        <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8, margin: '20px auto 0', maxWidth: 280, textAlign: 'left' }}>
           {BULLETS.map(b => (
             <li key={b} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Check size={14} color={C.success} aria-hidden style={{ flexShrink: 0 }} />
@@ -179,15 +182,19 @@ export default function PriceCalculator() {
         <div aria-live="polite" style={{ marginTop: 12, textAlign: 'center' }}>
           <p style={{ fontSize: T.caption, color: C.muted, marginBottom: 4 }}>
             {plural(included, 'usuário incluso', 'usuários inclusos')}
-            {extras > 0 && ` + ${plural(extras, 'vaga adicional', 'vagas adicionais')} × ${VAGA}`}
+            {extras > 0 && <> + {plural(extras, 'vaga adicional', 'vagas adicionais')} <span style={{ whiteSpace: 'nowrap' }}>× {VAGA}</span></>}
           </p>
           <p style={{ fontSize: T.bodySm, color: C.ink }}>
             <strong>Anual:</strong> {formatBRL(priceAnual.monthlyCharge)}/mês
             <span style={{ color: C.muted }}> · </span>
             <strong>Mensal:</strong> {formatBRL(priceMensal.monthlyCharge)}/mês
           </p>
+          {/* A economia é a diferença entre os dois totais × 12 e acompanha as
+              LOJAS na hora. Não muda com usuários porque a vaga adicional custa o
+              mesmo nos dois planos — dito na tela, senão parece conta travada. */}
           <p style={{ fontSize: T.caption, fontWeight: W.semibold, color: C.success, marginTop: 4 }}>
-            No anual você economiza {formatBRL(priceAnual.savingsPerYear)} por ano.
+            No anual você economiza {formatBRL(priceAnual.savingsPerYear)} por ano
+            {extras > 0 ? <span style={{ fontWeight: W.medium, color: C.muted }}> — a vaga adicional custa igual nos dois planos.</span> : '.'}
           </p>
         </div>
       </div>

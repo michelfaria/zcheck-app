@@ -554,7 +554,7 @@ export default function LandingPage() {
               Seu restaurante no padrão, com ou sem você na loja.
             </h2>
             <p style={{ fontSize: T.body, color: C.muted }}>
-              Um preço por loja, com {FRANQUIA} usuários inclusos · vaga adicional <span style={{ whiteSpace: 'nowrap' }}>{VAGA}/mês</span>. Sem pacote, sem surpresa.
+              Um preço por loja, sem surpresa.
             </p>
           </div>
 
