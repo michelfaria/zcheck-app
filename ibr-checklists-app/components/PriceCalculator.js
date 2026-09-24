@@ -81,10 +81,9 @@ export default function PriceCalculator() {
   // e o preço de entrada. Qualquer mudança nos steppers ou no campo refaz a
   // conta no mesmo render — o total acompanha na hora.
   const [units, setUnits] = useState(1);
-  // Texto do campo de usuários. `null` = o visitante ainda não mexeu, e o
-  // campo acompanha a franquia (10 × lojas): quem só troca o número de lojas
-  // não pode ver vaga adicional surgir do nada. Guardar o TEXTO (e não o
-  // número) deixa apagar e redigitar "35" sem o campo pular para 1 no meio.
+  // Texto do campo de usuários. `null` = sem vaga adicional, e o campo
+  // acompanha a franquia (10 × lojas). Guardar o TEXTO (e não o número) deixa
+  // apagar e redigitar "35" sem o campo pular para o piso no meio.
   const [usersText, setUsersText] = useState(null);
 
   const annual = cycle === 'annual';
@@ -95,16 +94,26 @@ export default function PriceCalculator() {
   // comercial — o mesmo limite que POST /api/billing/seats aplica.
   const maxUsers = included + MAX_SELF_SERVICE_EXTRA_SEATS;
   const typed = usersText == null || usersText === '' ? included : Number(usersText);
-  const users = Math.min(maxUsers, Math.max(1, Math.floor(typed) || 1));
+  // Piso = a franquia das lojas. Menos gente que isso não muda o preço, e o
+  // campo abaixo do incluso (ex.: 6 lojas e 14 usuários) contradizia a linha
+  // "60 usuários inclusos" logo embaixo.
+  const users = Math.min(maxUsers, Math.max(included, Math.floor(typed) || included));
   const extras = extraSeatsInUse(users, units);
   const priceAnual = priceForUnits(units, 'annual', extras);
   const priceMensal = priceForUnits(units, 'monthly', extras);
 
+  // Trocar o número de lojas move o piso, e o total de usuários anda junto:
+  // as vagas adicionais que o visitante somou continuam em cima do piso novo
+  // (2 lojas e 24 → 3 lojas e 34). Antes o total ficava parado — abaixo do
+  // piso ao subir lojas, e virando vaga adicional do nada ao descer.
   const setUnitsSafe = (v) => {
     const n = Math.round(Number(v));
-    if (Number.isFinite(n)) setUnits(Math.min(MAX_SELF_SERVICE_UNITS, Math.max(1, n)));
+    if (!Number.isFinite(n)) return;
+    const next = Math.min(MAX_SELF_SERVICE_UNITS, Math.max(1, n));
+    setUnits(next);
+    setUsersText(extras > 0 ? String(includedSeatsFor(next) + extras) : null);
   };
-  const setUsersSafe = (n) => setUsersText(String(Math.min(maxUsers, Math.max(1, n))));
+  const setUsersSafe = (n) => setUsersText(String(Math.min(maxUsers, Math.max(included, n))));
 
   const toggleBtn = (active) => ({
     position: 'relative', padding: '9px 18px', borderRadius: R.pill, fontSize: T.bodySm,
@@ -182,15 +191,15 @@ export default function PriceCalculator() {
           </StepRow>
           <StepRow before="e" after={users === 1 ? 'usuário' : 'usuários'}
             minusLabel="Menos um usuário" plusLabel="Mais um usuário"
-            canMinus={users > 1} canPlus={users < maxUsers}
+            canMinus={users > included} canPlus={users < maxUsers}
             onMinus={() => setUsersSafe(users - 1)} onPlus={() => setUsersSafe(users + 1)}>
             {/* Campo digitável: com 3 lojas e 45 pessoas, 15 toques no "+"
                 seria castigo. Ao sair do campo, normaliza para o valor usado
-                na conta (1..teto). */}
+                na conta (piso..teto); no piso volta a acompanhar as lojas. */}
             <input type="text" inputMode="numeric" pattern="[0-9]*" aria-label="Número de usuários"
               value={usersText ?? String(included)}
               onChange={(e) => setUsersText(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              onBlur={() => setUsersText(String(users))}
+              onBlur={() => setUsersText(users > included ? String(users) : null)}
               style={{ width: 44, height: 34, fontSize: T.bodyLg, fontWeight: W.bold, color: C.ink, textAlign: 'center', background: 'white', border: `1.5px solid ${C.borderStrong}`, borderRadius: R.sm, padding: 0 }} />
           </StepRow>
         </div>
