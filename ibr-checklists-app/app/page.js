@@ -637,9 +637,9 @@ export default function LandingPage() {
             </h3>
             <div style={{ border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
               {[
-                ['“Peça uma cotação.”', `O preço está na página: ${ANUAL}/loja com ${FRANQUIA} usuários; vaga adicional ${VAGA}/mês.`],
+                ['“Peça uma cotação.”', 'O preço é público.'],
                 ['“Fale com um consultor.”', 'Comece o teste agora.'],
-                ['Fidelidade na letra miúda.', 'Mensal sem fidelidade; anual claro: 12 meses.'],
+                ['Fidelidade na letra miúda.', 'Plano mensal, sem fidelidade. Plano anual: 12 meses.'],
                 ['Taxa de implantação escondida.', 'Sem taxa. Está escrito aqui em cima.'],
               ].map(([mercado, zcheck], i) => (
                 <div key={mercado} style={{ display: 'flex', flexWrap: 'wrap', borderTop: i === 0 ? 'none' : `1px solid ${C.border}` }}>
