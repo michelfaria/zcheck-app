@@ -158,6 +158,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `painel-render.spec.mjs` | **o que aparece e o que NÃO aparece por papel** — é a prova da fronteira de acesso, e conta que o motor analítico não roda para colaborador |
 | `prazo-render.spec.mjs` | a régua de prazo **como texto na conferência** — entrega dentro do minuto do prazo não pode virar "atrasado" nem tarja "Fora do prazo", e o prazo é o do relógio da loja |
 | `usuarios-render.spec.mjs` | a aba Usuários obedece à loja do cabeçalho — e quem alcança a loja (diretoria, gerência multi-loja) não some do filtro |
+| `aprovacao-pedido.spec.mjs` | a baixa do pedido de acesso que o banco recusa (RLS, rede) não some da fila (aba Usuários real em jsdom): a RPC já criou a pessoa, nada é desfeito, o pedido fica com "Acesso já criado" + "Tirar da fila" — **sem** "Aprovar" nem "Rejeitar" — também depois de recarregar, porque o id do acesso é derivado do pedido (`p<id do pedido>`), não `uid()`; "Tirar da fila" não chama a RPC de novo. Recusar e alteração de dados: erro na tela, pedido na fila. Caso de 24/09/2026: aprovar de novo criava uma segunda pessoa |
 | `track.spec.mjs` | a fila de telemetria não perde evento em concorrência |
 | `appurl.spec.mjs` | aba na URL sobrevive ao login; aliases de abas aposentadas |
 | `templates-sync.spec.mjs` | os dois caminhos de leitura de `templates` devolvem objetos IDÊNTICOS — campo que só um lado mapeia derruba o teste |
