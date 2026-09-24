@@ -29,7 +29,7 @@ import logo from '../public/zcheck-logo.png';
 // — o mercado esconde preço; o ZCheck publica. Por isso a vaga adicional
 // aparece ao lado do preço da loja em TODO lugar onde há preço: "sem taxa
 // escondida" só é verdade se nenhum custo mora só nos Termos.
-// As imagens são telas REAIS do app com dados de exemplo, rotuladas como tal —
+// As imagens são telas REAIS do app com dados fictícios e nomes genéricos —
 // nunca dado inventado apresentado como cliente real (ver LaptopShot).
 // Vocabulário: o que a landing nomeia tem de existir no app com o mesmo nome.
 // O antigo "J.I.T." virou o bloco "Agora" do Painel em 08/2026 e saiu daqui em
@@ -71,8 +71,8 @@ const Eyebrow = ({ color = C.muted, children }) => (
 // componentes de produção montados sobre uma empresa fictícia (Grupo Exemplo,
 // 3 lojas). O produto é o de verdade; os dados são de exemplo. As lojas e as
 // pessoas têm nome genérico de propósito: a landing nunca apresenta dado
-// inventado como se fosse cliente. Hero e Unidades ficaram sem o aviso por
-// decisão de 24/09/2026; só o Meu ID ainda diz "dados de exemplo".
+// inventado como se fosse cliente. As imagens ficaram sem o aviso "dados de
+// exemplo" por decisão de 24/09/2026.
 // Mudou uma dessas telas no app? Rode o script de novo.
 const URL_APP = 'suaempresa.zcheckapp.com/app';
 
@@ -115,14 +115,6 @@ function PhoneShot({ src, alt, loading, sizes, className = '', priority = false,
     </div>
   );
 }
-
-// `as="figcaption"` dentro de <figure>: o aviso "dados de exemplo" fica
-// amarrado às imagens que ele qualifica, não solto num parágrafo depois delas.
-const ShotCaption = ({ as: Tag = 'p', children, style }) => (
-  <Tag style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.muted, textAlign: 'center', ...style }}>
-    {children}
-  </Tag>
-);
 
 // Faixa "Feito para o seu negócio" — o escopo inicial de segmentos.
 // `modelos: true` só onde a biblioteca (lib/library.js) tem modelo pronto.
@@ -246,8 +238,8 @@ export default function LandingPage() {
         .phone-screen { position: relative; aspect-ratio: 390 / 844; border-radius: 23px; overflow: hidden; background: white; }
         /* 280px / 76% amarrados aos sizes dos três celulares avulsos (hero no
            celular, Unidades no celular e Meu ID). A sombra é mais curta que a
-           do celular do hero: a legenda "dados de exemplo" fica logo abaixo, e
-           com a sombra longa o cinza dela caía a 3.6:1 (medido). */
+           do celular do hero: no celular a legenda de Unidades fica logo
+           abaixo, e com a sombra longa o cinza dela caía a 3.6:1 (medido). */
         .lp-phone-solo { width: 280px; max-width: 100%; margin: 0 auto; }
         .lp-phone-solo .phone-frame { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.07), 0 2px 8px rgba(8,20,30,0.22), 0 16px 28px -14px rgba(8,20,30,0.30); }
         @media (max-width: 820px) { .lp-phone-solo { width: 280px; max-width: 76%; } }
@@ -505,11 +497,10 @@ export default function LandingPage() {
               ))}
             </ul>
           </div>
-          <figure>
+          <div>
             <PhoneShot src={shotId} className="lp-phone-solo" sizes="(max-width: 408px) calc(76vw - 45px), 266px"
               alt="Aba Meu ID de uma colaboradora: a conclusão semana a semana e as conquistas desbloqueadas, como Veterano, Guardião do crítico e Semana perfeita." />
-            <ShotCaption as="figcaption" style={{ marginTop: 16 }}>Meu ID · tela real, dados de exemplo</ShotCaption>
-          </figure>
+          </div>
         </div>
       </section>
 
