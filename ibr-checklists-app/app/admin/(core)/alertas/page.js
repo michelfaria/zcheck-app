@@ -21,6 +21,7 @@ const RULE_LABELS = {
   seat_quota_exceeded: 'Usuários acima das vagas',
   billing_adjust_pending: 'Ajuste de cobrança pendente',
   support_agent_down: 'Assistente da Central fora do ar',
+  email_send_failed: 'E-mail transacional não saiu',
   // Gravados direto pelo webhook do Mercado Pago (não pelo motor de regras).
   billing_amount_mismatch: 'Valor cobrado ≠ contratado',
   billing_intent_missing: 'Assinatura sem intenção de checkout',
