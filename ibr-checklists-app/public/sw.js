@@ -58,7 +58,7 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: 'IBR Checklists', body: event.data.text() };
+    payload = { title: 'ZCheck', body: event.data.text() };
   }
 
   const { title, body, unitId, checklistName, sector, url } = payload;
@@ -80,7 +80,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(title || 'IBR Checklists — Atraso', options)
+    self.registration.showNotification(title || 'ZCheck — Atraso', options)
   );
 });
 

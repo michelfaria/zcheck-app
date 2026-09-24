@@ -20,7 +20,7 @@ App de checklists multi-tenant (SaaS). Landing page + app por subdomínio de emp
 ## Arquivos principais (dentro de `ibr-checklists-app/`)
 
 ```
-app/page.js                      → landing page (tokens; CTA = waitlist /lista)
+app/page.js                      → landing page (tokens; CTA = cadastro self-service /comecar)
 app/lista/page.js                → formulário do waitlist
 app/entrar/page.js               → página de código da empresa
 app/app/page.js                  → app principal (~10.200 linhas)
@@ -57,6 +57,9 @@ lib/serverAuth.js                → assina o token de sessão (NUNCA importar n
 lib/tenant.js                    → detecção de tenant por hostname
 middleware.js                    → redireciona subdomínios para /app
 public/zcheck-logo.png           → logo horizontal 400x100px transparente
+public/landing/*.png             → telas REAIS do app para a landing, com dados fictícios
+scripts/landing-shots/           → gera essas telas: `node scripts/landing-shots/run.mjs`
+                                   (componentes de produção + fixtures.js, fetch dublado)
 public/manifest.json             → PWA, start_url: /app
 ```
 
@@ -101,6 +104,14 @@ const EMPRESAS = {
   100%. Mexeu na regra de recorrência, mexa no espelho da `notify-overdue` (o teste
   de paridade em `incompleto.test.mjs` compara os dois dia a dia) e publique a função
   ANTES do app: sem ela, tarefa mensal vira push de "incompleto" todo dia
+- Imagens da landing são telas reais regeradas por `scripts/landing-shots/run.mjs`
+  (Chromium sobre os componentes de produção, empresa fictícia "Grupo Exemplo",
+  nada sai da máquina). Mudou uma tela que a landing mostra — Painel/Agora,
+  execução de checklist, Meu ID, Unidades — rode de novo e confira as PNGs.
+  NUNCA capturar o app logado em produção para a landing: é dado de gente real
+  num repositório público. Todo nome que a landing usa tem de existir no app
+  com o mesmo nome (o "J.I.T." sobreviveu na landing meses depois de virar
+  o bloco "Agora" do Painel)
 - Preço e limite de usuários NUNCA escritos à mão em texto de tela (landing,
   calculadora, app): sempre das constantes de `lib/plans.js` (`PRICE_PER_UNIT`,
   `INCLUDED_USERS_PER_UNIT`, `EXTRA_USER_PRICE`) via `formatBRL` — a vaga
@@ -161,6 +172,8 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `cadastro-rascunho.spec.mjs` | o /cadastro não perde o que foi digitado quando o celular mata a aba ao abrir câmera/galeria (24/09/2026): rascunho em `sessionStorage` a cada tecla, relido ao montar — o primeiro ciclo (campos vazios) não pode apagá-lo; prévia da selfie por object URL (revogado no "Refazer"); envio com sucesso apaga o rascunho |
 | `plans.spec.mjs` | a conta do plano em `lib/plans.js`, **afirmada em reais, não pela fórmula**: franquia de 10 vagas por loja SOMADA (1/2/3 lojas = 10/20/30, piso de 1 loja), o 11º ativo pede vaga adicional, redução nunca abaixo das adicionais em uso, vaga a "R$ 17,00" igual nos dois ciclos (o −24% é só da loja) e `monthlyValueFor` vale o `billed_amount` real. E `unitsForAmount`/`getTierByPrice` não podem voltar: 381 = anual 2 lojas + 11 vagas = mensal 3 lojas — o valor não identifica o plano |
 | `seats.spec.mjs` | o lado do servidor (`lib/seats.js`), sem sessão, banco nem MP: o mínimo da redução vem do banco, nunca do cliente; o checkout cobra as lojas ATIVAS e no mínimo as vagas em uso; o webhook grava o plano pela intenção do checkout e **nunca grava null** (o webhook antigo zerava `plan_tier` e o pagante virava "cortesia" no MRR); o cron só reajusta quando esperado ≠ cobrado em centavos; o `cancelled` de uma assinatura velha não bloqueia quem está em teste |
+| `jit-hotspot.spec.mjs` | o crítico recorrente do J.I.T. é do checklist CERTO: o id do item só é único dentro do template (os semeados usam `i1`, `i2`… em todos). Dois checklists da mesma loja com um `i1` crítico de textos diferentes, só um falhando 3× → a recomendação, a Leitura da operação e a lista do Painel nomeiam o que falhou e N é 3 — o `i1` do outro não empresta o nome nem soma no contador. Caso das fixtures do Painel, 24/09/2026: a câmara fria da Cozinha saía com o nome de uma tarefa de Salão |
+| `library-plan.spec.mjs` | o que o onboarding cria a partir da biblioteca (`planoDaBiblioteca` em `lib/library.js`): escolher só um sub-segmento (ex.: Hamburgueria) cria só os modelos dele, setor sem sub-segmento (Hotel) ignora o filtro, e dois sub-segmentos com o mesmo "Área — Momento" no mesmo setor ganham o sub-segmento no nome. Caso de 24/09/2026: Food Service criava restaurante, café e padaria em cada loja, com "Bar — Abertura" duplicado |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
