@@ -120,6 +120,70 @@ export function topTerms(questions, limit = 12) {
 //   inativo    → NÃO responde: a rota pública devolve 503/500 para o usuário
 //
 // Cada motivo carrega `fix` porque o painel existe para agir, não para admirar.
+// Traduz o erro cru da API no motivo que o painel mostra. As três causas reais
+// de um assistente mudo têm conserto DIFERENTE, e a mensagem da API é o único
+// lugar onde elas se distinguem:
+//   401 authentication_error  → a chave existe mas não vale (foi o caso de
+//                               24/09/2026: variável cadastrada, chave revogada)
+//   400 credit balance        → a conta está sem crédito
+//   404 model                 → o modelo saiu do ar ou o nome mudou
+// Sem essa distinção, "verificação falhou" manda procurar no lugar errado.
+function probeReason(rawError) {
+  const error = String(rawError || 'erro desconhecido');
+  const msg = error.toLowerCase();
+
+  if (/authentication_error|api key is invalid|invalid x-api-key|401/.test(msg)) {
+    return {
+      code: 'invalid_key',
+      label: 'Chave da API inválida',
+      detail: `A ANTHROPIC_API_KEY está cadastrada, mas a Anthropic a recusa: ${error}. Chave revogada, apagada no console ou colada com erro.`,
+      fix: 'Gere uma chave nova em console.anthropic.com, atualize ANTHROPIC_API_KEY na Vercel e PUBLIQUE de novo — variável alterada só vale no próximo deploy.',
+    };
+  }
+  // Chave criada no nível da organização (Admin key): existe, autentica, e
+  // mesmo assim toda chamada volta 400 pedindo o header anthropic-workspace-id.
+  // Aconteceu em 24/09/2026 ao substituir a chave revogada — o erro é 400, então
+  // sem este caso ele seria lido como "sem crédito".
+  if (/not scoped to a workspace|anthropic-workspace-id/.test(msg)) {
+    return {
+      code: 'key_no_workspace',
+      label: 'Chave sem workspace',
+      detail: `A chave autentica, mas não pertence a nenhum workspace: ${error}`,
+      fix: 'No console da Anthropic, entre no workspace (Default) e gere a chave POR DENTRO dele — chave criada no nível da organização não faz chamadas. Depois atualize a variável e publique de novo.',
+    };
+  }
+  if (/credit|billing|quota|insufficient/.test(msg)) {
+    return {
+      code: 'no_credit',
+      label: 'API sem crédito',
+      detail: `Erro devolvido pela API: ${error}`,
+      fix: 'Recarregue créditos no console da Anthropic (plano Max não dá crédito de API).',
+    };
+  }
+  if (/model/.test(msg) && /not.?found|does not exist|deprecat/.test(msg)) {
+    return {
+      code: 'bad_model',
+      label: 'Modelo indisponível',
+      detail: `Erro devolvido pela API: ${error}`,
+      fix: 'O nome do modelo mudou ou saiu do ar — atualize a constante MODEL na rota do assistente.',
+    };
+  }
+  if (/rate.?limit|429|overloaded|529/.test(msg)) {
+    return {
+      code: 'rate_limited',
+      label: 'API sobrecarregada ou no limite',
+      detail: `Erro devolvido pela API: ${error}`,
+      fix: 'Costuma passar sozinho. Rode "Testar agora" em alguns minutos; se persistir, confira os limites da conta.',
+    };
+  }
+  return {
+    code: 'probe_failed',
+    label: 'A última verificação falhou',
+    detail: `Erro devolvido pela API: ${error}`,
+    fix: 'Rode "Testar agora" para confirmar; se repetir, confira a chave e o modelo.',
+  };
+}
+
 export function healthFrom({
   hasApiKey, hasServiceKey = true, articleCount = 0, lastProbe = null,
   lastChatAt = null, chats7 = 0, down7 = 0, now = Date.now(),
@@ -146,16 +210,7 @@ export function healthFrom({
   // aparecem aqui.
   if (lastProbe && lastProbe.ok === false) {
     worse('inativo');
-    const msg = String(lastProbe.error || '').toLowerCase();
-    const credit = /credit|billing|quota|insufficient/.test(msg);
-    reasons.push({
-      code: credit ? 'no_credit' : 'probe_failed', severity: 'inativo',
-      label: credit ? 'API sem crédito' : 'A última verificação falhou',
-      detail: `Erro devolvido pela API: ${lastProbe.error || 'desconhecido'}`,
-      fix: credit
-        ? 'Recarregue créditos no console da Anthropic (plano Max não dá crédito de API).'
-        : 'Rode "Testar agora" para confirmar; se repetir, confira a chave e o modelo.',
-    });
+    reasons.push({ severity: 'inativo', ...probeReason(lastProbe.error) });
   } else if (!lastProbe) {
     reasons.push({
       code: 'never_probed', severity: 'info',

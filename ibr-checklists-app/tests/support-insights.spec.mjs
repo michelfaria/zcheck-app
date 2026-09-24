@@ -48,13 +48,50 @@ const daysAgo = d => new Date(NOW - d * 864e5).toISOString();
 }
 
 {
+  // Caso real de 24/09/2026: a variável estava cadastrada na Vercel e a chave
+  // tinha sido revogada. "Verificação falhou" mandaria procurar crédito; o
+  // conserto é gerar chave nova E publicar de novo.
   const h = healthFrom({
     hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
-    lastProbe: { ok: false, error: 'model not found' },
+    lastProbe: { ok: false, error: '401 {"type":"error","error":{"type":"authentication_error","message":"API key is invalid."}}' },
   });
   assert.equal(h.status, 'inativo');
-  assert.ok(h.reasons.some(x => x.code === 'probe_failed'));
+  const r = h.reasons.find(x => x.code === 'invalid_key');
+  assert.ok(r, 'chave recusada não pode cair no motivo genérico');
+  assert.ok(!h.reasons.some(x => x.code === 'no_credit'), 'chave inválida não é falta de crédito');
+  assert.match(r.fix, /PUBLIQUE de novo|publique de novo/, 'variável nova só vale no próximo deploy — isso tem que estar no conserto');
+}
+
+{
+  // Chave de organização: autentica e mesmo assim não faz chamada. Vem como 400,
+  // o mesmo código de "sem crédito" — por isso precisa de caso próprio.
+  const h = healthFrom({
+    hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
+    lastProbe: { ok: false, error: '400 {"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}' },
+  });
+  assert.equal(h.status, 'inativo');
+  const r = h.reasons.find(x => x.code === 'key_no_workspace');
+  assert.ok(r, 'chave sem workspace não pode ser lida como falta de crédito');
   assert.ok(!h.reasons.some(x => x.code === 'no_credit'));
+  assert.match(r.fix, /workspace/);
+}
+
+{
+  const h = healthFrom({
+    hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
+    lastProbe: { ok: false, error: '404 model claude-x not found' },
+  });
+  assert.equal(h.status, 'inativo');
+  assert.ok(h.reasons.some(x => x.code === 'bad_model'));
+}
+
+{
+  const h = healthFrom({
+    hasApiKey: true, articleCount: 27, now: NOW, lastChatAt: hoursAgo(5),
+    lastProbe: { ok: false, error: 'connection reset by peer' },
+  });
+  assert.equal(h.status, 'inativo');
+  assert.ok(h.reasons.some(x => x.code === 'probe_failed'), 'erro que não casa com nenhum padrão ainda tem que virar motivo');
 }
 
 {

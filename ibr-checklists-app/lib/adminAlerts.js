@@ -229,7 +229,8 @@ export async function runAlertRules(db) {
       alerts.push({
         severity: 'critical',
         rule: 'support_agent_down',
-        message: `O assistente da Central de Ajuda (Zeca) falhou na última verificação: ${String(snap.error || 'erro desconhecido').slice(0, 200)}`,
+        message: `O assistente da Central de Ajuda (Zeca) falhou na última verificação: ${String(snap.error || 'erro desconhecido').slice(0, 200)}`
+          + ' — a mesma chave serve o time de gestão, que também para.',
         dedupe_key: `support_agent_down|probe|${today}`,
       });
     }
