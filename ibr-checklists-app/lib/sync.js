@@ -1767,10 +1767,24 @@ export async function uploadUserAvatar(companyId, userId, blob) {
 // Grava SÓ a coluna da foto. Não usa saveUsers de propósito: aquela função faz
 // diff da lista inteira e APAGA quem não estiver nela — nada que uma troca de
 // foto deva poder fazer. `null` remove a foto e volta para a inicial do nome.
+//
+// Pela RPC `set_my_avatar`, não pela tabela: desde 20260923_users_escrita_gestao
+// só a diretoria escreve em `users`, e a RPC é a exceção — a linha é a do
+// `user_id` do token, e só a foto muda. Um UPDATE direto de colaborador agora
+// afeta ZERO linhas e o PostgREST responde sem erro; a RPC, sem linha, erra.
+//
+// PGRST202 = a função ainda não existe (cliente publicado antes da migration):
+// cai no UPDATE de antes. Dá para remover esta segunda tentativa quando a
+// migration estiver aplicada.
 export async function saveUserAvatar(userId, avatarUrl) {
-  const { error } = await db().from('users')
-    .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
-    .eq('id', userId);
+  let { error } = await db().rpc('set_my_avatar', { p_avatar_url: avatarUrl });
+  // Mesmo critério de `semRpc` em lib/collab.js.
+  if (error?.code === 'PGRST202' || /could not find the function|schema cache/i.test(error?.message || '')) {
+    console.warn('[Supabase] set_my_avatar ausente — rode 20260923_users_escrita_gestao.sql');
+    ({ error } = await db().from('users')
+      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+      .eq('id', userId));
+  }
   if (error) throw error;
   // Mantém o cache offline coerente: sem isto a foto sumia ao reabrir o app sem
   // rede, porque o cache ainda tinha a versão anterior da lista.
