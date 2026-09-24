@@ -1,4 +1,17 @@
-// IBR Checklists — notify-overdue v12
+// IBR Checklists — notify-overdue v13
+//
+// ── v13, 24/09/2026: tarefa PERIÓDICA e atraso só do que era previsto ──────
+// O app ganhou recorrência periódica por tarefa (`item.period`: "todo dia 10",
+// "a cada 3 meses a partir de 10/10/2026" — lib/recurrence.js). Sem o espelho
+// aqui, `previstasDoDia` trataria a tarefa mensal como diária e o alerta de
+// "entregue incompleto" cobraria, todo dia, uma tarefa que só vale no dia 10.
+//
+// E o ATRASO passa a exigir tarefa prevista no dia. Até a v12 ele olhava só o
+// prazo: checklist sem nada previsto hoje (só tarefas de segunda, numa quinta)
+// virava "atrasado" se ninguém o entregasse — e o app nem o mostrava para
+// executar. Com checklist mensal ("Manutenção mensal", com prazo) seriam ~29
+// alarmes falsos por mês. É a régua do app: previsto = pelo menos uma tarefa
+// que o calendário prevê (`templatePrevistoEm`, lib/checklists.js).
 //
 // ── v12, 30/07/2026: modo simulação (?dry=1) ───────────────────────────────
 // Esta função roda a cada 5 minutos e ENVIA PUSH para a operação real. Até aqui
@@ -107,6 +120,33 @@ function localParts(d: Date, tz: string) {
 // dia da semana virar em quem está a oeste de Greenwich.
 const diaDaSemana = (dateStr: string) => new Date(`${dateStr}T12:00:00Z`).getUTCDay();
 
+// Espelho de lib/recurrence.js (`periodoValido` + `periodoVale`), v13. Mesmo
+// contrato: `period` válido manda e `recurrence` é ignorado; inválido conta como
+// ausente; antes de `start`, nada; mês curto cai no último dia; a conta sai
+// sempre de `start`; aritmética de string, sem fuso. O teste
+// (incompleto.test.mjs) compara esta cópia com a do app dia a dia.
+const diasNoMes = (ano: number, mes: number) => new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+function ehDataValida(s: any) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  return m >= 1 && m <= 12 && d >= 1 && d <= diasNoMes(y, m);
+}
+function periodoValido(p: any) {
+  if (!p || typeof p !== 'object') return false;
+  const n = Number(p.every);
+  return ['day', 'week', 'month'].includes(p.unit) && Number.isInteger(n) && n >= 1 && n <= 366 && ehDataValida(p.start);
+}
+function periodoVale(p: any, dateStr: string) {
+  if (!ehDataValida(dateStr) || dateStr < p.start) return false;
+  const n = Number(p.every);
+  const dias = Math.round((Date.parse(`${dateStr}T12:00:00Z`) - Date.parse(`${p.start}T12:00:00Z`)) / 86400000);
+  if (p.unit === 'day') return dias % n === 0;
+  if (p.unit === 'week') return dias % (7 * n) === 0;
+  const [y0, m0, d0] = p.start.split('-').map(Number);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return ((y - y0) * 12 + (m - m0)) % n === 0 && d === Math.min(d0, diasNoMes(y, m));
+}
+
 function previstasDoDia(t: any, dateStr: string): string[] {
   const n = String(t.name || '').toLowerCase();
   const tipo = n.includes('abertura') ? 'abertura'
@@ -114,7 +154,8 @@ function previstasDoDia(t: any, dateStr: string): string[] {
     : n.includes('intermedi') ? 'intermediario' : null;
   return (t.items || []).filter((i: any) => {
     if (i?.appearsIn?.length && tipo && !i.appearsIn.includes(tipo)) return false;
-    if (!i?.recurrence || i.recurrence.length === 0) return true;
+    if (periodoValido(i?.period)) return periodoVale(i.period, dateStr);
+    if (!Array.isArray(i?.recurrence) || i.recurrence.length === 0) return true;
     return i.recurrence.includes(diaDaSemana(dateStr));
   }).map((i: any) => i?.id).filter(Boolean);
 }
@@ -128,7 +169,7 @@ const falha = (etapa: string, e: any) => {
 Deno.serve(async (req: Request) => {
   // `dry` nunca vem do cron (body vazio, sem query): produção segue idêntica.
   const dry = new URL(req.url).searchParams.get('dry') === '1';
-  console.log(`notify-overdue v12 started${dry ? ' (DRY RUN)' : ''}`);
+  console.log(`notify-overdue v13 started${dry ? ' (DRY RUN)' : ''}`);
 
   webpush.setVapidDetails('mailto:ingonegocios@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -206,6 +247,8 @@ Deno.serve(async (req: Request) => {
   const atrasados = comPrazo.filter((t: any) => {
     const { date, minutes } = localParts(agora, tzDaLoja.get(t.unit_id) || APP_TZ);
     if (!lojaAtivaEm(t.unit_id, date)) return false;
+    // Sem tarefa prevista hoje, não há o que atrasar (v13) — a régua do app.
+    if (previstasDoDia(t, date).length === 0) return false;
     if (feitos.has(`${t.id}|${date}`)) return false;
     if (jaAvisados.has(t.id)) return false;
     const [h, m] = t.deadline.split(':').map(Number);
@@ -278,6 +321,9 @@ Deno.serve(async (req: Request) => {
       // faria ele mentir da forma mais cara possível: quem depurar vê "4 ATRASO"
       // ao lado de "atrasados: 0" e conclui que a função quebrou de novo.
       const inativa = !lojaAtivaEm(t.unit_id, date);
+      // Mesmo motivo: o diagnóstico não pode carimbar ATRASO no que `atrasados`
+      // ignora por não haver tarefa prevista hoje (v13).
+      const semPrevisto = previstasDoDia(t, date).length === 0;
       return {
         loja: t.unit_id, checklist: t.name, setor: t.sector, prazo: t.deadline,
         dia: date, agora: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
@@ -286,6 +332,7 @@ Deno.serve(async (req: Request) => {
         // ativação o diagnóstico continua idêntico ao que sempre foi.
         ...(inativa ? { ativaDesde: ativaDesde.get(t.unit_id) } : {}),
         veredito: inativa ? 'loja ainda não ativa — nada é cobrado'
+          : semPrevisto && !feitas ? 'nada previsto hoje — nada é cobrado'
           : !feitas ? (venceu ? 'ATRASO' : 'aguardando entrega')
           : completo ? 'completo' : (venceu ? 'INCOMPLETO' : 'incompleto, ainda no prazo'),
         alvos: alvosDe(t),
@@ -302,7 +349,7 @@ Deno.serve(async (req: Request) => {
     ];
 
     return new Response(JSON.stringify({
-      ok: true, dry: true, versao: 'v12',
+      ok: true, dry: true, versao: 'v13',
       comPrazo: comPrazo.length, ativos: ativos.length,
       atrasados: atrasados.length, incompletos: incompletos.length,
       inscricoes: (subsDry || []).length,

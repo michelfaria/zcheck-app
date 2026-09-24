@@ -15,10 +15,10 @@
  */
 
 import { todayStr, addDays, lastDays } from './dates';
-import { latestPerRound, templateExistedOn } from './rounds';
+import { latestPerRound } from './rounds';
 import { verdictInForce, tarefaFeita } from './conferencia';
 import {
-  CHECKLIST_TYPE_ORDER, isItemApplicable, matchesShift,
+  CHECKLIST_TYPE_ORDER, matchesShift, templatePrevistoEm,
   completionOnTime, deadlineIndex,
 } from './checklists';
 
@@ -67,15 +67,19 @@ export function filterCompletions(completions, f) {
   });
 }
 
-// Number of checklists expected on a given date, considering each template's item-level recurrence:
-// a template counts as "expected" that day if at least one of its items applies to that weekday.
+// Checklists PREVISTOS no dia — o denominador da aderência. Um checklist é
+// previsto se existia e tem ao menos uma tarefa que o calendário prevê
+// (`templatePrevistoEm`), e é a MESMA régua do numerador (`completeRoundChecker`
+// e `rodadaPrevistaChecker`). Até 24/09/2026 esta conta chamava
+// `isItemApplicable` sem o tipo do checklist, ignorando o `appearsIn` que o
+// Executar respeita: checklist cujas tarefas só apareciam em outro tipo contava
+// como previsto e não tinha nada para executar.
 export function countApplicableTemplatesOnDate(templates, f, dateStr) {
   return templates.filter(t => {
     if (f.unitId && t.unitId !== f.unitId) return false;
     if (f.sector && t.sector !== f.sector) return false;
     if (f.shift && !matchesShift(t, f.shift)) return false;
-    if (!templateExistedOn(t, dateStr)) return false;
-    return t.items.some(i => isItemApplicable(i, dateStr));
+    return templatePrevistoEm(t, dateStr);
   }).length;
 }
 

@@ -34,7 +34,7 @@ const semTipos = (js) => js
   .replace(/:\s*(any|string\[\]|string|number|boolean)(?=[\s,)=;{]|$)/g, '');
 
 const codigo = semTipos(
-  `${extrair('const diaDaSemana =')}\n${extrair('function previstasDoDia')}\nreturn { diaDaSemana, previstasDoDia };`,
+  `${extrair('const diaDaSemana =')}\n${extrair('const diasNoMes =')}\n${extrair('function previstasDoDia')}\nreturn { diaDaSemana, previstasDoDia };`,
 );
 const { diaDaSemana, previstasDoDia } = new Function(codigo)();
 
@@ -170,6 +170,72 @@ check(
   check(previstas.filter(id => !feitas.has(id)).length === 0,
     'entregue vazio nesse checklist também não vira alarme');
 }
+
+/**
+ * ── PARIDADE com o app: a tarefa periódica (v13, 24/09/2026) ────────────────
+ *
+ * A regra periódica (lib/recurrence.js) é a mais fácil de divergir: mês curto,
+ * virada de ano, semana contada de uma data. Em vez de repetir casos à mão,
+ * a cópia daqui roda contra `applicableItems` do app em TODOS os dias de três
+ * anos, para um cardápio de tarefas que inclui as bordas e o lixo. Um dia de
+ * diferença é um alarme falso (ou um silêncio) em produção.
+ */
+console.log('\n═══ paridade com o app (lib/recurrence.js) ═══');
+{
+  const { build } = await import('esbuild');
+  const { mkdir } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const raiz = fileURLToPath(new URL('../../../', import.meta.url));
+  const dir = join(raiz, 'node_modules', '.cache', 'zc-notify-paridade');
+  await mkdir(dir, { recursive: true });
+  const out = join(dir, 'bundle.mjs');
+  await build({
+    stdin: { contents: `export { applicableItems } from '${join(raiz, 'lib/checklists.js')}';\nexport { addDays } from '${join(raiz, 'lib/dates.js')}';`, resolveDir: raiz },
+    outfile: out, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent',
+  });
+  const { applicableItems, addDays } = await import(out);
+
+  const cardapio = [
+    { id: 'diaria' },
+    { id: 'vazia', recurrence: [] },
+    { id: 'segqua', recurrence: [1, 3] },
+    { id: 'dia10', period: { every: 1, unit: 'month', start: '2026-10-10' } },
+    { id: 'dia31', period: { every: 1, unit: 'month', start: '2026-01-31' } },
+    { id: 'tri29', period: { every: 3, unit: 'month', start: '2026-11-29' } },
+    { id: 'anual', period: { every: 12, unit: 'month', start: '2026-02-28' } },
+    { id: 'quinz', period: { every: 2, unit: 'week', start: '2026-09-28' } },
+    { id: 'd15', period: { every: 15, unit: 'day', start: '2026-10-01' } },
+    { id: 'every-str', period: { every: '3', unit: 'month', start: '2026-10-10' } },
+    { id: 'manda', recurrence: [0], period: { every: 1, unit: 'month', start: '2026-10-10' } },
+    { id: 'lixo-unit', recurrence: [2], period: { every: 1, unit: 'year', start: '2026-10-10' } },
+    { id: 'lixo-data', period: { every: 1, unit: 'month', start: '2026-02-30' } },
+    { id: 'lixo-zero', period: { every: 0, unit: 'day', start: '2026-10-10' } },
+    { id: 'lixo-null', period: null },
+    { id: 'aparece', appearsIn: ['fechamento'], period: { every: 1, unit: 'month', start: '2026-10-10' } },
+  ];
+  let divergencias = 0, dias = 0, primeira = null;
+  for (const nome of ['Rotina — Caixa', 'Salão — Abertura', 'Salão — Fechamento']) {
+    const tpl = { name: nome, items: cardapio };
+    for (let d = '2026-01-01'; d <= '2028-12-31'; d = addDays(d, 1)) {
+      dias++;
+      const app = applicableItems(tpl, d).map(i => i.id).join();
+      const edge = previstasDoDia(tpl, d).join();
+      if (app !== edge) { divergencias++; if (!primeira) primeira = `${nome} ${d}: app=${app} edge=${edge}`; }
+    }
+  }
+  check(divergencias === 0, `notify-overdue e app concordam em ${dias} dias × ${cardapio.length} tarefas${primeira ? ` (1ª divergência: ${primeira})` : ''}`);
+}
+
+check(
+  previstasDoDia(t([{ id: 'm', period: { every: 1, unit: 'month', start: '2026-10-10' } }]), '2026-10-11').length === 0,
+  'checklist só com tarefa mensal não prevê nada fora do dia dela',
+);
+// O filtro de atraso consulta a mesma régua (v13): sem isto, esse checklist
+// viraria "ATRASO" em todos os outros dias do mês.
+check(
+  /const atrasados = [\s\S]*?previstasDoDia\(t, date\)\.length === 0/.test(src),
+  'o filtro de atrasados ignora checklist sem tarefa prevista no dia',
+);
 
 console.log(`\n  ${ok ? '✅ PASSOU' : '❌ FALHOU'}`);
 if (!ok) process.exitCode = 1;

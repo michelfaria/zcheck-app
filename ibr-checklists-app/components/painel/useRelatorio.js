@@ -27,7 +27,7 @@ import { useState, useEffect } from 'react';
 import { todayStr, tzOf } from '../../lib/dates';
 import { latestPerRound, roundKey } from '../../lib/rounds';
 import { tarefaFeita } from '../../lib/conferencia';
-import { CHECKLIST_TYPE_ORDER, completeRoundChecker, isUnitOff } from '../../lib/checklists';
+import { CHECKLIST_TYPE_ORDER, completeRoundChecker, rodadaPrevistaChecker, isUnitOff } from '../../lib/checklists';
 import {
   PERIODS, periodDates, filterCompletions, countApplicableTemplatesOnDate,
   summarizeCompletions, collaboratorStats, groupStats, computeProductivity,
@@ -160,7 +160,12 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
         : porLoja + countApplicableTemplatesOnDate(templates, { ...reportFilter, unitId: u.id }, d),
     0), 0);
   const numDays = effectiveDates.length;
-  const checklistRate = expectedChecklists ? (summary.checklists / expectedChecklists) * 100 : null;
+  // O numerador passa pela MESMA régua do denominador (`templatePrevistoEm`):
+  // rodada que só quitou tarefa arrastada, num dia em que o checklist não era
+  // previsto, é trabalho de verdade (continua na lista e em `summary`), mas não
+  // é entrega daquele dia — contá-la levava a aderência acima de 100%.
+  const checklistsEntregues = filtered.filter(rodadaPrevistaChecker(templates)).length;
+  const checklistRate = expectedChecklists ? (checklistsEntregues / expectedChecklists) * 100 : null;
 
   /**
    * "Checklists 100%" — o terceiro nome do Conjunto A (§B.6), que até 12/08/2026
@@ -406,7 +411,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
     </div>
     <div class="card">
       <div class="card-label">Checklists entregues</div>
-      <div class="card-value">${summary.checklists}${expectedChecklists > 0 ? `<span style="font-size:14px;color:#6B8299">/${expectedChecklists}</span>` : ''}</div>
+      <div class="card-value">${expectedChecklists > 0 ? checklistsEntregues : summary.checklists}${expectedChecklists > 0 ? `<span style="font-size:14px;color:#6B8299">/${expectedChecklists}</span>` : ''}</div>
       <div class="card-sub">${checklistRate != null ? checklistRate.toFixed(0) + '% do previsto' : 'entregues'}</div>
     </div>
     <div class="card">
@@ -500,7 +505,7 @@ export function useRelatorio({ unit, templates, completions, closures, users, ca
 
   return {
     canReview, checklistRate, collaborators, customFrom, customTo, dates, execPage,
-    checklistsCompletos, taxaCompletos,
+    checklistsCompletos, checklistsEntregues, taxaCompletos,
     expectedChecklists, exportCSV, exportPDF, filterSector, filterUnitId, filterUserId,
     filtered, groupBy, groups, numDays, period, periodLabel, prod, prodCollabs, prodSectors, prodUnits,
     reexecucoes, reportTz, reviewing, sectorOptions, selectedMonth, setCustomFrom, setCustomTo,

@@ -14,6 +14,9 @@
  * vez de sumir em silêncio.
  */
 
+import { todayStr } from './dates';
+import { inicioNoDiaDoMes, ehDataValida, periodoValido } from './recurrence';
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 // Comparação tolerante: minúsculo, sem acento, sem espaço sobrando.
@@ -60,12 +63,83 @@ export function splitCsvLine(line, delim = ',') {
   return out.map(v => v.trim());
 }
 
-const CSV_DAY_CODES = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
-/** "seg qua sex" (ou "seg;qua;sex") → [1,3,5]; vazio → null (= todos os dias). */
-export function parseCsvDays(s) {
-  if (!s) return null;
-  const days = [...new Set(csvNorm(s).split(/[^a-z]+/).map(t => CSV_DAY_CODES[t]).filter(d => d !== undefined))].sort((a, b) => a - b);
-  return days.length ? days : null;
+const CSV_DAY_CODES = {
+  dom: 0, domingo: 0, seg: 1, segunda: 1, ter: 2, terca: 2, qua: 3, quarta: 3,
+  qui: 4, quinta: 4, sex: 5, sexta: 5, sab: 6, sabado: 6,
+};
+// Atalhos da coluna `dias` → { every, unit }.
+const CSV_ATALHOS = {
+  semanal: [1, 'week'], quinzenal: [2, 'week'], mensal: [1, 'month'], bimestral: [2, 'month'],
+  trimestral: [3, 'month'], semestral: [6, 'month'], anual: [12, 'month'],
+};
+const CSV_UNIDADES = {
+  dia: ['day', 1], dias: ['day', 1], semana: ['week', 1], semanas: ['week', 1],
+  mes: ['month', 1], meses: ['month', 1], ano: ['month', 12], anos: ['month', 12],
+};
+const TODOS_OS_DIAS = ['todos os dias', 'todo dia', 'diario', 'diaria', 'diariamente'];
+
+// "10/10/2026", "10/10/26" ou "2026-10-10" → 'YYYY-MM-DD'; outra coisa → null.
+function csvData(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(s);
+  const iso = m
+    ? `${m[3].length === 2 ? `20${m[3]}` : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+    : (/^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
+  return iso && ehDataValida(iso) ? iso : null;
+}
+
+/**
+ * A coluna `dias` inteira — dia da semana OU periódica. Devolve
+ * `{ recurrence }`, `{ period }`, `{}` (todos os dias) ou `{ erro }`.
+ *
+ *   seg qua sex · segunda, quarta e sexta       → dias da semana (o de sempre)
+ *   dia 10 · todo dia 10 · dia 10 de cada mês  → todo dia 10
+ *   a cada 2 semanas desde 28/09/2026          → a cada N dias/semanas/meses/anos
+ *   quinzenal · mensal · trimestral · semestral · anual (+ "desde DD/MM/AAAA")
+ *
+ * Sem "desde", começa em `hoje` — o dia da importação no relógio da loja; "dia
+ * 10" começa no próximo dia 10 a partir dele. Texto que não é nada disso vira
+ * `erro`, e o parser o transforma em aviso com o número da linha: até
+ * 24/09/2026 palavra desconhecida era descartada em silêncio, e "a cada 3
+ * mese" teria virado "todos os dias" sem ninguém saber.
+ */
+export function parseCsvDias(s, hoje = todayStr()) {
+  let t = csvNorm(s);
+  if (!t || TODOS_OS_DIAS.includes(t)) return {};
+
+  // "desde"/"a partir de" é sufixo comum a todas as formas periódicas.
+  let desde = null;
+  const suf = /\s*(?:,\s*)?(?:desde|a partir de|a partir do dia|comecando em)\s+(\S+)$/.exec(t);
+  if (suf) {
+    desde = csvData(suf[1]);
+    if (!desde) return { erro: `data "${suf[1]}" inválida (use DD/MM/AAAA)` };
+    t = t.slice(0, suf.index).trim();
+  }
+  const inicio = desde || hoje;
+  const periodo = (every, unit, start) => {
+    const p = { every, unit, start };
+    return periodoValido(p) ? { period: p } : { erro: `"${s}" fora do intervalo aceito` };
+  };
+
+  let m = /^(?:todo )?dia (\d{1,2})(?: (?:de cada|de todo|do) mes)?$/.exec(t);
+  if (m) {
+    const start = inicioNoDiaDoMes(Number(m[1]), inicio);
+    return start ? periodo(1, 'month', start) : { erro: `dia "${m[1]}" não existe (use de 1 a 31)` };
+  }
+  m = /^a cada (\d{1,3}) ([a-z]+)$/.exec(t);
+  if (m && CSV_UNIDADES[m[2]]) {
+    const [unit, mult] = CSV_UNIDADES[m[2]];
+    return periodo(Number(m[1]) * mult, unit, inicio);
+  }
+  if (CSV_ATALHOS[t]) return periodo(CSV_ATALHOS[t][0], CSV_ATALHOS[t][1], inicio);
+
+  // Dias da semana: TODA palavra precisa ser um dia ("feira" e "e" são cola).
+  if (!desde) {
+    const palavras = t.split(/[^a-z]+/).filter(w => w && w !== 'feira' && w !== 'e');
+    if (palavras.length && palavras.every(w => w in CSV_DAY_CODES)) {
+      return { recurrence: [...new Set(palavras.map(w => CSV_DAY_CODES[w]))].sort((a, b) => a - b) };
+    }
+  }
+  return { erro: `"${s}" não reconhecido` };
 }
 
 /** Escapa um valor para o CSV gerado (nome de loja pode ter vírgula). */
@@ -87,6 +161,9 @@ export function buildModelCsv({ loja = 'Loja 1', setor = 'Salão', tipoAbertura 
     `tarefa,${A},${L},${S},Verificar caixas,sim,,seg qua sex,,,,,sim`,
     `checklist,${F},${L},${S},,,,,,,,18:00,`,
     `tarefa,${F},${L},${S},Fechar caixas,sim,,,,https://youtube.com/watch?v=exemplo,,,`,
+    // Periódica: "dia 10" é todo dia 10 do mês. "arrastar" vazio de propósito —
+    // periódica já nasce cobrando no dia seguinte (ver `parseImportCSV`).
+    `tarefa,${F},${L},${S},Conferir validade dos extintores,,sim,dia 10,,,,,`,
   ].join('\r\n');
 }
 
@@ -94,7 +171,11 @@ export function buildModelCsv({ loja = 'Loja 1', setor = 'Salão', tipoAbertura 
  * Lê o CSV e devolve `{ checklists, warnings }` ou `{ error, warnings }`.
  * `warnings` traz o motivo de cada linha descartada, com o número da linha.
  */
-export function parseImportCSV(text) {
+//
+// `opts.hojeDaLoja(nomeDaLoja)` → 'YYYY-MM-DD' no relógio DAQUELA loja: é o
+// início de uma periódica sem "desde" (ver `parseCsvDias`). Sem ele, o dia de
+// Brasília — só os testes chamam assim; as duas telas de importação passam.
+export function parseImportCSV(text, { hojeDaLoja = () => todayStr() } = {}) {
   // Tira o BOM que o Excel grava e aceita CRLF/CR além de LF.
   const raw = (text || '').replace(/^﻿/, '').trim();
   if (!raw) return { error: 'Cole ou carregue um CSV.', warnings: [] };
@@ -188,13 +269,23 @@ export function parseImportCSV(text) {
     }
     const item = { id: uid(), text: row.tarefa.trim(), critical: csvBool(row.critico) };
     if (csvBool(row.foto)) item.photoRequired = true;
-    const days = parseCsvDays(row.dias); if (days) item.recurrence = days;
+    const dias = parseCsvDias(row.dias, hojeDaLoja(current.unitName));
+    if (dias.erro) {
+      warnings.push(`Linha ${lineNo}: dias ${dias.erro} — tarefa "${item.text}" importada para todos os dias. `
+        + 'Exemplos: "seg qua sex", "dia 10", "a cada 3 meses desde 10/10/2026", "trimestral".');
+    }
+    if (dias.recurrence) item.recurrence = dias.recurrence;
+    if (dias.period) item.period = dias.period;
     // Tarefa que volta no dia seguinte enquanto não for feita. Sem
     // `carryoverSince`: o import só CRIA checklist (duplicata vira "ja-existe"),
     // e template novo nasce com `created_at` de hoje — `templateExistedOn` já
     // impede qualquer cobrança anterior à importação. O carimbo só é necessário
     // no editor, onde a flag pode ser ligada num checklist antigo.
-    if (csvBool(row.arrastar)) item.carryover = true;
+    //
+    // Periódica com a coluna VAZIA arrasta por padrão, como no editor (decisão
+    // de 24/09/2026): extintor esquecido no dia 10 não pode sumir até o mês
+    // seguinte. "nao" escrito desliga.
+    if (csvBool(row.arrastar) || (item.period && !row.arrastar?.trim())) item.carryover = true;
     if (row.orientacao) item.description = row.orientacao;
     if (row.video) item.refVideo = row.video;
     if (row.link) item.refLink = row.link;

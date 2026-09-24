@@ -45,7 +45,7 @@ import { capCompletions, marcaDagua, marcaMaisNova, inicioDaRecarga, juntarConcl
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
-import { todayStr, addDays, daysAgoStr, lastDays, weekdayOf, weekStartStr, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
+import { todayStr, addDays, daysAgoStr, lastDays, weekStartStr, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
 // já registrada hoje não se refaz. Ver lib/rounds.js.
 import { latestPerRound, earliestPerRound, roundProgress, statusFromProgress, submittedTasksFrom, mergeRoundState } from '../../lib/rounds';
@@ -58,8 +58,8 @@ import {
   // `applicableItems` saiu daqui no carryover: a tela do operador passou a
   // pedir `itensDoDia` (previstas + arrastadas). Quem ainda quer só o que o
   // CALENDÁRIO prevê — a aderência — chama a original de lib/checklists.
-  CHECKLIST_TYPE_ORDER, matchesShift, isItemApplicable,
-  templateAtiva, completeRoundChecker, completionOnTime,
+  CHECKLIST_TYPE_ORDER, matchesShift, applicableItems,
+  templateAtiva, completeRoundChecker, rodadaPrevistaChecker, completionOnTime,
   isUnitClosed, isUnitOff, unitActiveOn, templateStatus, templateProgress, itensDoDia,
 } from '../../lib/checklists';
 import { UNITS } from '../../lib/units';
@@ -94,6 +94,8 @@ import {
 } from '../../lib/collab';
 
 import { parseImportCSV, buildModelCsv, csvNorm } from '../../lib/csvImport';
+import { descreverRecorrencia } from '../../lib/recurrence';
+import RecurrenceEditor from '../../components/RecurrenceEditor';
 import { C, R, W, T, successBright, greenOnDark } from '../../lib/tokens';
 import { normalizeCnpj, formatCnpj, cnpjError } from '../../lib/cnpj';
 import SideNav, { NAV_ITEMS, BOTTOM_NAV_ORDER } from '../../components/SideNav';
@@ -728,18 +730,17 @@ const SEED_TEMPLATES = generateSeedTemplates();
 const shiftLabel = t => Array.isArray(t.shift) ? t.shift.join(' e ') : t.shift;
 
 
-// Recurrence: undefined/null/empty = every day. Otherwise an array of weekday numbers (0=Dom ... 6=Sáb).
-const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+// A recorrência da tarefa (dia da semana ou periódica) — regra, texto e editor
+// moram em lib/recurrence.js e components/RecurrenceEditor.js.
 
 // Generates ~7 days of realistic-looking completion history (for testing the Relatórios tab).
 export function generateSimulatedCompletions(templates, users, days = 7) {
   const completions = [];
   for (let offset = days - 1; offset >= 0; offset--) {
     const dateStr = daysAgoStr(offset);
-    const weekday = weekdayOf(dateStr);
 
     templates.forEach(t => {
-      const items = t.items.filter(i => isItemApplicable(i, dateStr));
+      const items = applicableItems(t, dateStr);
       if (items.length === 0) return;
 
       const shiftNames = Array.isArray(t.shift) ? t.shift : [t.shift];
@@ -1105,9 +1106,9 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
                 <Camera size={12} /> Foto
               </span>
             )}
-            {item.recurrence && item.recurrence.length > 0 && (
+            {descreverRecorrencia(item, { curta: true }) && (
               <span className="flex items-center gap-1" style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted }}>
-                <Clock size={12} /> {item.recurrence.map(d => WEEKDAY_LABELS[d]).join('/')}
+                <Clock size={12} /> {descreverRecorrencia(item, { curta: true })}
               </span>
             )}
           </div>
@@ -2507,32 +2508,12 @@ export function TemplateEditor({ unit, sector, template, onSave, onCancel, check
               </label>
             </div>
             <div className="mt-2">
-              <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
-                {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
-              </p>
-              <div className="flex gap-1">
-                {WEEKDAY_LABELS.map((label, day) => {
-                  const rec = item.recurrence || [];
-                  const active = rec.includes(day);
-                  return (
-                    <button
-                      key={day}
-                      onClick={() => {
-                        const next = active ? rec.filter(d => d !== day) : [...rec, day].sort();
-                        updateItem(item.id, { recurrence: next.length ? next : null });
-                      }}
-                      style={{
-                        width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: W.semibold,
-                        border: `1px solid ${C.border}`,
-                        background: active ? unit.color : 'white',
-                        color: active ? C.bg : C.muted,
-                      }}
-                    >
-                      {label[0]}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Repetir: todo dia, dias da semana, todo dia N do mês ou a cada
+                  N dias/semanas/meses (ver components/RecurrenceEditor.js). */}
+              <RecurrenceEditor
+                item={item} accent={unit.color} hoje={todayStr(tzOf(unit))}
+                onChange={patch => updateItem(item.id, patch)}
+              />
               {/* Carryover: a tarefa não feita volta amanhã até ser feita.
                   Opt-in porque arrastar é semântica da tarefa — "limpar a coifa"
                   é estado do mundo e arrasta; "conferir câmaras na abertura" é
@@ -2642,7 +2623,8 @@ export function TemplateEditor({ unit, sector, template, onSave, onCancel, check
 /* ── Importar CSV — DENTRO do app (usa a sessão atual; antes era uma página
    separada que perdia o token e caía no login ao "Voltar"). ── */
 /* O CSV cobre os MESMOS campos do editor "+ Novo" (pedido 18/07): critico,
-   foto (exigir foto na execução), dias (da semana), orientacao, video, link,
+   foto (exigir foto na execução), dias (da semana ou periódica: "dia 10",
+   "a cada 3 meses desde 10/10/2026" — ver `parseCsvDias`), orientacao, video, link,
    arrastar (a tarefa não feita volta no dia seguinte).
    Só fotos de referência e documentos ficam para anexar no app.
    O parser vive em lib/csvImport.js — compartilhado com a página /importar e
@@ -2674,6 +2656,9 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   const knownUnits = (allUnits || []).map(u => u.name).join(', ');
   const unitByName = useMemo(
     () => new Map((allUnits || []).map(u => [csvNorm(u.name), u])), [allUnits]);
+  // Início de tarefa periódica sem "desde": o dia da importação no relógio da
+  // loja da linha (loja desconhecida cai no default e é barrada depois).
+  const hojeDaLoja = nome => todayStr(tzOf(unitByName.get(csvNorm(nome))));
   // Identidade de um checklist: loja + setor + nome, tudo normalizado.
   const dupKey = (unitId, sector, name) => `${unitId}|${csvNorm(sector)}|${csvNorm(name)}`;
   // O que a empresa já tem hoje, para marcar repetido ANTES de importar.
@@ -2710,7 +2695,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
 
   const parse = (text) => {
     setError(''); setResult(null); setRawPreview(null); setWarnings([]); setLoaded([]);
-    const r = parseImportCSV(text ?? csvText);
+    const r = parseImportCSV(text ?? csvText, { hojeDaLoja });
     setWarnings(r.warnings || []);
     if (r.error) { setError(r.error); return; }
     setRawPreview(r.checklists.map(c => ({ ...c, source: null })));
@@ -2731,7 +2716,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
       let texto;
       try { texto = await f.text(); }
       catch (_) { falhas.push(`${f.name}: não foi possível ler o arquivo.`); continue; }
-      const r = parseImportCSV(texto);
+      const r = parseImportCSV(texto, { hojeDaLoja });
       (r.warnings || []).forEach(w => avisos.push(`${f.name} — ${w}`));
       if (r.error) { falhas.push(`${f.name}: ${r.error}`); continue; }
       r.checklists.forEach(c => todos.push({ ...c, source: f.name }));
@@ -2865,8 +2850,9 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
         <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>
           Colunas: <strong>tipo, checklist, loja, setor, tarefa, critico, foto, dias, orientacao, video, link, deadline, arrastar</strong>.
           A coluna <strong>loja</strong> precisa bater com uma loja da empresa ({knownUnits || '—'}).
-          {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot; (vazio = todos os dias);
-          {' '}<strong>arrastar</strong> = &quot;sim&quot; faz a tarefa não feita voltar no dia seguinte até ser executada;
+          {' '}<strong>foto</strong> = &quot;sim&quot; exige foto na execução; <strong>dias</strong> = &quot;seg qua sex&quot;, &quot;dia 10&quot; (todo dia 10 do mês),
+          {' '}&quot;a cada 3 meses desde 10/10/2026&quot; ou &quot;trimestral&quot; (vazio = todos os dias; sem &quot;desde&quot;, começa no dia da importação);
+          {' '}<strong>arrastar</strong> = &quot;sim&quot; faz a tarefa não feita voltar no dia seguinte até ser executada (tarefa de mês ou &quot;a cada&quot; já vem com isso ligado; &quot;nao&quot; desliga);
           texto com vírgula vai entre aspas. Fotos de referência e documentos você anexa depois, no app.
           {' '}Aceita separador vírgula, ponto e vírgula ou tabulação — pode salvar direto do Excel, do Numbers ou do Google Sheets.
           {' '}<strong>Pode selecionar vários arquivos de uma vez.</strong>
@@ -3943,9 +3929,9 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                         <Camera size={15} color={item.photoRequired ? unit.color : C.mutedLight} />
                       </button>
                       <button onClick={() => setNovoOptsOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
-                        title="Dias da semana"
+                        title="Repetição" aria-label="Repetição"
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
-                        <Calendar size={15} color={(item.recurrence && item.recurrence.length) || novoOptsOpen[item.id] ? unit.color : C.mutedLight} />
+                        <Calendar size={15} color={descreverRecorrencia(item, { curta: true }) || novoOptsOpen[item.id] ? unit.color : C.mutedLight} />
                       </button>
                       <button onClick={() => setNovoGuidanceOpen(m => ({ ...m, [item.id]: !m[item.id] }))}
                         title="Orientação: instruções, fotos, POP, vídeo"
@@ -3964,25 +3950,10 @@ export function GerenciarView({ unit, templates, onSaveTemplates, closures, onSa
                     )}
                     {novoOptsOpen[item.id] && (
                       <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}` }}>
-                        <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 }}>
-                          {!item.recurrence || item.recurrence.length === 0 ? 'Todos os dias' : `Apenas: ${item.recurrence.map(d => WEEKDAY_LABELS[d]).join(', ')}`}
-                        </p>
-                        <div className="flex gap-1">
-                          {WEEKDAY_LABELS.map((label, day) => {
-                            const rec = item.recurrence || [];
-                            const active = rec.includes(day);
-                            return (
-                              <button key={day}
-                                onClick={() => {
-                                  const next = active ? rec.filter(d => d !== day) : [...rec, day].sort((a, b) => a - b);
-                                  setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, recurrence: next.length ? next : null } : i));
-                                }}
-                                style={{ width: 30, height: 26, borderRadius: 4, fontSize: 11, fontWeight: W.semibold, border: `1px solid ${C.border}`, background: active ? unit.color : 'white', color: active ? C.bg : C.muted }}>
-                                {label[0]}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <RecurrenceEditor
+                          item={item} accent={unit.color} hoje={todayStr(tzOf(unit))}
+                          onChange={patch => setNovoItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i))}
+                        />
                         {/* Mesma regra do editor do checklist existente: ligar
                             carimba a data de ativação, desligar limpa. */}
                         <label className="flex items-center gap-1.5" style={{ marginTop: 8, fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: item.carryover ? unit.color : C.muted }}>
@@ -7207,13 +7178,17 @@ function computeUnitProfile(completions, templates, closures, unit, days = 30, s
   // não se o trabalho foi feito. As entregas parciais voltam em `partialChecklists`
   // para a tela poder explicar a diferença em vez de só mostrar o índice menor.
   const completa = completeRoundChecker(templates);
+  // Parcial = rodada PREVISTA e não completa — a mesma régua do denominador
+  // (`templatePrevistoEm`). Rodada que só quitou tarefa arrastada num dia sem
+  // previsto daquele checklist não é parcial nem entrega do dia.
+  const prevista = rodadaPrevistaChecker(templates);
   let expected = 0, doneChecklists = 0, partialChecklists = 0;
   const daily = dates.map(ds => {
     // "Fechado" aqui é dia que não conta: folga OU anterior à ativação da loja.
     // O dia de montagem não pode entrar no denominador — ver `unitActiveOn`.
     const closed = isUnitClosed(closures, uid, ds) || !unitActiveOn(unit, ds);
     const exp = closed ? 0 : countApplicableTemplatesOnDate(templates, sector ? { unitId: uid, sector } : { unitId: uid }, ds);
-    const doDia = mine.filter(c => c.date === ds);
+    const doDia = mine.filter(c => c.date === ds && prevista(c));
     const done = doDia.filter(completa).length;
     expected += exp; doneChecklists += done; partialChecklists += doDia.length - done;
     return { date: ds, expected: exp, done, partial: doDia.length - done, closed, rate: exp ? Math.round((done / exp) * 100) : null };
@@ -7397,7 +7372,8 @@ export function computeLeadershipProfile({ completions, templates, closures, uni
     const k = `${c.unitId}|${c.date}`;
     doneByUnitDate.set(k, (doneByUnitDate.get(k) || 0) + 1);
   });
-  const partialChecklists = team.length - team.filter(completa).length;
+  // Só rodada prevista é parcial — ver `rodadaPrevistaChecker`.
+  const partialChecklists = team.filter(rodadaPrevistaChecker(tpl)).length - team.filter(completa).length;
   let expected = 0, doneChecklists = 0;
   scopeUnits.forEach(u => dates.forEach(ds => {
     if (isUnitOff(scopeUnits, clo, u.id, ds)) return;

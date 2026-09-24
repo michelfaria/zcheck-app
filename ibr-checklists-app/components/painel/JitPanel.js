@@ -22,7 +22,7 @@ import { todayStr, addDays, lastDays, weekStartStr, tzOfUnit } from '../../lib/d
 import { latestPerRound, earliestPerRound } from '../../lib/rounds';
 import { tarefaFeita } from '../../lib/conferencia';
 import {
-  applicableItems, templateAtiva, templateStatus, completeRoundChecker,
+  applicableItems, templateAtiva, templateStatus, completeRoundChecker, rodadaPrevistaChecker,
   isUnitOff, isUnitActiveOn,
 } from '../../lib/checklists';
 import {
@@ -69,8 +69,12 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   // Só entrega COMPLETA conta como entrega (30/07/2026). O parcial vira número
   // próprio: a aderência cai, e a tela precisa poder dizer POR QUE caiu.
   const completa = completeRoundChecker(templates);
+  // Parcial é rodada PREVISTA e não completa. A que só quitou tarefa arrastada,
+  // num dia em que o checklist não era previsto, não é parcial nem entrega do
+  // dia — é a mesma régua do denominador (`templatePrevistoEm`).
+  const prevista = rodadaPrevistaChecker(templates);
   const yDone = yFiltered.filter(completa).length;
-  const yPartial = yFiltered.length - yDone;
+  const yPartial = yFiltered.filter(prevista).length - yDone;
   const yAdherence = yExpected ? Math.round((yDone / yExpected) * 100) : null;
 
   // ── Hoje ──
@@ -78,7 +82,7 @@ export function buildJit(completions, templates, closures, units, scopeUnitId, b
   unitIds.forEach(uid => { if (!isUnitOff(units, closures, uid, today)) tExpected += countApplicableTemplatesOnDate(templates, { unitId: uid }, today); });
   const tRounds = latestPerRound(filterCompletions(completions, scopeFilter([today])));
   const tDone = tRounds.filter(completa).length;
-  const tPartial = tRounds.length - tDone;
+  const tPartial = tRounds.filter(prevista).length - tDone;
   const scopeTemplates = templates.filter(t =>
     templateAtiva(t) &&
     (!scopeUnitId || t.unitId === scopeUnitId) &&

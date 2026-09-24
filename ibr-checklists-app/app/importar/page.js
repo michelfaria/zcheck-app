@@ -9,6 +9,7 @@ import { getTenantSlug } from '../../lib/tenant';
 // tinha uma cópia própria, com 7 colunas e split(',') cru: o modelo baixado do
 // app (12 colunas, texto entre aspas) entrava com os campos trocados.
 import { parseImportCSV, buildModelCsv, csvNorm, CSV_COLUMNS } from '../../lib/csvImport';
+import { todayStr, tzOf } from '../../lib/dates';
 
 import { C } from '../../lib/tokens';
 // Quem pode importar é quem pode gerenciar templates dentro do app (ROLE_TABS).
@@ -129,7 +130,7 @@ export default function ImportarPage() {
     let cancelled = false;
     (async () => {
       const [{ data: us }, { data: ss }] = await Promise.all([
-        db().from('units').select('id, name').eq('company_id', user.companyId),
+        db().from('units').select('id, name, timezone').eq('company_id', user.companyId),
         db().from('sectors').select('name, unit_id').eq('company_id', user.companyId),
       ]);
       if (cancelled) return;
@@ -159,7 +160,12 @@ export default function ImportarPage() {
     setPreview(null);
     setImportResult(null);
     setWarnings([]);
-    const result = parseImportCSV(text || csvText);
+    // Tarefa periódica sem "desde" começa no dia da importação — no relógio da
+    // loja da linha, como tudo que é "hoje" no app (lib/dates.js).
+    const porNome = new Map(units.map(u => [csvNorm(u.name), u]));
+    const result = parseImportCSV(text || csvText, {
+      hojeDaLoja: nome => todayStr(tzOf(porNome.get(csvNorm(nome)))),
+    });
     setWarnings(result.warnings || []);
     if (result.error) { setParseError(result.error); return; }
     setPreview(result.checklists);

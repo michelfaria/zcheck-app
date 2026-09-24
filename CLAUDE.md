@@ -45,6 +45,10 @@ app/layout.js                    → layout global
 app/globals.css                  → estilos globais (@tailwind + CSS vars dos tokens)
 lib/tokens.js                    → FONTE ÚNICA de cor/raio/peso/tamanho (C/R/W/T)
 lib/dates.js                     → FONTE ÚNICA do "dia de operação" (fuso POR LOJA, units.timezone)
+lib/recurrence.js                → FONTE ÚNICA de "a tarefa vale neste dia?": dia da semana (`recurrence`)
+                                   ou periódica (`period` = todo dia N / a cada N dias·semanas·meses);
+                                   espelho em supabase/functions/notify-overdue (teste de paridade)
+components/RecurrenceEditor.js   → "Repetir" da tarefa (4 modos + próximas datas), nos dois editores
 lib/plans.js                     → FONTE ÚNICA de preço e vagas: R$ 97 anual / R$ 127 mensal por loja,
                                    10 vagas por loja somadas, vaga adicional R$ 17,00/mês (formatBRL)
 lib/seats.js                     → decisões puras do servidor sobre vagas e valor (checkout, webhook, cron)
@@ -90,6 +94,13 @@ const EMPRESAS = {
 - O dia é o do RELÓGIO DA LOJA: `todayStr(tzOf(unit))`, nunca `todayStr()` solto.
   Prazo de checklist é `instantAt(data, hora, tz)` — comparar com `new Date()`
   usa o fuso de quem abriu o painel, não o da loja que executou
+- "A tarefa vale neste dia?" só por `applicableItems` (lib/checklists.js → lib/recurrence.js);
+  "o checklist era previsto?" só por `templatePrevistoEm` — é a régua do previsto
+  (`countApplicableTemplatesOnDate`) E do entregue (`completeRoundChecker`,
+  `rodadaPrevistaChecker`). Conta nova de aderência que não passa pelas duas estoura
+  100%. Mexeu na regra de recorrência, mexa no espelho da `notify-overdue` (o teste
+  de paridade em `incompleto.test.mjs` compara os dois dia a dia) e publique a função
+  ANTES do app: sem ela, tarefa mensal vira push de "incompleto" todo dia
 - Preço e limite de usuários NUNCA escritos à mão em texto de tela (landing,
   calculadora, app): sempre das constantes de `lib/plans.js` (`PRICE_PER_UNIT`,
   `INCLUDED_USERS_PER_UNIT`, `EXTRA_USER_PRICE`) via `formatBRL` — a vaga
@@ -141,6 +152,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `templates-sync.spec.mjs` | os dois caminhos de leitura de `templates` devolvem objetos IDÊNTICOS — campo que só um lado mapeia derruba o teste |
 | `ativacao-loja.spec.mjs` | `units.active_from`: antes da estreia nada aparece no Executar e nada entra no previsto — **e os dois lados da fração andam juntos** (zerar só o denominador faz a aderência da estreia estourar 100%) |
 | `completions-cap.spec.mjs` | o teto da lista de conclusões em memória corta pelo TEMPO, nunca pela posição — um `slice(-500)` numa lista que chega do mais novo para o mais velho apagava as conclusões de HOJE a cada "Concluir" (vídeo do IBR3, 11/09/2026) |
+| `recorrencia.spec.mjs` | a tarefa periódica (`item.period`, 24/09/2026): mês curto cai no último dia sem derivar, nada antes do início, `period` inválido cai no dia da semana, dado antigo intocado — e **os dois lados da fração**: a rodada que só quita tarefa arrastada (dia em que o checklist não era previsto) não conta como entrega nem parcial, senão a aderência passa de 100% (J.I.T. e relatório renderizados). Roda em UTC+14 para provar que o dia é o da loja; cobre o CSV (`dias`) e a tela (editor e selo) |
 | `carryover-marcacao.spec.mjs` | marcação ao vivo em D quita o carryover até D, como uma submissão — e a aderência NÃO muda (o checklist marcado sem "Concluir" continua não entregue). Caso do IBR3, 16/09/2026: 7/7 marcadas, ninguém concluiu, tudo voltou no dia seguinte |
 | `auto-concluir.spec.mjs` | a última tarefa marcada fecha o checklist sozinha (tela real em jsdom): com o colega em 2 de 3, marcar a terceira submete sem "Concluir", com o `doneBy` de cada um; marcar uma que não é a última não submete. Decisão de 17/09/2026: checklist dividido entre pessoas ficava sem registro |
 | `conclusoes-recarga.spec.mjs` | a lista de conclusões em memória se corrige com o banco ao voltar para o app e ao abrir a Rotina/um checklist — o realtime perde o que outro aparelho gravou com o app em segundo plano. Caso do IBR2, 24/09/2026: o app do Nicolas fechou 10/10 sozinho, o celular do Michel seguiu em "Parcial · 2 de 10" com "Concluir" aceso |

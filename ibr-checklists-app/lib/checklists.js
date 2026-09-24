@@ -14,8 +14,9 @@
  * REGRA: este módulo não pode importar de `app/`. Só de outros `lib/`.
  */
 
-import { weekdayOf, deadlineEnd, addDays, tzOfUnit, APP_TZ } from './dates';
+import { deadlineEnd, addDays, tzOfUnit, APP_TZ } from './dates';
 import { roundIsComplete, roundProgress, statusFromProgress, templateExistedOn } from './rounds';
+import { recorrenciaVale } from './recurrence';
 
 /**
  * Os três tipos de checklist da operação, na ordem em que o dia acontece.
@@ -33,23 +34,41 @@ export const CHECKLIST_TYPE_ORDER = [
 // A template's shift can be a single shift or an array (e.g. Intermediário runs in both).
 export const matchesShift = (t, shift) => Array.isArray(t.shift) ? t.shift.includes(shift) : t.shift === shift;
 
-// Recurrence: undefined/null/empty = every day. Otherwise an array of weekday numbers (0=Dom ... 6=Sáb).
+// A recorrência (dia da semana OU periódica: "todo dia 10", "a cada 3 meses")
+// mora em lib/recurrence.js — esta é a porta de entrada dela para o app.
+// Quem precisa saber se um item vale num dia chama `applicableItems`, que
+// também respeita o `appearsIn`; chamar `isItemApplicable` sem o tipo do
+// checklist ignora o `appearsIn` e responde outra pergunta.
 export const isItemApplicable = (item, dateStr, templateType) => {
   // If item has explicit appearsIn, check it matches the template type
   if (item.appearsIn && item.appearsIn.length > 0) {
     if (templateType && !item.appearsIn.includes(templateType)) return false;
   }
-  // Check recurrence
-  if (!item.recurrence || item.recurrence.length === 0) return true;
-  return item.recurrence.includes(weekdayOf(dateStr));
+  return recorrenciaVale(item, dateStr);
 };
 
 export const applicableItems = (template, dateStr) => {
   // Detect template type from name
   const n = (template.name || '').toLowerCase();
   const templateType = n.includes('abertura') ? 'abertura' : n.includes('fechamento') ? 'fechamento' : n.includes('intermedi') ? 'intermediario' : null;
-  return template.items.filter(i => isItemApplicable(i, dateStr, templateType));
+  return (template.items || []).filter(i => isItemApplicable(i, dateStr, templateType));
 };
+
+/**
+ * O checklist era PREVISTO neste dia? — existia (`templateExistedOn`) e tem
+ * pelo menos uma tarefa que o calendário prevê.
+ *
+ * É a régua dos DOIS lados da aderência: o denominador
+ * (`countApplicableTemplatesOnDate`, lib/stats.js) e o numerador
+ * (`completeRoundChecker` e `rodadaPrevistaChecker`, abaixo). Até 24/09/2026 só
+ * o denominador perguntava isto. O numerador contava qualquer rodada entregue,
+ * e a rodada que só quita tarefa ARRASTADA — um dia em que o calendário não
+ * previa nada daquele checklist — entrava como entrega completa num dia de zero
+ * previstos: aderência acima de 100%. Com a tarefa periódica, que nasce com a
+ * cobrança ligada, "Manutenção mensal" entregue no dia 11 virava o caso comum.
+ */
+export const templatePrevistoEm = (template, dateStr) =>
+  !!template && templateExistedOn(template, dateStr) && applicableItems(template, dateStr).length > 0;
 
 // Checklist que a OPERAÇÃO vê. Desativado continua carregado (o histórico
 // depende dele), mas não aparece para executar nem para gerenciar.
@@ -65,16 +84,47 @@ export const templateAtiva = t => t.active !== false;
 //
 // `opts` vai direto para `roundIsComplete` — o índice da liderança passa
 // `{ descontaReprovadas: false }`, e só ele (ver o porquê lá).
+//
+// Rodada de um dia em que o checklist não era previsto (`templatePrevistoEm`)
+// NÃO é completa: ela pagou dívida arrastada, e o dia dela tem zero previstos.
+// Contá-la aqui estouraria a aderência — ver `templatePrevistoEm`. Checklist
+// que não está mais na lista (`null`) segue a regra antiga: o que veio no
+// registro.
 export function completeRoundChecker(templates, opts = {}) {
+  const previstas = previstasPorRodada(templates);
+  return c => {
+    const ids = previstas(c);
+    if (ids && ids.length === 0) return false;
+    return roundIsComplete(c, ids, opts);
+  };
+}
+
+/**
+ * A rodada conta no numerador de "entregues" — o irmão de
+ * `completeRoundChecker` para quem conta entrega parcial também. É o que separa
+ * "entregue" de "quitou dívida arrastada num dia sem previsto".
+ */
+export function rodadaPrevistaChecker(templates) {
+  const previstas = previstasPorRodada(templates);
+  return c => {
+    const ids = previstas(c);
+    return ids === null || ids.length > 0;
+  };
+}
+
+// (checklist, data) → ids previstos, com cache: a aderência varre 30 dias ×
+// todas as execuções. `null` = checklist desconhecido; `[]` = não previsto.
+function previstasPorRodada(templates) {
   const byId = new Map((templates || []).map(t => [t.id, t]));
   const cache = new Map();
   return c => {
     const k = `${c.templateId}|${c.date}`;
     if (!cache.has(k)) {
       const t = byId.get(c.templateId);
-      cache.set(k, t ? applicableItems(t, c.date).map(i => i.id) : null);
+      cache.set(k, !t ? null
+        : templatePrevistoEm(t, c.date) ? applicableItems(t, c.date).map(i => i.id) : []);
     }
-    return roundIsComplete(c, cache.get(k), opts);
+    return cache.get(k);
   };
 }
 

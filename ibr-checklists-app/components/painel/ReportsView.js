@@ -952,7 +952,7 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
  */
 export function ReportsBody({ unit, templates, completions, closures, users, canSeeAllUnits, allUnitsSelected = false, currentUser, onReview, disputes = [], onResolveDispute, activeTypes = CHECKLIST_TYPE_ORDER, rel, segment = null, embedded = false }) {
   const {
-    canReview, checklistRate, checklistsCompletos, taxaCompletos,
+    canReview, checklistRate, checklistsCompletos, checklistsEntregues, taxaCompletos,
     collaborators, customFrom, customTo, execPage,
     expectedChecklists, exportCSV, exportPDF, filterSector, filterUnitId, filterUserId,
     filtered, groupBy, groups, numDays, period, prod, prodCollabs, prodSectors, prodUnits,
@@ -1092,7 +1092,7 @@ export function ReportsBody({ unit, templates, completions, closures, users, can
             entregue pela metade. O NÚMERO não mudou — só parou de mentir. */}
         <StatCard
           label="Checklists entregues" accent={unit.color}
-          value={expectedChecklists > 0 ? `${summary.checklists}/${expectedChecklists}` : summary.checklists}
+          value={expectedChecklists > 0 ? `${checklistsEntregues}/${expectedChecklists}` : summary.checklists}
           sub={checklistRate != null ? `${checklistRate.toFixed(0)}% do previsto no período` : `${numDays || 0} dia(s) com registros`}
         />
         {/* "Checklists 100%" (Conjunto A, §B.6): dos previstos, quantos foram
