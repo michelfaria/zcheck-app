@@ -236,13 +236,21 @@ export default function LandingPage() {
           background: #0D1B27; border-radius: 0 3px 3px 0; }
         .phone-vol { position: absolute; left: -2.5px; width: 3px; height: 5%; background: #0D1B27; border-radius: 3px 0 0 3px; }
         .phone-screen { position: relative; aspect-ratio: 390 / 844; border-radius: 23px; overflow: hidden; background: white; }
-        /* 280px / 76% amarrados aos sizes dos três celulares avulsos (hero no
-           celular, Unidades no celular e Meu ID). A sombra é mais curta que a
+        /* 280px / 76% amarrados aos sizes dos dois celulares avulsos (Unidades
+           no celular e Meu ID). A sombra é mais curta que a
            do celular do hero: no celular a legenda de Unidades fica logo
            abaixo, e com a sombra longa o cinza dela caía a 3.6:1 (medido). */
         .lp-phone-solo { width: 280px; max-width: 100%; margin: 0 auto; }
         .lp-phone-solo .phone-frame { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.07), 0 2px 8px rgba(8,20,30,0.22), 0 16px 28px -14px rgba(8,20,30,0.30); }
         @media (max-width: 820px) { .lp-phone-solo { width: 280px; max-width: 76%; } }
+        /* Hero no celular: o Painel da diretoria e o checklist na mão da equipe,
+           lado a lado como o notebook e o celular do desktop. Nenhum cobre o
+           outro (sobreposto, o checklist tampava "Foi útil?" e os "Tratar" do
+           Painel). O segundo desce 32px para não virar uma parede de telas.
+           Colunas de até 280px amarradas ao sizes dos dois no JSX. */
+        .lp-duo { display: grid; grid-template-columns: repeat(2, minmax(0, 280px)); justify-content: center; gap: 12px; padding-bottom: 32px; }
+        .lp-duo .lp-phone:last-child { transform: translateY(32px); }
+        .lp-duo .phone-frame { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.07), 0 2px 8px rgba(8,20,30,0.22), 0 16px 28px -14px rgba(8,20,30,0.30); }
         /* Botão do header: a 320px ele quebrava em duas linhas e espremia o logo. */
         .lp-hdr-cta { padding: 10px 20px; white-space: nowrap; }
         @media (max-width: 359px) { .lp-hdr-cta { padding: 10px 14px; } }
@@ -351,10 +359,18 @@ export default function LandingPage() {
                 sizes="(max-width: 820px) 16px, (max-width: 1080px) calc(21vw - 31px), 196px"
                 alt="Checklist de abertura da cozinha da Loja Praia no celular: 2 de 6 tarefas feitas e a câmara fria, crítica e com foto obrigatória, ainda por fazer." />
             </div>
+            {/* Coluna = (100vw − 40 de gutter − 12 de gap) / 2, menos 14 da
+                moldura = 50vw − 40px; a 612px ela bate no teto de 280 (266 de
+                tela). */}
             <div className="lp-only-mob" style={{ marginTop: 40 }}>
-              <PhoneShot src={shotPainelCel} className="lp-phone-solo" priority fetchPriority="high"
-                sizes="(max-width: 408px) calc(76vw - 45px), (max-width: 820px) 266px, 16px"
-                alt="Painel no celular da diretoria: o bloco Agora com o que você marcou para tratar, a falha crítica que se repete na Loja Praia e as prioridades agora." />
+              <div className="lp-duo">
+                <PhoneShot src={shotPainelCel} priority fetchPriority="high"
+                  sizes="(max-width: 612px) calc(50vw - 40px), (max-width: 820px) 266px, 16px"
+                  alt="Painel no celular da diretoria: o bloco Agora com o que você marcou para tratar, a falha crítica que se repete na Loja Praia e as prioridades agora." />
+                <PhoneShot src={shotChecklist}
+                  sizes="(max-width: 612px) calc(50vw - 40px), (max-width: 820px) 266px, 16px"
+                  alt="Checklist de abertura da cozinha da Loja Praia no celular: 2 de 6 tarefas feitas e a câmara fria, crítica e com foto obrigatória, ainda por fazer." />
+              </div>
             </div>
           </div>
         </div>
