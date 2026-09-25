@@ -206,6 +206,13 @@ antigo só para a empresa dona no inventário (ponteiro em `photos`/template nã
 posse); anon na transição lê e cria em caminho antigo, mas não apaga, não move,
 não sobrescreve nem entra em pasta de empresa; a 03 recusa com dono sem cópia.
 
+E `supabase/migrations/20260925_cnpj_sucessao_grupo.test.mjs` prova o vínculo
+CNPJ → grupo (`link_cnpj_to_company`): o "Liberar novo teste" do Core recria um
+grupo APAGADO e ele herda todas as raízes (empresa + lojas) com o `started_at`
+original; raiz de cliente vivo e raiz de grupo apagado pelo CNPJ de uma LOJA
+seguem recusadas; o /comecar nunca reusa. A recusa não cita o id do dono (chega
+à tela do cliente) — o Core completa pela `cnpj_trial_history`.
+
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
 variável inexistente no array de dependências: build limpo, app inteiro fora do
