@@ -16,6 +16,226 @@ const label = {
   textTransform: 'uppercase', color: C.muted, margin: '12px 0 5px',
 };
 
+// ── Administradores do Core ──────────────────────────────────────────────────
+// Quem entra no /admin. Adicionar alguém cria a conta no Supabase Auth E põe na
+// lista de platform_admins numa tacada — antes eram dois passos manuais (painel
+// do Supabase + INSERT no SQL Editor).
+function AdminsCard() {
+  const admins = useAdminData('/api/admin/admins', 120000);
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [credential, setCredential] = useState(null); // { email, password } — mostrado UMA vez
+
+  async function call(payload, method = 'POST', qs = '') {
+    const res = await fetch(`/api/admin/admins${qs}`, {
+      method,
+      ...(method === 'POST' ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.message || data.reason || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function addAdmin(e) {
+    e.preventDefault();
+    setBusy('create'); setMsg(null); setCredential(null);
+    try {
+      const data = await call({ action: 'create', email: email.trim() });
+      setEmail('');
+      if (data.password) {
+        setCredential({ email: data.email, password: data.password });
+        setMsg({ ok: true, message: 'Acesso criado. Copie a senha agora — ela não aparece de novo.' });
+      } else {
+        setMsg({ ok: true, message: `${data.email} já tinha conta no ZCheck e agora entra no Core com a senha que já usa.` });
+      }
+      await admins.refresh();
+    } catch (err) {
+      setMsg({ ok: false, message: err.message });
+    } finally { setBusy(null); }
+  }
+
+  async function resetPassword(row) {
+    setBusy(row.user_id); setMsg(null); setCredential(null);
+    try {
+      const data = await call({ action: 'reset_password', user_id: row.user_id });
+      setCredential({ email: data.email, password: data.password });
+      setMsg({ ok: true, message: 'Senha nova gerada. Copie agora — ela não aparece de novo.' });
+    } catch (err) {
+      setMsg({ ok: false, message: err.message });
+    } finally { setBusy(null); }
+  }
+
+  async function removeAdmin(row) {
+    if (!window.confirm(`Tirar o acesso de ${row.email} ao ZCheck Core?`)) return;
+    setBusy(row.user_id); setMsg(null); setCredential(null);
+    try {
+      await call(null, 'DELETE', `?user_id=${encodeURIComponent(row.user_id)}`);
+      setMsg({ ok: true, message: `${row.email} não entra mais no Core.` });
+      await admins.refresh();
+    } catch (err) {
+      setMsg({ ok: false, message: err.message });
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Administradores do Core</SectionTitle>
+      <p style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>
+        Quem tem acesso a este painel. O acesso ao Core é separado do login das
+        empresas: aqui é e-mail e senha, lá é PIN.
+      </p>
+
+      <form onSubmit={addAdmin} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <input
+          style={{ ...input, flex: 1, minWidth: 180 }} type="email" value={email}
+          onChange={e => { setEmail(e.target.value); setMsg(null); }}
+          placeholder="e-mail do novo administrador"
+        />
+        <button
+          type="submit" disabled={busy === 'create' || !email.trim()}
+          style={{ background: C.ink, color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: busy === 'create' ? 0.6 : 1 }}
+        >
+          {busy === 'create' ? 'Criando…' : 'Dar acesso'}
+        </button>
+      </form>
+
+      {msg && (
+        <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: msg.ok ? C.success : C.critical }}>
+          {msg.message}
+        </p>
+      )}
+
+      {credential && (
+        <div style={{ background: C.bg, border: `1px solid ${C.borderStrong}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Senha provisória de {credential.email}
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, fontFamily: 'ui-monospace, monospace', margin: '6px 0' }}>
+            {credential.password}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => navigator.clipboard?.writeText(credential.password)}
+              style={{ background: 'none', border: `1px solid ${C.borderStrong}`, borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: C.ink, cursor: 'pointer' }}
+            >
+              copiar
+            </button>
+            <button
+              onClick={() => setCredential(null)}
+              style={{ background: 'none', border: 'none', fontSize: 12, fontWeight: 700, color: C.muted, cursor: 'pointer' }}
+            >
+              já guardei
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+            Passe por um canal seguro (não por e-mail) e peça que troque no
+            primeiro acesso, em “Minha senha”.
+          </p>
+        </div>
+      )}
+
+      {admins.loading && !admins.data ? <Loading /> :
+       admins.error && !admins.data ? <ErrorBox message={admins.error} onRetry={admins.refresh} /> : (
+        <Table
+          head={['E-mail', 'Último acesso', '']}
+          empty="Nenhum administrador cadastrado."
+          rows={(admins.data?.admins || []).map(a => [
+            <span key="e">
+              {a.email}{a.isMe && <span style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}> · você</span>}
+            </span>,
+            a.last_sign_in_at
+              ? new Date(a.last_sign_in_at).toLocaleDateString('pt-BR')
+              : <span key="n" style={{ color: C.mutedLight }}>nunca entrou</span>,
+            <span key="x" style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => resetPassword(a)} disabled={busy === a.user_id}
+                style={{ background: 'none', border: `1px solid ${C.borderStrong}`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, color: C.ink, cursor: 'pointer' }}
+              >
+                nova senha
+              </button>
+              {!a.isMe && (
+                <button
+                  onClick={() => removeAdmin(a)} disabled={busy === a.user_id}
+                  style={{ background: 'none', border: `1px solid ${C.borderStrong}`, borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, color: C.critical, cursor: 'pointer' }}
+                >
+                  remover
+                </button>
+              )}
+            </span>,
+          ])}
+        />
+      )}
+    </Card>
+  );
+}
+
+// ── Minha senha ──────────────────────────────────────────────────────────────
+// A senha atual é conferida no servidor contra o Supabase Auth: o cookie prova
+// que a pessoa entrou algum dia, não que é ela quem está no teclado agora.
+function MyPasswordCard() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (next !== confirm) { setMsg({ ok: false, message: 'a confirmação não bate com a senha nova' }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch('/api/admin/admins', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'change_password', current_password: current, new_password: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const reason = data.reason === 'invalid_credentials' ? 'a senha atual está errada'
+          : data.reason === 'rate_limited' ? 'muitas tentativas — espere um pouco'
+          : data.message || data.reason || 'não foi possível trocar';
+        throw new Error(reason);
+      }
+      setCurrent(''); setNext(''); setConfirm('');
+      setMsg({ ok: true, message: 'Senha trocada. Ela vale no próximo login.' });
+    } catch (err) {
+      setMsg({ ok: false, message: err.message });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Minha senha</SectionTitle>
+      <p style={{ fontSize: 13, color: C.muted }}>
+        Troque aqui quando entrar com uma senha provisória. Mínimo de 12
+        caracteres.
+      </p>
+      <form onSubmit={submit}>
+        <label style={label}>Senha atual</label>
+        <input style={input} type="password" value={current} autoComplete="current-password"
+               onChange={e => { setCurrent(e.target.value); setMsg(null); }} />
+        <label style={label}>Senha nova</label>
+        <input style={input} type="password" value={next} autoComplete="new-password"
+               onChange={e => { setNext(e.target.value); setMsg(null); }} />
+        <label style={label}>Repita a senha nova</label>
+        <input style={input} type="password" value={confirm} autoComplete="new-password"
+               onChange={e => { setConfirm(e.target.value); setMsg(null); }} />
+        {msg && (
+          <p style={{ fontSize: 13, fontWeight: 700, marginTop: 10, color: msg.ok ? C.success : C.critical }}>
+            {msg.message}
+          </p>
+        )}
+        <button
+          type="submit" disabled={busy || !current || next.length < 12}
+          style={{ marginTop: 14, width: '100%', padding: 11, background: busy || next.length < 12 ? C.muted : C.ink, color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+        >
+          {busy ? 'Trocando…' : 'Trocar senha'}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
 // Centro de ajustes: criar empresa pelo painel + códigos de acesso do /entrar.
 export default function ConfigPage() {
   const codes = useAdminData('/api/admin/company-codes', 120000);
@@ -219,6 +439,11 @@ export default function ConfigPage() {
             </>
           )}
         </Card>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4 items-start">
+        <AdminsCard />
+        <MyPasswordCard />
       </div>
     </div>
   );
