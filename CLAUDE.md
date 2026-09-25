@@ -168,6 +168,27 @@ A verdade é a `origin`: sempre `git fetch` e trabalhar a partir de
 em checkout no repositório principal, então `git switch main` num worktree
 falha — e nenhum worktree precisa de branch local `dev`/`homolog`/`main`.
 
+**Publicar na `main` pede autorização do Michel, sempre.** Qualquer coisa —
+código, doc, merge, hotfix, `deploy:prod` — e a cada vez: pedir antes, dizendo
+o que vai (`git log --oneline origin/main..origin/homolog`), e esperar o OK dele
+no chat. OK de uma publicação não vale para a seguinte.
+
+**0. Código novo começa na `dev`** (regra do Michel, 25/09/2026). Toda branch de
+trabalho nasce de `origin/dev` — nunca da `main` nem de outra branch:
+
+```bash
+git fetch origin && git switch -c claude/<assunto> origin/dev
+```
+
+O worktree que o app cria nasce da `main`. Antes de escrever a primeira linha:
+
+```bash
+git fetch origin && git merge --ff-only origin/dev   # main ⊆ dev: avança sem conflito
+```
+
+Recusou = a branch já tem commit próprio: `git merge origin/dev` e seguir. A
+única branch que nasce da `main` é o **hotfix** (abaixo), para produção quebrada.
+
 **1. Branch de trabalho → dev** (sem pedir autorização)
 
 ```bash
