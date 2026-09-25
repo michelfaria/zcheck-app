@@ -39,11 +39,16 @@ export async function GET(request) {
   };
 
   if (!companyId) {
-    const [{ data, error: qErr }, profiles, trials, accounts] = await Promise.all([
+    const [{ data, error: qErr }, profiles, trials, accounts, templates] = await Promise.all([
       db.from('admin_company_health').select('*'),
       db.from('companies').select('id, cnpj, legal_name, contact_name, contact_email, contact_whatsapp'),
       db.from('cnpj_trial_history').select('*').order('started_at', { ascending: false }).limit(50),
       db.from('billing_accounts').select('company_id, exempt, extra_seats, adjust_pending, billed_amount, billed_cycle'),
+      // Checklists CADASTRADOS (templates), que é coisa diferente de checklist
+      // executado (completions): mede o quanto a empresa montou a operação
+      // dela. Contado aqui em vez de numa view nova para não pedir migration;
+      // são dezenas de linhas por empresa.
+      db.from('templates').select('company_id, active').limit(20000),
     ]);
     if (qErr) {
       console.error('companies query falhou:', qErr.message);
@@ -51,6 +56,15 @@ export async function GET(request) {
     }
     const profileById = new Map((profiles.data || []).map(p => [p.id, p]));
     const accountById = new Map((accounts.error ? [] : accounts.data || []).map(a => [a.company_id, a]));
+    // `active` só existe depois da 20260730_templates_desativar; sem a coluna a
+    // consulta falha inteira e a contagem some (null), sem derrubar a lista.
+    const templatesById = new Map();
+    for (const t of templates.error ? [] : templates.data || []) {
+      const row = templatesById.get(t.company_id) || { total: 0, active: 0 };
+      row.total += 1;
+      if (t.active !== false) row.active += 1;
+      templatesById.set(t.company_id, row);
+    }
     return jsonNoStore({
       ok: true,
       generatedAt: new Date().toISOString(),
@@ -58,6 +72,7 @@ export async function GET(request) {
         .map(c => ({
           ...c, ...(profileById.get(c.company_id) || {}),
           billing: billingOf(accountById.get(c.company_id)),
+          templates: templates.error ? null : (templatesById.get(c.company_id) || { total: 0, active: 0 }),
           health: health(c.last_activity),
         }))
         .sort((a, b) => (b.completions_7d || 0) - (a.completions_7d || 0)),
@@ -68,7 +83,7 @@ export async function GET(request) {
   }
 
   const since30 = spDaysAgo(30);
-  const [company, contact, units, unitCnpjs, sectors, users, daily, dau, account, seatChanges] = await Promise.all([
+  const [company, contact, units, unitCnpjs, sectors, users, daily, dau, account, seatChanges, templates] = await Promise.all([
     db.from('admin_company_health').select('*').eq('company_id', companyId).maybeSingle(),
     db.from('companies')
       .select('contact_email, contact_whatsapp, cnpj, legal_name, contact_name, contact_role, address_city, address_state, billing_mode, plan_tier, unit_limit')
@@ -85,6 +100,10 @@ export async function GET(request) {
     db.from('billing_accounts').select('*').eq('company_id', companyId).maybeSingle(),
     db.from('billing_seat_changes').select('*').eq('company_id', companyId)
       .order('created_at', { ascending: false }).limit(20),
+    // Checklists cadastrados da empresa (templates). O `items` fica de fora de
+    // propósito: é o JSON inteiro de cada checklist, e aqui só se conta.
+    db.from('templates').select('id, unit_id, sector, shift, name, active, deadline, created_at')
+      .eq('company_id', companyId).limit(2000),
   ]);
 
   const firstErr = [company, units, sectors, users, daily, dau].find(r => r.error);
@@ -113,12 +132,42 @@ export async function GET(request) {
     if (byDay.has(key)) byDay.get(key).dau += r.dau;
   }
 
+  // Checklists cadastrados: total, quantos estão no ar e a conta por loja.
+  // Template sem unit_id vale para todas as lojas (checklist da rede), por isso
+  // ele soma no total mas não em nenhuma loja específica.
+  const tpls = templates.error ? [] : templates.data || [];
+  const tplByUnit = new Map();
+  for (const t of tpls) {
+    if (!t.unit_id) continue;
+    const row = tplByUnit.get(t.unit_id) || { total: 0, active: 0 };
+    row.total += 1;
+    if (t.active !== false) row.active += 1;
+    tplByUnit.set(t.unit_id, row);
+  }
+  const templatesSummary = templates.error ? null : {
+    total: tpls.length,
+    active: tpls.filter(t => t.active !== false).length,
+    shared: tpls.filter(t => !t.unit_id).length,
+    sectors: [...new Set(tpls.map(t => t.sector).filter(Boolean))].length,
+    // Amostra do que existe, do mais novo para o mais velho — quem olha a
+    // empresa quer ver se ela montou a operação ou só ficou com os semeados.
+    list: [...tpls]
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+      .slice(0, 50)
+      .map(t => ({
+        id: t.id, name: t.name, sector: t.sector, shift: t.shift,
+        unit_id: t.unit_id, active: t.active !== false,
+        deadline: t.deadline, created_at: t.created_at,
+      })),
+  };
+
   return jsonNoStore({
     ok: true,
     generatedAt: new Date().toISOString(),
     company: {
       ...company.data, ...(contact.data || {}),
       billing: billingOf(account.error ? null : account.data),
+      templates: templatesSummary,
       health: health(company.data.last_activity),
     },
     // Trilha de consentimento das vagas adicionais (quem, de→para, quando).
@@ -126,6 +175,7 @@ export async function GET(request) {
     units: units.data
       .map(u => ({ ...u, health: health(u.last_completion),
         cnpj: (unitCnpjs.data || []).find(x => x.id === u.unit_id)?.cnpj || null,
+        templates: templates.error ? null : (tplByUnit.get(u.unit_id) || { total: 0, active: 0 }),
         sectors: sectors.data.filter(s => s.unit_id === u.unit_id).map(s => s.name) }))
       .sort((a, b) => (b.completions_30d || 0) - (a.completions_30d || 0)),
     users: users.data,

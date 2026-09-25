@@ -116,6 +116,21 @@ function SeatsCell({ company }) {
   );
 }
 
+// Checklists CADASTRADOS (modelos), que é diferente de checklist feito: mostra
+// o tamanho da operação montada. Desativado aparece só quando existe — e zero
+// é informação (empresa que entrou e não montou nada), por isso fica em destaque.
+function TemplatesCell({ templates }) {
+  if (!templates) return <span style={{ color: C.mutedLight }}>—</span>;
+  const off = templates.total - templates.active;
+  if (templates.total === 0) return <span style={{ color: C.warning, fontWeight: 700 }}>0</span>;
+  return (
+    <span>
+      {templates.active}
+      {off > 0 && <span style={{ color: C.mutedLight, fontWeight: 400 }}> · {off} desativ.</span>}
+    </span>
+  );
+}
+
 // Vagas e cobrança no drill-down: em uso / capacidade / adicionais contratadas,
 // o valor que o MP cobra e a trilha de quem contratou ou reduziu vagas.
 function SeatsCard({ company, changes }) {
@@ -253,7 +268,7 @@ export default function CompaniesPage() {
       <Card>
         <SectionTitle>Todas as empresas ({companies.length})</SectionTitle>
         <Table
-          head={['Empresa', 'CNPJ', 'Plano', 'Unidades', 'Vagas', 'Checklists 7d', '30d', 'Última atividade', '']}
+          head={['Empresa', 'CNPJ', 'Plano', 'Unidades', 'Vagas', 'Cadastrados', 'Feitos 7d', '30d', 'Última atividade', '']}
           empty="Nenhuma empresa provisionada."
           rows={companies.map(c => [
             <span key="n" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -270,7 +285,9 @@ export default function CompaniesPage() {
                 ? `trial até ${c.trial_ends_at ? fmtDay(c.trial_ends_at.slice(0, 10)) : '—'}`
                 : (c.subscription_status || c.plan || '—')}
             </span>,
-            c.units, <SeatsCell key="v" company={c} />, c.completions_7d, c.completions_30d,
+            c.units, <SeatsCell key="v" company={c} />,
+            <TemplatesCell key="t" templates={c.templates} />,
+            c.completions_7d, c.completions_30d,
             timeAgo(c.last_activity),
             <button key="b"
               onClick={() => setSelected(selected === c.company_id ? null : c.company_id)}
@@ -357,7 +374,7 @@ export default function CompaniesPage() {
               </Card>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <Kpi label="Unidades" value={detail.data.company.units} />
               {hasSeats(detail.data.company) ? (
                 <Kpi label="Vagas em uso"
@@ -367,7 +384,22 @@ export default function CompaniesPage() {
               ) : (
                 <Kpi label="Usuários" value={detail.data.company.users} />
               )}
-              <Kpi label="Checklists 30d" value={detail.data.company.completions_30d} />
+              <Kpi
+                label="Checklists cadastrados"
+                value={detail.data.company.templates ? detail.data.company.templates.active : '—'}
+                sub={(() => {
+                  const t = detail.data.company.templates;
+                  if (!t) return 'não foi possível contar';
+                  if (t.total === 0) return 'nenhum modelo criado ainda';
+                  const partes = [];
+                  const off = t.total - t.active;
+                  if (off > 0) partes.push(`${off} desativado${off > 1 ? 's' : ''}`);
+                  if (t.shared > 0) partes.push(`${t.shared} para todas as lojas`);
+                  if (t.sectors > 0) partes.push(`${t.sectors} setor${t.sectors > 1 ? 'es' : ''}`);
+                  return partes.join(' · ') || 'todos no ar';
+                })()}
+              />
+              <Kpi label="Checklists feitos 30d" value={detail.data.company.completions_30d} />
               <Kpi label="Última atividade" value={timeAgo(detail.data.company.last_activity)} />
             </div>
 
@@ -433,7 +465,8 @@ export default function CompaniesPage() {
                           <HealthDot status={u.health} />
                           {u.name || u.unit_id}
                           <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: C.muted }}>
-                            {u.completions_30d} em 30d · último {timeAgo(u.last_completion)}
+                            {u.templates ? `${u.templates.active} cadastrados · ` : ''}
+                            {u.completions_30d} feitos em 30d · último {timeAgo(u.last_completion)}
                           </span>
                         </div>
                         {u.sectors?.length > 0 && (
@@ -466,6 +499,40 @@ export default function CompaniesPage() {
                 />
               </Card>
             </div>
+
+            {detail.data.company.templates && (
+              <Card>
+                <SectionTitle
+                  right={
+                    <span style={{ fontSize: 11, color: C.mutedLight }}>
+                      {detail.data.company.templates.total > 50
+                        ? `50 mais recentes de ${detail.data.company.templates.total}`
+                        : 'do mais novo para o mais antigo'}
+                    </span>
+                  }
+                >
+                  Checklists cadastrados ({detail.data.company.templates.total})
+                </SectionTitle>
+                <Table
+                  head={['Checklist', 'Loja', 'Setor', 'Turno', 'Prazo', 'Situação']}
+                  empty="Nenhum checklist criado — a empresa entrou e não montou a operação."
+                  rows={detail.data.company.templates.list.map(t => [
+                    <strong key="n">{t.name || t.id}</strong>,
+                    <span key="u" style={{ color: C.muted }}>
+                      {t.unit_id
+                        ? (detail.data.units.find(u => u.unit_id === t.unit_id)?.name || t.unit_id)
+                        : 'todas'}
+                    </span>,
+                    <span key="s" style={{ color: C.muted }}>{t.sector || '—'}</span>,
+                    <span key="t" style={{ color: C.muted }}>{t.shift || '—'}</span>,
+                    <span key="d" style={{ color: C.muted }}>{t.deadline || '—'}</span>,
+                    t.active
+                      ? <span key="a" style={{ color: C.success, fontWeight: 600 }}>no ar</span>
+                      : <span key="a" style={{ color: C.mutedLight }}>desativado</span>,
+                  ])}
+                />
+              </Card>
+            )}
           </>
         )
       )}
