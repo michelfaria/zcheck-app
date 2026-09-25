@@ -21,6 +21,7 @@
 
 import { deadlineEnd, APP_TZ } from './dates';
 import { tarefaFeita, reprovadaVigente } from './conferencia';
+import { evidencePath } from './photoPaths';
 
 /** Chave da rodada. `templateName` é o fallback de registros antigos sem id. */
 export function roundKey(c) {
@@ -84,7 +85,9 @@ function umaPorRodada(completions, vence) {
  *
  * A foto aponta para o arquivo da conclusão anterior (`{completionId}/{itemId}.jpg`,
  * a convenção de `pushPhoto` em sync.js), então quem submeter de novo carrega a
- * evidência em vez de gravar um item sem prova.
+ * evidência em vez de gravar um item sem prova. O caminho sai SEM a pasta da
+ * empresa: aqui não há token. sync.js qualifica na hora de gravar e tenta os dois
+ * nomes na hora de ler (lib/photoPaths.js).
  *
  * @returns {Object} itemId → { done, operatorUserId, operatorName, completedAt,
  *                              note, photoPath, submitted: true }
@@ -104,7 +107,7 @@ export function submittedTasksFrom(completions, { templateId, unitId, date }) {
           operatorName: i.doneByName || c.operatorName || null,
           completedAt: i.doneAt || c.completedAt || null,
           note: i.note || '',
-          photoPath: i.hasPhoto ? `${c.id}/${i.id}.jpg` : null,
+          photoPath: i.hasPhoto ? evidencePath(c.id, i.id) : null,
           submitted: true,
         };
       });

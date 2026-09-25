@@ -179,6 +179,7 @@ cd ibr-checklists-app && npm run verify   # eslint --quiet && npm run test && ne
 | `email.spec.mjs` | falha do Brevo não é muda: o 401 "unrecognised IP address" vira `ip_not_authorized` (distinto de chave inválida), e toda falha vira alerta crítico `email_send_failed` no /admin/alertas, um por causa e por dia. Caso de 24/09/2026: "Authorised IPs" ligado no Brevo barrava os IPs da Vercel, o OTP do /comecar sumia depois do `after()` e a tela dizia "Enviamos um código" |
 | `jit-hotspot.spec.mjs` | o crítico recorrente do J.I.T. é do checklist CERTO: o id do item só é único dentro do template (os semeados usam `i1`, `i2`… em todos). Dois checklists da mesma loja com um `i1` crítico de textos diferentes, só um falhando 3× → a recomendação, a Leitura da operação e a lista do Painel nomeiam o que falhou e N é 3 — o `i1` do outro não empresta o nome nem soma no contador. Caso das fixtures do Painel, 24/09/2026: a câmara fria da Cozinha saía com o nome de uma tarefa de Salão |
 | `library-plan.spec.mjs` | o que o onboarding cria a partir da biblioteca (`planoDaBiblioteca` em `lib/library.js`): escolher só um sub-segmento (ex.: Hamburgueria) cria só os modelos dele, setor sem sub-segmento (Hotel) ignora o filtro, e dois sub-segmentos com o mesmo "Área — Momento" no mesmo setor ganham o sub-segmento no nome. Caso de 24/09/2026: Food Service criava restaurante, café e padaria em cada loja, com "Bar — Abertura" duplicado |
+| `photo-storage.spec.mjs` | fotos de prova, da rodada e POPs (`checklist-photos`) sobem e são lidas **só pelo cliente autenticado** e **só na pasta da empresa do token** (`{company_id}/…`, `lib/photoPaths.js`) — o cliente anônimo não é nem tocado; caminho da convenção antiga entra em `photos` já qualificado; a leitura tenta o nome novo e depois o antigo (objeto ainda não copiado). Até 24/09/2026 o bucket abria para a anon key |
 
 Os que terminam em `-render`, `templates-sync` e `ativacao-loja` montam
 componentes de verdade (jsdom + esbuild) e **não precisam de sessão logada** —
@@ -197,6 +198,13 @@ ponteiro sozinho não dá posse, porque qualquer um grava `user_requests` e os
 caminhos já vazaram. O gatilho `user_requests_selfie_trava` força `created_at`
 e trava `selfie_path`. Prova em PGlite:
 `supabase/migrations/20260924_colaboradores_selfie_diretoria.test.mjs`.
+
+Também fora: `supabase/migrations/20260924_storage_checklist_photos.test.mjs`
+prova as policies do bucket `checklist-photos` (fases 01/02/03) numa bancada de
+`storage.objects` em PGlite: sessão só alcança a pasta da própria empresa; objeto
+antigo só para a empresa dona no inventário (ponteiro em `photos`/template não dá
+posse); anon na transição lê e cria em caminho antigo, mas não apaga, não move,
+não sobrescreve nem entra em pasta de empresa; a 03 recusa com dono sem cópia.
 
 `npm run build` NÃO checa variável não declarada — é JS puro, sem tipos, e o
 Next não roda lint no build. Em 10/08/2026 um `useMemo` foi publicado com uma
