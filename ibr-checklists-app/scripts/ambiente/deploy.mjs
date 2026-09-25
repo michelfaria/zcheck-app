@@ -82,13 +82,19 @@ if (alvo === 'homolog') {
 
   roda('npm', ['run', 'verify']);
 
-  // Sem TTY a Vercel escreve só a URL do deploy no stdout; o progresso vai no stderr.
+  // Sem TTY o progresso vai no stderr e o stdout traz o resultado: um JSON com
+  // deployment.url (CLI 59), ou só a URL (CLIs antigos).
   const r = spawnSync('npx', ['vercel', '--yes', '--meta', 'ambiente=homolog', '--meta', `sha=${head}`], {
     stdio: ['inherit', 'pipe', 'inherit'],
     encoding: 'utf8',
   });
   if (r.status !== 0) recusa(`\`npx vercel\` saiu com ${r.status}`);
-  const url = r.stdout.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('https://')).pop();
+  let url;
+  try {
+    url = JSON.parse(r.stdout).deployment?.url;
+  } catch {
+    url = r.stdout.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('https://')).pop();
+  }
   if (!url) recusa(`não achei a URL do deploy na saída da Vercel:\n${r.stdout}`);
 
   roda('npx', ['vercel', 'alias', 'set', url, HOMOLOG_ALIAS]);
