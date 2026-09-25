@@ -37,6 +37,12 @@ export function clearPersistedSession() {
   try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
 }
 
+// Payload do JWT, SEM conferir assinatura — isso é trabalho do servidor/RLS.
+// Serve para o cliente saber o que o token diz (expiração, empresa).
+function decodeClaims(token) {
+  return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+}
+
 // Lê a sessão guardada e valida a expiração do token localmente (só o `exp` do
 // payload — a assinatura quem confere é o servidor/RLS; um token adulterado
 // simplesmente não passa em nenhuma leitura). Expirado ou ilegível: descarta.
@@ -46,7 +52,7 @@ export function loadPersistedSession() {
     if (!raw) return null;
     const { token, user } = JSON.parse(raw);
     if (!token || !user?.id) return null;
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const payload = decodeClaims(token);
     if (!payload?.exp || payload.exp * 1000 <= Date.now() + 60 * 1000) {
       clearPersistedSession();
       return null;
@@ -76,6 +82,14 @@ export function setSessionToken(token) {
 
 export function getSessionToken() {
   return sessionToken;
+}
+
+// company_id do TOKEN — a mesma fonte que as policies leem
+// (public.jwt_company_id()). A pasta da empresa no storage sai daqui, e não do
+// estado da tela: se as duas divergissem, a policy recusaria o upload.
+export function getSessionCompanyId() {
+  if (!sessionToken) return null;
+  try { return decodeClaims(sessionToken)?.company_id || null; } catch { return null; }
 }
 
 // Cliente que carrega o token nas requisições, para que as políticas de RLS

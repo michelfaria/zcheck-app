@@ -68,6 +68,7 @@ await writeFile(join(dir, 'supabase.js'), `
   export const supabase = { channel: () => canal, removeChannel: () => {} };
   export const authedSupabase = () => ({ from: () => query() });
   export const getSessionToken = () => null;
+  export const getSessionCompanyId = () => null;
 `);
 
 await writeFile(join(dir, 'entry.js'), `

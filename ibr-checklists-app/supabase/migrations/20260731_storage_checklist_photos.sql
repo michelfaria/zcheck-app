@@ -1,4 +1,13 @@
 -- ============================================================================
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║ SUBSTITUÍDA em 24/09/2026 — NÃO RODAR.                                   ║
+-- ║ Use 20260924_storage_01_checklist_photos_tenant.sql (e a 02/03).         ║
+-- ║ As `checklist_photos_authenticated_*` daqui liberam o bucket INTEIRO a   ║
+-- ║ qualquer sessão, de qualquer empresa — o "isolamento por public.photos"  ║
+-- ║ abaixo não vale para quem lista o bucket. A 01 derruba essas policies se ║
+-- ║ elas tiverem sido criadas.                                               ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+--
 -- Storage — fecha o `anon_storage_all` e dá política própria a `checklist-photos`.
 --
 -- ── O problema ──────────────────────────────────────────────────────────────
