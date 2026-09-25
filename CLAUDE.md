@@ -142,10 +142,106 @@ const EMPRESAS = {
   só foi pego lendo o resumo do merge, antes do push. Binário em git é
   permanente: `git rm` depois não tira do histórico nem encolhe o clone.
   Antes de publicar, conferir o que sai:
-  `git diff --name-only origin/main..main`
+  `git diff --name-only origin/dev..HEAD` (antes do push para `dev`)
 - Não mexer em `borderRadius` globalmente — quebra o layout dos cards
-- Deploy: `cd ibr-checklists-app && npx vercel --prod`
+- Deploy: só pelos scripts da seção **Ambientes** (`npm run deploy:homolog`,
+  `npm run deploy:prod`) — nunca `npx vercel --prod` à mão
 - `ibr-checklists-app-codex-update/` é uma cópia paralela — o projeto ativo é `ibr-checklists-app/`
+
+## Ambientes: dev → homolog → main
+
+Todo código anda por três branches, sempre nesta ordem e só para a frente:
+
+| Ambiente | Branch | Onde roda | Como entra |
+|---|---|---|---|
+| Dev | `dev` | local: `npm run dev`, testes jsdom | merge da branch de trabalho com `verify` verde |
+| Homolog | `homolog` | https://zcheck-homolog.vercel.app | fast-forward de `dev` + `npm run deploy:homolog` |
+| Produção | `main` | `zcheckapp.com` e `*.zcheckapp.com` | fast-forward de `homolog`, **com aprovação do Michel**, + `npm run deploy:prod` |
+
+Invariante: **main ⊆ homolog ⊆ dev** — cada uma é ancestral da seguinte. Por
+isso produção roda o MESMO commit que foi testado em homolog, e nada chega à
+`main` sem ter passado pelas outras duas. Nunca commit direto nem push `--force`
+em `dev`, `homolog` ou `main`.
+
+A verdade é a `origin`: sempre `git fetch` e trabalhar a partir de
+`origin/<branch>`, com checkout destacado (`--detach`). A `main` costuma estar
+em checkout no repositório principal, então `git switch main` num worktree
+falha — e nenhum worktree precisa de branch local `dev`/`homolog`/`main`.
+
+**1. Branch de trabalho → dev** (sem pedir autorização)
+
+```bash
+git fetch origin && git merge origin/dev             # na branch de trabalho: conflito se resolve aqui
+(cd ibr-checklists-app && npm run verify)
+git diff --name-only origin/dev..HEAD                # conferir o que sai (repo público)
+git checkout --detach origin/dev && git merge --no-ff <branch> -m "merge: <o que é>"
+git push origin HEAD:dev                             # recusado = dev andou: repetir desde o fetch
+git checkout <branch>                                # devolve o worktree à branch
+```
+
+O `merge origin/dev` antes do `verify` faz a árvore mesclada ser a mesma que
+passou nos testes. `dev` fica sempre publicável: trabalho pela metade fica na
+branch dele, não em `dev`.
+
+**2. dev → homolog** (sem pedir autorização)
+
+```bash
+git fetch origin
+git merge-base --is-ancestor origin/main origin/dev || echo "main tem commit fora de dev"
+git push origin origin/dev:refs/heads/homolog        # só avança; recusado = homolog tem commit fora de dev
+git checkout --detach origin/homolog
+cd ibr-checklists-app && npm run deploy:homolog      # verify + preview + alias zcheck-homolog.vercel.app
+```
+
+Se a `main` tiver commit fora de `dev` (alguém publicou pelo caminho antigo),
+mesclar `origin/main` em `dev` pelo passo 1 antes de promover.
+
+Depois do deploy, testar em https://zcheck-homolog.vercel.app — `/app` cai no
+tenant IBR (fallback de `lib/tenant.js`), e a Vercel pede login da org
+`ilhabelarepublic` (Deployment Protection). Então entregar ao Michel: o link, o
+commit, a lista `git log --oneline origin/main..origin/homolog` e o que ele
+precisa olhar.
+
+**3. homolog → main** (só com aprovação explícita do Michel — "aprovado",
+"pode subir" — para o que está em homolog naquele commit; se `homolog` andou
+depois do OK, os commits novos precisam de outro OK)
+
+```bash
+git fetch origin
+git push origin origin/homolog:refs/heads/main       # só avança
+git checkout --detach origin/main
+cd ibr-checklists-app && npm run deploy:prod         # recusa HEAD ≠ origin/main ou main fora de homolog
+```
+
+Conferir `npx vercel ls ibr-checklists-app --prod` e o bundle servido. Nunca
+canalizar deploy para `tail` (o JSON final parece falha e já gerou deploy duplo).
+
+**Hotfix** (produção quebrada e `homolog` com coisa ainda não aprovada):
+
+```bash
+git fetch origin && git checkout -b hotfix/<nome> origin/main
+# corrige, commita — e NÃO mescla origin/dev nesta branch (levaria a fila não aprovada para a main)
+(cd ibr-checklists-app && npm run deploy:homolog -- --hotfix)  # homolog passa a mostrar main + correção
+# com o OK do Michel:
+git fetch origin && git checkout --detach origin/dev && git merge --no-ff hotfix/<nome> -m "merge: hotfix <nome>"
+(cd ibr-checklists-app && npm run verify) && git push origin HEAD:dev HEAD:homolog
+git push origin hotfix/<nome>:refs/heads/main                  # avança: o hotfix nasceu da main
+git checkout --detach origin/main && (cd ibr-checklists-app && npm run deploy:prod)
+git checkout --detach origin/homolog && (cd ibr-checklists-app && npm run deploy:homolog)  # homolog volta a mostrar a fila
+```
+
+**O banco é um só.** Não existe Supabase de homolog: local, homolog e produção
+leem e gravam o Supabase de PRODUÇÃO, e as variáveis de Preview da Vercel são as
+de produção (`MP_ACCESS_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`, `BREVO_API_KEY`).
+Em homolog, "Assinar" cria assinatura de verdade, e-mail sai, telemetria grava;
+testar só em checklist descartável. Os crons do `vercel.json` só rodam em
+produção. Consequências:
+
+- **Migration** vale para produção na hora em que é aplicada, com o código que
+  está na `main`. Tem de funcionar com o código da `main` E com o de `homolog`:
+  primeiro a parte que só acrescenta (coluna, função, permissão); o que remove
+  só depois de a `main` parar de usar.
+- **Edge function** (`notify-overdue`) publicada é produção — mesma regra.
 
 ## Antes de publicar
 
