@@ -100,7 +100,10 @@ const { ReportsBody, useRelatorio, PainelConsolidado, buildJit, UnitsContext } =
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 const unit = { id: 'u1', name: 'Loja Teste', color: '#8a2be2', sectors: ['Salão'], timezone: 'America/Sao_Paulo' };
-const hoje = new Date().toISOString().slice(0, 10);
+// O dia é o do relógio da LOJA (CLAUDE.md): `toISOString()` dá o dia UTC, que
+// depois das 21h em Brasília já é amanhã — as rodadas da fixture caíam no
+// futuro da loja e o teste falhava só à noite (24/09/2026, 21h30).
+const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const templates = [{
   id: 't1', unitId: 'u1', sector: 'Salão', name: 'Abertura Salão', shift: 'Manhã',
   deadline: '10:00', active: true,

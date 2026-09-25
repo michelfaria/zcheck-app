@@ -175,7 +175,10 @@ check(reviewSummary(ana([rodada('r1', { a: review('ressalva'), b: review('reprov
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('═══ 4. o Painel mostra de onde veio o desconto ═══');
 
-const hoje = new Date().toISOString().slice(0, 10);
+// O dia é o do relógio da LOJA (CLAUDE.md): `toISOString()` dá o dia UTC, que
+// depois das 21h em Brasília já é amanhã — as rodadas da fixture caíam no
+// futuro da loja e o teste falhava só à noite (24/09/2026, 21h30).
+const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const unit = { id: 'u1', name: 'Loja Teste', color: '#8a2be2', sectors: ['Salão'], timezone: 'America/Sao_Paulo' };
 const templates = [{
   id: 't-p', unitId: 'u1', sector: 'Salão', name: 'Fechamento', shift: 'Noite', active: true,
