@@ -317,10 +317,9 @@ export default function LandingPage() {
         <div className="lp-container" style={{ paddingTop: 64, paddingBottom: 64 }}>
           <div className="lp-hero-top">
             <div>
-              {/* Quem é o cliente, no primeiro olhar, em três grandes setores
-                  (decisão de 24/09/2026). A lista completa de segmentos está em
-                  "Feito para o seu negócio". */}
-              <Eyebrow color={C.success}>Para negócios de Gastronomia, Hospitalidade e Varejo</Eyebrow>
+              {/* Sem eyebrow desde 25/09/2026 (decisão do Michel): o h1 abre o
+                  hero sozinho. Os segmentos atendidos ficam em "Feito para o
+                  seu negócio". */}
               <h1 style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', fontWeight: W.bold, lineHeight: 1.12, letterSpacing: '-0.02em' }}>
                 Saiba onde sua operação precisa de atenção antes que vire problema.
               </h1>
