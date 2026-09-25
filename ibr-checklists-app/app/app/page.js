@@ -6134,9 +6134,10 @@ export function UserDataChangeModal({ currentUser, onClose }) {
       // pedido, vai no `note` ("PIN de acesso: …") e é de lá que a aprovação o
       // aplica; a coluna `pin` só é lida pela create_user_from_request, que a
       // aprovação chama apenas para cadastro novo. O valor fixo fica porque a
-      // coluna pode ser NOT NULL em produção (o /cadastro sempre a preenche) —
-      // `currentUser.pin` não existe no cliente desde 20260709_secure_pin_validation,
-      // então isto já gravava '0000' sempre.
+      // coluna é NOT NULL em produção (conferido em 24/09/2026) — sem ele,
+      // todo pedido de alteração seria recusado. `currentUser.pin` não existe
+      // no cliente desde 20260709_secure_pin_validation, então isto já gravava
+      // '0000' sempre.
       const { error: insertErr } = await supabase.from('user_requests').insert({
         name: currentUser.name,
         unit_id: currentUser.unitId,
