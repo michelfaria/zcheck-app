@@ -1,9 +1,21 @@
 import { adminGuard, jsonNoStore, spDaysAgo } from '../../../../lib/adminApi';
-import { normalizeCnpj, isValidCnpj } from '../../../../lib/cnpj';
+import { normalizeCnpj, isValidCnpj, cnpjRoot } from '../../../../lib/cnpj';
 import { trialExtensionBlocked, trialExtensionMessage } from '../../../../lib/seats';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// A recusa de CNPJ do banco não cita o dono da raiz — ela também chega à tela
+// do cliente (20260925_cnpj_sucessao_grupo). O Core precisa saber com quem o
+// CNPJ está, então completa a mensagem pelo histórico.
+async function comDonoDoCnpj(db, cnpj, companyId, message) {
+  const root = cnpjRoot(cnpj);
+  if (!root || !message) return message;
+  const { data } = await db.from('cnpj_trial_history')
+    .select('origin_company_id, company_name').eq('cnpj_root', root).maybeSingle();
+  if (!data?.origin_company_id || data.origin_company_id === companyId) return message;
+  return `${message} [Core: a raiz ${root} está com ${data.company_name || 'empresa apagada'} (${data.origin_company_id}).]`;
+}
 
 // Empresas (gestão de tenants).
 //   GET                → lista com saúde · GET ?company_id= → drill-down
@@ -180,7 +192,7 @@ export async function POST(request) {
     console.error('provision via Core falhou:', rpcErr.message);
     return jsonNoStore(
       { ok: false, reason: isValidation ? 'invalid_payload' : 'provision_failed',
-        message: isValidation ? rpcErr.message : undefined },
+        message: isValidation ? await comDonoDoCnpj(db, skipCnpj ? '' : cnpj, slug, rpcErr.message) : undefined },
       isValidation ? 400 : 502,
     );
   }
@@ -234,7 +246,13 @@ export async function PATCH(request) {
     }
     if (!Object.keys(patch).length) return jsonNoStore({ ok: false, reason: 'bad_request' }, 400);
     const { error: qErr } = await db.from('companies').update(patch).eq('id', companyId);
-    if (qErr) return jsonNoStore({ ok: false, reason: 'query_failed' }, 502);
+    if (qErr) {
+      // P0001 = recusa do gatilho de CNPJ (raiz de outro cliente): a mensagem
+      // explica; o resto segue genérico.
+      const message = qErr.code === 'P0001' && patch.cnpj
+        ? await comDonoDoCnpj(db, patch.cnpj, companyId, qErr.message) : undefined;
+      return jsonNoStore({ ok: false, reason: 'query_failed', message }, 502);
+    }
     return jsonNoStore({ ok: true, ...patch });
   }
 
@@ -264,7 +282,10 @@ export async function PATCH(request) {
     }
     const { error: qErr } = await db.from('units')
       .update({ cnpj: c }).eq('id', unitId).eq('company_id', companyId);
-    if (qErr) return jsonNoStore({ ok: false, reason: 'query_failed', message: qErr.message }, 502);
+    if (qErr) {
+      return jsonNoStore({ ok: false, reason: 'query_failed',
+        message: await comDonoDoCnpj(db, c, companyId, qErr.message) }, 502);
+    }
     return jsonNoStore({ ok: true, unit_id: unitId, cnpj: c || null });
   }
 
