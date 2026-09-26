@@ -18,7 +18,7 @@
  */
 import { useState, useMemo } from 'react';
 import {
-  AlertTriangle, Camera, CheckCheck, CheckCircle2, ChevronRight, Circle,
+  AlertTriangle, ArrowLeft, Camera, CheckCheck, CheckCircle2, ChevronRight, Circle,
   ClipboardCheck, Download, Printer, X,
 } from 'lucide-react';
 import { C, R, T, W } from '../../lib/tokens';
@@ -31,6 +31,7 @@ import { CHECKLIST_TYPE_ORDER, completionOnTime, deadlineIndex } from '../../lib
 import { PERIODS, reviewSummary, PRODUCTIVITY_REVIEW_RULE } from '../../lib/stats';
 import { classificarRodada, agruparPorChecklist, tarefaFeita } from '../../lib/conferencia';
 import { truncName } from '../../lib/format';
+import { useTravaRolagem } from '../../lib/useTravaRolagem';
 import {
   Eyebrow, Ticket, EmptyState, PillButton, StatCard, RateBar, PhotoModal,
 } from './shared';
@@ -505,6 +506,7 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
   const [confirmandoMudo, setConfirmandoMudo] = useState(false);
   const jaConferido = !!c.reviewedAt;
   const noPrazo = completionOnTime(c, templates, null, units);
+  useTravaRolagem(); // a página atrás não rola enquanto se confere — ver o return
 
   /**
    * Veredito por tarefa: { [itemId]: { verdict, note } }.
@@ -656,177 +658,235 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
   const comRessalva = itens.filter(i => vereditos[i.id]?.verdict === 'ressalva').length;
 
   const Metrica = ({ label, valor, cor }) => (
-    <div style={{ flex: 1, minWidth: 92 }}>
+    <div style={{ flex: 1, minWidth: 80 }}>
       <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
-      <p className="font-display" style={{ fontSize: T.bodySm, fontWeight: W.semibold, color: cor || C.ink, marginTop: 2 }}>{valor}</p>
+      <p className="font-display" style={{ fontSize: T.bodyLg, fontWeight: W.semibold, color: cor || C.ink, marginTop: 2 }}>{valor}</p>
     </div>
   );
 
   const Tag = ({ cor, children }) => (
     <span style={{
-      fontSize: 9.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em',
+      fontSize: 10.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em',
       color: cor, background: `${cor}14`, border: `1px solid ${cor}44`,
-      borderRadius: R.pill, padding: '1px 6px', whiteSpace: 'nowrap',
+      borderRadius: R.pill, padding: '2px 7px', whiteSpace: 'nowrap',
     }}>{children}</span>
   );
 
+  const corDoVeredito = id => VERDICTS.find(v => v.id === id)?.cor;
+
+  /**
+   * TELA CHEIA, não folha de baixo (pedido de 26/09/2026).
+   *
+   * A folha subia até 88% da altura e, de cabeçalho + métricas + botões, sobrava
+   * para a LISTA uma faixa de ~3 tarefas no celular — num checklist de 40 itens,
+   * conferir era rolar uma fresta. E o véu escuro em volta não servia a nada: o
+   * que fica atrás é o Painel, que ninguém lê enquanto confere.
+   *
+   * Três faixas: o topo (sair e o que está sendo conferido), o miolo que rola
+   * (quem entregou, números, o que exige atenção, a lista e a observação) e o pé
+   * fixo com a decisão — a regra de antes continua: identificação e botões à
+   * vista num checklist de 40 itens. No desktop o miolo abre em duas colunas:
+   * o resumo parado à esquerda e a lista larga à direita, com o veredito na
+   * mesma linha da tarefa.
+   *
+   * O fundo fica travado (`useTravaRolagem`): era ele que rolava no lugar da
+   * folha no iPhone (vídeo de 21/09/2026). Tocar fora não fecha mais nada — na
+   * folha, um toque no véu jogava fora os vereditos já marcados.
+   *
+   * `margin: 0` não é enfeite: quem renderiza isto é um `.space-y-4`, que dá
+   * `margin-top: 16px` a todo filho depois do primeiro — e margem desloca até
+   * elemento `fixed`. Sem ela, uma faixa de 16px do Painel aparecia no topo.
+   */
   return (
-    <div className="fixed inset-0 flex items-end justify-center z-50"
-      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
-        role="dialog" aria-modal="true" aria-label="Conferir execução"
-        style={{
-          maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0',
-          // A folha vira coluna com altura limitada e só a LISTA rola: o
-          // cabeçalho (o que está sendo conferido) e os botões (a decisão)
-          // precisam ficar à vista num checklist de 40 itens.
-          display: 'flex', flexDirection: 'column', maxHeight: '88vh',
-        }}>
-        <div style={{ padding: '24px 24px 0' }}>
-          <p className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink }}>
-            {jaConferido ? 'Execução conferida' : 'Conferir execução'}
-          </p>
-          <p style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-            {c.sector} · {c.templateName} · {c.operatorName}
-          </p>
-          <p style={{ fontSize: 12, color: C.mutedLight, marginTop: 2 }}>
-            Entregue em {new Date(c.completedAt).toLocaleDateString('pt-BR')} às {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-            {deadline ? ` · prazo ${deadline}` : ' · sem prazo definido'}
-          </p>
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="zc-conf-titulo"
+      style={{ margin: 0, background: C.bg, display: 'flex', flexDirection: 'column' }}>
 
-          <div style={{ display: 'flex', gap: 14, margin: '14px 0', flexWrap: 'wrap' }}>
-            <Metrica label="Tarefas" valor={`${feitos}/${itens.length}`}
-              cor={naoExecutados.length ? C.warning : C.success} />
-            <Metrica label="Críticos pendentes" valor={criticosPendentes.length || '0'}
-              cor={criticosPendentes.length ? C.critical : C.success} />
-            <Metrica label="Prazo"
-              valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
-              cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
-          </div>
-
-          {/* O resumo do que exige atenção, antes da lista: quem confere 40
-              itens precisa saber o que procurar antes de começar a rolar. */}
-          {pendencias.length > 0 && (
-            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}44`, borderRadius: R.sm, padding: '10px 12px', marginBottom: 12 }}>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.ink, marginBottom: 4 }}>
-                Precisa de atenção
-              </p>
-              <ul style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.7, listStyle: 'none' }}>
-                {criticosPendentes.length > 0 && (
-                  <li style={{ color: C.critical, fontWeight: W.semibold }}>
-                    {criticosPendentes.length} {criticosPendentes.length === 1 ? 'item crítico não executado' : 'itens críticos não executados'}
-                  </li>
-                )}
-                {naoExecutados.length > criticosPendentes.length && (
-                  <li>{naoExecutados.length - criticosPendentes.length} {naoExecutados.length - criticosPendentes.length === 1 ? 'item não executado' : 'itens não executados'}</li>
-                )}
-                {atrasados.length > 0 && <li>{atrasados.length} {atrasados.length === 1 ? 'item concluído fora do prazo' : 'itens concluídos fora do prazo'}</li>}
-                {semFoto.length > 0 && <li>{semFoto.length} {semFoto.length === 1 ? 'item exigia foto e não tem' : 'itens exigiam foto e não têm'}</li>}
-              </ul>
-            </div>
-          )}
-
-          <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
-              Checklist inteiro ({itens.length})
-            </PillButton>
-            {pendencias.length > 0 && (
-              <PillButton active={soPendencias} accent={accent} onClick={() => setSoPendencias(true)}>
-                Só pendências ({pendencias.length})
-              </PillButton>
-            )}
+      <div style={{ background: 'white', borderBottom: `1px solid ${C.border}`, paddingTop: 'env(safe-area-inset-top, 0px)', flexShrink: 0 }}>
+        <div className="zc-conf-wrap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+          <button onClick={onClose} disabled={busy}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+              background: 'white', border: `1.5px solid ${C.border}`, borderRadius: R.sm,
+              padding: '8px 12px', fontWeight: W.semibold, fontSize: T.bodySm, color: C.ink,
+              cursor: busy ? 'default' : 'pointer',
+            }}>
+            <ArrowLeft size={18} color={accent} aria-hidden /> Voltar
+          </button>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h2 id="zc-conf-titulo" className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink, lineHeight: 1.25 }}>
+              {jaConferido ? 'Execução conferida' : 'Conferir execução'}
+            </h2>
+            <p style={{ fontSize: T.label, color: C.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {c.sector} · {c.templateName}
+            </p>
           </div>
         </div>
+      </div>
 
-        {/* A lista, na ORDEM ORIGINAL do checklist. Reordenar por gravidade
-            ajudaria a triagem e atrapalharia a conferência: quem revisa segue a
-            mesma sequência em que a operação acontece na loja. */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px', minHeight: 80 }}>
-          {visiveis.length === 0 ? (
-            <p style={{ fontSize: 13, color: C.muted, padding: '8px 0' }}>Nada a listar.</p>
-          ) : visiveis.map((i, idx) => {
-            const cor = !i.done ? (i.critical ? C.critical : C.warning) : i.atrasado || i.faltouFoto ? C.warning : C.success;
-            const Icone = !i.done ? (i.critical ? AlertTriangle : Circle) : CheckCircle2;
-            return (
-              <div key={i.id || idx} style={{
-                display: 'flex', gap: 10, padding: '9px 0',
-                borderBottom: idx < visiveis.length - 1 ? `1px solid ${C.border}` : 'none',
-              }}>
-                <Icone size={16} color={cor} aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{
-                    fontSize: 13.5,
-                    color: !i.done && i.critical ? C.critical : C.ink,
-                    fontWeight: !i.done ? W.semibold : 400,
-                    fontStyle: i.semTexto ? 'italic' : 'normal',
-                  }}>{i.texto}</p>
-                  <div className="flex flex-wrap gap-1" style={{ marginTop: 3, alignItems: 'center' }}>
-                    {i.critical && <Tag cor={C.critical}>Crítico</Tag>}
-                    {!i.done && <Tag cor={C.critical}>Não executado</Tag>}
-                    {i.atrasado && <Tag cor={C.warning}>Fora do prazo</Tag>}
-                    {i.faltouFoto && <Tag cor={C.warning}>Faltou foto</Tag>}
-                    {i.hasPhoto && (
-                      <button onClick={() => onOpenPhoto && onOpenPhoto(i)}
-                        className="flex items-center gap-1"
-                        style={{ fontSize: 9.5, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: accent, background: 'none', border: `1px solid ${C.border}`, borderRadius: R.pill, padding: '1px 6px', cursor: 'pointer' }}>
-                        <Camera size={10} aria-hidden /> Ver foto
+      {/* `overscroll-behavior: contain`: chegando ao fim da lista, o gesto
+          morre aqui em vez de escorrer para a página. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+        <div className="zc-conf-wrap zc-conf-grid" style={{ padding: '16px 16px 24px' }}>
+
+          <aside className="zc-conf-side">
+            <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
+              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>
+                Entregue por
+              </p>
+              <p style={{ fontSize: T.bodyLg, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>{c.operatorName}</p>
+              <p style={{ fontSize: T.label, color: C.muted, marginTop: 2 }}>
+                em {new Date(c.completedAt).toLocaleDateString('pt-BR')} às {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                {deadline ? ` · prazo ${deadline}` : ' · sem prazo definido'}
+              </p>
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+                <Metrica label="Tarefas" valor={`${feitos}/${itens.length}`}
+                  cor={naoExecutados.length ? C.warning : C.success} />
+                <Metrica label="Críticos pendentes" valor={criticosPendentes.length || '0'}
+                  cor={criticosPendentes.length ? C.critical : C.success} />
+                <Metrica label="Prazo"
+                  valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
+                  cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
+              </div>
+            </div>
+
+            {/* O resumo do que exige atenção, antes da lista: quem confere 40
+                itens precisa saber o que procurar antes de começar a rolar. */}
+            {pendencias.length > 0 && (
+              <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}44`, borderRadius: R.md, padding: '12px 14px' }}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.ink, marginBottom: 4 }}>
+                  Precisa de atenção
+                </p>
+                <ul style={{ fontSize: 13, color: C.ink, lineHeight: 1.7, listStyle: 'none' }}>
+                  {criticosPendentes.length > 0 && (
+                    <li style={{ color: C.critical, fontWeight: W.semibold }}>
+                      {criticosPendentes.length} {criticosPendentes.length === 1 ? 'item crítico não executado' : 'itens críticos não executados'}
+                    </li>
+                  )}
+                  {naoExecutados.length > criticosPendentes.length && (
+                    <li>{naoExecutados.length - criticosPendentes.length} {naoExecutados.length - criticosPendentes.length === 1 ? 'item não executado' : 'itens não executados'}</li>
+                  )}
+                  {atrasados.length > 0 && <li>{atrasados.length} {atrasados.length === 1 ? 'item concluído fora do prazo' : 'itens concluídos fora do prazo'}</li>}
+                  {semFoto.length > 0 && <li>{semFoto.length} {semFoto.length === 1 ? 'item exigia foto e não tem' : 'itens exigiam foto e não têm'}</li>}
+                </ul>
+              </div>
+            )}
+
+            {jaConferido && (
+              <p style={{ fontSize: T.label, color: C.muted, padding: '0 2px' }}>
+                Conferido por {c.reviewedByName || '—'} em {new Date(c.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(c.reviewedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
+              </p>
+            )}
+          </aside>
+
+          <section style={{ minWidth: 0 }}>
+            <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+              <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
+                Checklist inteiro ({itens.length})
+              </PillButton>
+              {pendencias.length > 0 && (
+                <PillButton active={soPendencias} accent={accent} onClick={() => setSoPendencias(true)}>
+                  Só pendências ({pendencias.length})
+                </PillButton>
+              )}
+            </div>
+
+            {/* A lista, na ORDEM ORIGINAL do checklist. Reordenar por gravidade
+                ajudaria a triagem e atrapalharia a conferência: quem revisa segue
+                a mesma sequência em que a operação acontece na loja. */}
+            <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, overflow: 'hidden' }}>
+              {visiveis.length === 0 ? (
+                <p style={{ fontSize: 13, color: C.muted, padding: '14px 16px' }}>Nada a listar.</p>
+              ) : visiveis.map((i, idx) => {
+                const cor = !i.done ? (i.critical ? C.critical : C.warning) : i.atrasado || i.faltouFoto ? C.warning : C.success;
+                const Icone = !i.done ? (i.critical ? AlertTriangle : Circle) : CheckCircle2;
+                const vd = vereditos[i.id]?.verdict;
+                const eApontamento = vd === 'ressalva' || vd === 'reprovado';
+                const mudo = eApontamento && !(vereditos[i.id]?.note || '').trim();
+                return (
+                  <div key={i.id || idx} className="zc-conf-item" style={{
+                    padding: '14px 16px',
+                    borderTop: idx > 0 ? `1px solid ${C.border}` : 'none',
+                    // A tarefa apontada ganha a cor do veredito na borda: rolando
+                    // 40 linhas, é assim que se acha de volta o que foi apontado.
+                    boxShadow: eApontamento ? `inset 3px 0 0 ${corDoVeredito(vd)}` : 'none',
+                  }}>
+                    <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+                      <Icone size={18} color={cor} aria-hidden style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{
+                          fontSize: T.body, lineHeight: 1.4,
+                          color: !i.done && i.critical ? C.critical : C.ink,
+                          fontWeight: !i.done ? W.semibold : 400,
+                          fontStyle: i.semTexto ? 'italic' : 'normal',
+                        }}>{i.texto}</p>
+                        <div className="flex flex-wrap gap-1" style={{ marginTop: 5, alignItems: 'center' }}>
+                          {i.critical && <Tag cor={C.critical}>Crítico</Tag>}
+                          {!i.done && <Tag cor={C.critical}>Não executado</Tag>}
+                          {i.atrasado && <Tag cor={C.warning}>Fora do prazo</Tag>}
+                          {i.faltouFoto && <Tag cor={C.warning}>Faltou foto</Tag>}
+                          {i.hasPhoto && (
+                            <button onClick={() => onOpenPhoto && onOpenPhoto(i)}
+                              className="flex items-center gap-1"
+                              style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: accent, background: 'white', border: `1px solid ${C.borderStrong}`, borderRadius: R.pill, padding: '4px 10px', cursor: 'pointer' }}>
+                              <Camera size={12} aria-hidden /> Ver foto
+                            </button>
+                          )}
+                        </div>
+                        {/* Quem executou só aparece quando NÃO é quem entregou — na
+                            execução individual repetir o mesmo nome em 40 linhas é
+                            ruído que esconde as duas linhas em que ele muda. */}
+                        {i.done && i.doneByName && i.doneByName !== c.operatorName && (
+                          <p style={{ fontSize: T.label, color: C.mutedLight, marginTop: 3 }}>por {i.doneByName}</p>
+                        )}
+                        {i.note && (
+                          <p style={{ fontSize: 13, color: C.muted, marginTop: 3, fontStyle: 'italic' }}>“{i.note}”</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Julgamento da tarefa. Três botões e nada de menu: numa
+                        conferência de 40 linhas, cada toque a mais é um toque
+                        vezes 40. No celular viram três faixas iguais em largura
+                        — alvo de dedo, não de cursor. */}
+                    <div className="zc-conf-julgar">
+                      <div className="zc-conf-verdicts" role="group" aria-label={`Veredito: ${i.texto}`}>
+                        {VERDICTS.map(v => {
+                          const ativo = vd === v.id;
+                          return (
+                            <button key={v.id} onClick={() => setVeredito(i.id, v.id)}
+                              aria-pressed={ativo}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                                minHeight: 38, padding: '0 12px',
+                                fontSize: 13, fontWeight: W.semibold, whiteSpace: 'nowrap',
+                                color: ativo ? 'white' : v.cor,
+                                background: ativo ? v.cor : `${v.cor}10`,
+                                border: `1px solid ${ativo ? v.cor : `${v.cor}55`}`,
+                                borderRadius: R.sm, cursor: 'pointer',
+                              }}>
+                              <v.Icon size={14} aria-hidden /> {v.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {/* O rótulo muda com o que está faltando: num apontamento
+                          ainda mudo ele PEDE o motivo, em vez de oferecer um
+                          comentário opcional. É a mesma caixa; o que muda é de
+                          quem é a iniciativa. */}
+                      <button onClick={() => toggleNota(i.id)}
+                        style={{
+                          alignSelf: 'flex-start', minHeight: 32, padding: '0 12px',
+                          fontSize: 12.5, fontWeight: W.semibold, color: mudo ? C.warning : C.muted,
+                          background: 'none', border: `1px dashed ${mudo ? C.warning : C.borderStrong}`,
+                          borderRadius: R.pill, cursor: 'pointer',
+                        }}>
+                        {vereditos[i.id]?.note ? 'Editar motivo' : mudo ? 'Dizer o motivo' : '+ Comentário'}
                       </button>
-                    )}
-                  </div>
-                  {/* Quem executou só aparece quando NÃO é quem entregou — na
-                      execução individual repetir o mesmo nome em 40 linhas é
-                      ruído que esconde as duas linhas em que ele muda. */}
-                  {i.done && i.doneByName && i.doneByName !== c.operatorName && (
-                    <p style={{ fontSize: 11, color: C.mutedLight, marginTop: 2 }}>por {i.doneByName}</p>
-                  )}
-                  {i.note && (
-                    <p style={{ fontSize: 11.5, color: C.muted, marginTop: 2, fontStyle: 'italic' }}>“{i.note}”</p>
-                  )}
+                    </div>
 
-                  {/* Julgamento da tarefa. Três botões e nada de menu: numa
-                      conferência de 40 linhas, cada toque a mais é um toque
-                      vezes 40. */}
-                  <div className="flex flex-wrap gap-1" style={{ marginTop: 6, alignItems: 'center' }}>
-                    {VERDICTS.map(v => {
-                      const ativo = vereditos[i.id]?.verdict === v.id;
-                      return (
-                        <button key={v.id} onClick={() => setVeredito(i.id, v.id)}
-                          aria-pressed={ativo}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4,
-                            fontSize: 11, fontWeight: W.semibold,
-                            color: ativo ? 'white' : v.cor,
-                            background: ativo ? v.cor : `${v.cor}10`,
-                            border: `1px solid ${ativo ? v.cor : `${v.cor}55`}`,
-                            borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer',
-                          }}>
-                          <v.Icon size={11} aria-hidden /> {v.label}
-                        </button>
-                      );
-                    })}
-                    {/* O rótulo muda com o que está faltando: num apontamento
-                        ainda mudo ele PEDE o motivo, em vez de oferecer um
-                        comentário opcional. É a mesma caixa; o que muda é de
-                        quem é a iniciativa. */}
-                    {(() => {
-                      const vd = vereditos[i.id]?.verdict;
-                      const eApontamento = vd === 'ressalva' || vd === 'reprovado';
-                      const mudo = eApontamento && !(vereditos[i.id]?.note || '').trim();
-                      const cor = mudo ? C.warning : C.muted;
-                      return (
-                        <button onClick={() => toggleNota(i.id)}
-                          style={{ fontSize: 11, fontWeight: W.semibold, color: cor, background: 'none', border: `1px dashed ${mudo ? cor : C.border}`, borderRadius: R.pill, padding: '3px 10px', cursor: 'pointer' }}>
-                          {vereditos[i.id]?.note ? 'Editar motivo' : mudo ? 'Dizer o motivo' : '+ Comentário'}
-                        </button>
-                      );
-                    })()}
-                  </div>
-
-                  {(notasAbertas.has(i.id) || vereditos[i.id]?.note) && (() => {
-                    const vd = vereditos[i.id]?.verdict;
-                    const mudo = (vd === 'ressalva' || vd === 'reprovado') && !(vereditos[i.id]?.note || '').trim();
-                    return (
-                      <textarea
+                    {(notasAbertas.has(i.id) || vereditos[i.id]?.note) && (
+                      <textarea className="zc-conf-nota"
                         value={vereditos[i.id]?.note || ''}
                         onChange={e => setVeredictoNota(i.id, e.target.value)}
                         rows={2} disabled={busy}
@@ -839,51 +899,32 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                           : vd === 'ressalva'
                             ? 'O que ficou abaixo do padrão?'
                             : 'O que o colaborador precisa saber sobre esta tarefa?'}
-                        style={{ width: '100%', marginTop: 6, border: `1px solid ${mudo ? C.warning : C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
-                    );
-                  })()}
-                </div>
-              </div>
-            );
-          })}
+                        style={{ width: '100%', border: `1px solid ${mudo ? C.warning : C.borderStrong}`, borderRadius: R.sm, padding: '9px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <label htmlFor="zc-review-note" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, margin: '20px 0 6px' }}>
+              Observação geral (opcional)
+            </label>
+            <textarea id="zc-review-note" value={note} onChange={e => setNote(e.target.value)} rows={3} disabled={busy}
+              placeholder="O que precisa melhorar na próxima?"
+              style={{ width: '100%', background: 'white', border: `1px solid ${C.borderStrong}`, borderRadius: R.sm, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+          </section>
         </div>
+      </div>
 
-        <div style={{ padding: '14px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))', borderTop: `1px solid ${C.border}` }}>
-          {/* O que está prestes a ser gravado, em uma linha. Sem isto, a
-              liderança confirma sem saber quantas tarefas deixou sem julgar —
-              e o colaborador recebe um briefing com buracos. */}
-          <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-            {itens.length - semVeredito} de {itens.length} tarefas julgadas
-            {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
-            {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
-            {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
-            {/* O número que importa para o outro lado: apontamento sem motivo
-                chega como veredito nu. Fica na MESMA linha que "sem veredito"
-                porque são o mesmo tipo de buraco — um o formulário já
-                mostrava, o outro ninguém via. */}
-            {semMotivo.length > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {semMotivo.length} sem motivo</span>}
-          </p>
-
-          {jaConferido && (
-            <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-              Conferido por {c.reviewedByName || '—'} em {new Date(c.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(c.reviewedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.
-            </p>
-          )}
-
-          <label htmlFor="zc-review-note" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, marginBottom: 4 }}>
-            Observação (opcional)
-          </label>
-          <textarea id="zc-review-note" value={note} onChange={e => setNote(e.target.value)} rows={2} disabled={busy}
-            placeholder="O que precisa melhorar na próxima?"
-            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, marginBottom: 12, resize: 'vertical' }} />
-
+      <div style={{ background: 'white', borderTop: `1px solid ${C.border}`, flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxShadow: '0 -8px 24px -18px rgba(8, 20, 30, .28)' }}>
+        <div className="zc-conf-wrap" style={{ padding: '12px 16px' }}>
           {erro && <p role="alert" style={{ fontSize: 13, color: C.critical, marginBottom: 10 }}>{erro}</p>}
 
           {/* O segundo passo, e só quando há o que avisar: nomeia as tarefas que
               vão chegar sem motivo. Genérico ("faltam motivos") seria ignorado
               na segunda vez; a lista obriga a olhar para o que se apontou. */}
           {confirmandoMudo ? (
-            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}55`, borderRadius: R.sm, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}55`, borderRadius: R.sm, padding: '12px 14px' }}>
               <p style={{ fontSize: 13, fontWeight: W.semibold, color: C.ink }}>
                 {semMotivo.length === 1 ? 'Um apontamento vai sem motivo' : `${semMotivo.length} apontamentos vão sem motivo`}
               </p>
@@ -919,21 +960,35 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
               </div>
             </div>
           ) : (
-            <button onClick={() => commit(true)} disabled={busy} className="w-full py-3 mb-2"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-              <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
-            </button>
+            <div className="zc-conf-decisao">
+              {/* O que está prestes a ser gravado, em uma linha. Sem isto, a
+                  liderança confirma sem saber quantas tarefas deixou sem julgar
+                  — e o colaborador recebe um briefing com buracos. */}
+              <p style={{ fontSize: 12.5, color: C.muted }}>
+                {itens.length - semVeredito} de {itens.length} tarefas julgadas
+                {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
+                {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
+                {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
+                {/* O número que importa para o outro lado: apontamento sem motivo
+                    chega como veredito nu. Fica na MESMA linha que "sem veredito"
+                    porque são o mesmo tipo de buraco — um o formulário já
+                    mostrava, o outro ninguém via. */}
+                {semMotivo.length > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {semMotivo.length} sem motivo</span>}
+              </p>
+              <div className="zc-conf-botoes">
+                <button onClick={() => commit(true)} disabled={busy}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 24px', minHeight: 48, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+                  <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
+                </button>
+                {jaConferido && (
+                  <button onClick={() => commit(false)} disabled={busy}
+                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
+                    Desfazer conferência
+                  </button>
+                )}
+              </div>
+            </div>
           )}
-          {jaConferido && (
-            <button onClick={() => commit(false)} disabled={busy} className="w-full py-2"
-              style={{ borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
-              Desfazer conferência
-            </button>
-          )}
-          <button onClick={onClose} disabled={busy} className="w-full py-2"
-            style={{ borderRadius: 10, background: 'none', color: C.muted, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: 'pointer' }}>
-            Cancelar
-          </button>
         </div>
       </div>
     </div>

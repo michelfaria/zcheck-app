@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react';
 import { Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { C, R, W, T } from '../../lib/tokens';
 import { getPhotoUrl } from '../../lib/sync';
+import { useTravaRolagem } from '../../lib/useTravaRolagem';
 
 export const ROLE_LABELS = {
   colaborador: 'Colaborador',
@@ -226,6 +227,9 @@ export function FeedbackThumbs({ onRate, size = 15 }) {
 export function PhotoModal({ recordId, item, onClose }) {
   const [src, setSrc] = useState(null);
   const [status, setStatus] = useState('loading');
+  // Abre por cima da conferência em tela cheia, que já trava a página; a trava
+  // conta overlays, então fechar a foto não destrava o fundo da conferência.
+  useTravaRolagem();
 
   useEffect(() => {
     (async () => {
