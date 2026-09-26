@@ -125,6 +125,12 @@ const SHOTS = [
   { name: 'onboarding-segmento', tela: 'onboarding', width: 390, height: 844, scratch: true },
   { name: 'onboarding-hamburgueria', tela: 'onboarding', width: 390, height: 844, scratch: true,
     cliques: ['button[aria-pressed]:has-text("Hamburgueria")', 'text=Continuar →'] },
+  // Conferência em tela cheia (26/09/2026), também só conferência: aberta pelo
+  // "Conferir próxima" do Painel, no celular e no desktop.
+  { name: 'conferencia-celular', tela: 'painel', width: 390, height: 844, scratch: true,
+    cliques: ['text=Conferir próxima'] },
+  { name: 'conferencia-desktop', tela: 'painel', width: 1440, height: 900, scratch: true,
+    cliques: ['text=Conferir próxima'] },
   // Só para escolher recorte: a página inteira do Painel.
   { name: 'painel-inteiro', tela: 'painel', width: 1440, height: 900, fullPage: true, scratch: true },
 ];

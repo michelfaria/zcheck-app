@@ -447,6 +447,52 @@ input, textarea, button, select {
   .zc-logoband { display: none !important; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   CONFERÊNCIA EM TELA CHEIA (ReviewModal, components/painel/ReportsView.js)
+   Mobile é o default, como no resto do arquivo. Só o que MUDA com a largura
+   mora em classe — o resto é inline no componente, e inline venceria a
+   media query.
+   ══════════════════════════════════════════════════════════════════════════ */
+.zc-conf-wrap { width: 100%; max-width: 1180px; margin: 0 auto; }
+.zc-conf-grid { display: flex; flex-direction: column; gap: 16px; }
+.zc-conf-side { display: flex; flex-direction: column; gap: 12px; }
+.zc-conf-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+/* Três faixas iguais: no celular o veredito é alvo de dedo. */
+.zc-conf-verdicts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.zc-conf-julgar { display: flex; flex-direction: column; gap: 8px; }
+.zc-conf-decisao { display: flex; flex-direction: column; gap: 10px; }
+.zc-conf-botoes { display: flex; flex-direction: column; gap: 2px; }
+
+/* Tablet em diante: o veredito sobe para a linha da tarefa, à direita. */
+@media (min-width: 768px) {
+  .zc-conf-item { grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: start; }
+  .zc-conf-nota { grid-column: 1 / -1; }
+  .zc-conf-verdicts { display: flex; }
+  .zc-conf-julgar { align-items: flex-end; }
+  .zc-conf-julgar > button { align-self: flex-end !important; }
+  .zc-conf-decisao { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
+  /* Confirmar vem primeiro no DOM (primeiro no Tab); na linha, fica à direita. */
+  .zc-conf-botoes { flex-direction: row-reverse; align-items: center; gap: 8px; flex-shrink: 0; }
+  .zc-conf-botoes > button:first-child { min-width: 260px; }
+}
+
+/* Desktop: resumo parado à esquerda, lista larga à direita. O sticky só onde
+   a altura comporta o resumo inteiro — mais alto que a janela, ele prenderia
+   o próprio pé fora de alcance (a mesma armadilha do .zc-jit-aside). */
+@media (min-width: 1024px) {
+  .zc-conf-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
+}
+@media (min-width: 1024px) and (min-height: 720px) {
+  .zc-conf-side { position: sticky; top: 16px; }
+}
+/* Com largura sobrando, o comentário entra na linha do veredito (à esquerda
+   dele): cada tarefa perde uma linha de altura, e são 40 tarefas. Abaixo
+   disto a coluna do texto ficaria estreita demais. */
+@media (min-width: 1280px) {
+  .zc-conf-julgar { flex-direction: row-reverse; align-items: center; }
+  .zc-conf-julgar > button { align-self: center !important; }
+}
+
 @layer base {
   /* Tema shadcn MAPEADO para lib/tokens.js — uma paleta só, não duas.
      Formato: canais HSL (o tailwind.config.mjs envolve em hsl(var(--x))),
