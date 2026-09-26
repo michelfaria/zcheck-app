@@ -457,19 +457,29 @@ input, textarea, button, select {
 .zc-conf-grid { display: flex; flex-direction: column; gap: 16px; }
 .zc-conf-side { display: flex; flex-direction: column; gap: 12px; }
 .zc-conf-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-/* Três faixas iguais: no celular o veredito é alvo de dedo. */
-.zc-conf-verdicts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.zc-conf-julgar { display: flex; flex-direction: column; gap: 8px; }
+/* Veredito e comentário numa linha só. No celular: três faixas iguais (alvo
+   de dedo) e o comentário como ícone de 40px; os ícones dos vereditos saem —
+   cor e palavra bastam, e o espaço é o do texto. */
+.zc-conf-julgar { display: flex; gap: 6px; align-items: stretch; }
+.zc-conf-verdicts { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.zc-conf-vicon { display: none; }
+.zc-conf-coment { flex: 0 0 40px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; }
+.zc-conf-coment-txt { display: none; }
 .zc-conf-decisao { display: flex; flex-direction: column; gap: 10px; }
 .zc-conf-botoes { display: flex; flex-direction: column; gap: 2px; }
+
+/* iPhone SE e afins (320px): "Reprovar" a 13px não cabe na faixa. */
+@media (max-width: 359px) {
+  .zc-conf-verdicts > button { font-size: 12px !important; padding: 0 4px !important; }
+}
 
 /* Tablet em diante: o veredito sobe para a linha da tarefa, à direita. */
 @media (min-width: 768px) {
   .zc-conf-item { grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: start; }
   .zc-conf-nota { grid-column: 1 / -1; }
-  .zc-conf-verdicts { display: flex; }
-  .zc-conf-julgar { align-items: flex-end; }
-  .zc-conf-julgar > button { align-self: flex-end !important; }
+  .zc-conf-verdicts { flex: none; display: flex; }
+  .zc-conf-verdicts > button { padding: 0 12px !important; }
+  .zc-conf-vicon { display: block; }
   .zc-conf-decisao { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
   /* Confirmar vem primeiro no DOM (primeiro no Tab); na linha, fica à direita. */
   .zc-conf-botoes { flex-direction: row-reverse; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -485,12 +495,11 @@ input, textarea, button, select {
 @media (min-width: 1024px) and (min-height: 720px) {
   .zc-conf-side { position: sticky; top: 16px; }
 }
-/* Com largura sobrando, o comentário entra na linha do veredito (à esquerda
-   dele): cada tarefa perde uma linha de altura, e são 40 tarefas. Abaixo
-   disto a coluna do texto ficaria estreita demais. */
+/* Com largura sobrando, o comentário ganha a palavra ao lado do ícone.
+   Abaixo disto a coluna do texto da tarefa ficaria estreita demais. */
 @media (min-width: 1280px) {
-  .zc-conf-julgar { flex-direction: row-reverse; align-items: center; }
-  .zc-conf-julgar > button { align-self: center !important; }
+  .zc-conf-coment { flex: none; padding: 0 12px; }
+  .zc-conf-coment-txt { display: inline; }
 }
 
 @layer base {
