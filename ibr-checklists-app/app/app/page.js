@@ -44,6 +44,7 @@ import PlanoVagas, { VagasMedidor, SemVagaDialogo, LojaBloqueadaDialogo, AvisoTe
 import { capCompletions, marcaDagua, marcaMaisNova, inicioDaRecarga, juntarConclusoes } from '../../lib/completions';
 import { getTenantSlug } from '../../lib/tenant';
 import { useNetworkStatus } from '../../lib/useNetworkStatus';
+import { useTravaRolagem } from '../../lib/useTravaRolagem';
 // O dia de operação é sempre o do relógio da loja — nunca UTC. Ver lib/dates.js.
 import { todayStr, addDays, daysAgoStr, lastDays, weekStartStr, tzOf, tzOfUnit, TIMEZONES, APP_TZ } from '../../lib/dates';
 // Regras da RODADA (loja × checklist × dia): reexecução conta uma vez, e tarefa
@@ -964,6 +965,7 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
   const fileInputRef = useRef(null);
   const [showDesc, setShowDesc] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState(null);
+  useTravaRolagem(!!expandedPhoto);
   // Estado colaborativo: item concluído no estado compartilhado (por mim ou por colega).
   const collabDone = !!liveInfo?.done;
   const byOther = collabDone && liveInfo.operatorUserId && liveInfo.operatorUserId !== currentUserId;
@@ -1215,11 +1217,12 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
       </div>
     </Ticket>
 
-    {/* Inline photo expansion modal */}
+    {/* Inline photo expansion modal. `margin: 0`: a linha é filha do
+        `.space-y-2` da lista de tarefas, e a margem dele descia o overlay. */}
     {expandedPhoto && (
       <div
         onClick={() => setExpandedPhoto(null)}
-        style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 1000, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       >
         <img
           src={expandedPhoto}
@@ -1240,8 +1243,9 @@ function ItemRow({ item, state, accent, locked, onToggle, onNote, onPhoto, liveI
 /* ----------------------------- confirm modal ------------------------------ */
 
 function ConfirmModal({ items, onCancel, onConfirm }) {
+  useTravaRolagem();
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.5)' }}>
+    <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ margin: 0, background: 'rgba(32,48,43,0.5)' }}>
       <div className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: R.md, padding: 16, border: `2px solid ${C.critical}` }}>
         <div className="flex items-center gap-2 mb-2" style={{ color: C.critical }}>
           <AlertTriangle size={20} />
@@ -1325,6 +1329,7 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
   const liveByItem = useMemo(() => mergeRoundState(liveRaw, submittedByItem), [liveRaw, submittedByItem]);
   const [collabNotice, setCollabNotice] = useState('');
   const [reopenTarget, setReopenTarget] = useState(null);
+  useTravaRolagem(!!reopenTarget);
   const [reopenReason, setReopenReason] = useState('');
   const collabSessionTracked = useRef(false);
   // Itens com marcação em voo: sem isto, dois toques rápidos disparam duas
@@ -1844,7 +1849,7 @@ export function ExecutionScreen({ template, unit, currentUser, completions, clos
 
       {/* Reabrir tarefa — exige motivo (auditoria, H6) */}
       {reopenTarget && (
-        <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+        <div className="zc-sheet" style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 310, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom,0px))' }}>
             <p className="font-display" style={{ fontSize: 'calc(17px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, marginBottom: 6 }}>Reabrir tarefa</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 12, lineHeight: 1.4 }}>
@@ -2639,6 +2644,7 @@ export function TemplateEditor({ unit, sector, template, onSave, onCancel, check
  * como dois checklists distintos.
  */
 function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_TYPE_ORDER, onSaveSector, onClose, onImported }) {
+  useTravaRolagem();
   const [csvText, setCsvText] = useState('');
   const [rawPreview, setRawPreview] = useState(null); // lista crua do arquivo
   const [criandoSetores, setCriandoSetores] = useState(false);
@@ -2841,7 +2847,7 @@ function ImportCsvModal({ company, allUnits, templates, activeTypes = CHECKLIST_
   const bloqueados = (preview || []).length - novos.length;
 
   return (
-    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
+    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 300, background: 'rgba(8,20,30,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }} onClick={onClose}>
       <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 560, background: C.bg, borderRadius: '20px 20px 0 0', maxHeight: '92vh', overflowY: 'auto', padding: 20, paddingBottom: 'calc(20px + env(safe-area-inset-bottom,0px))' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <h2 style={{ fontSize: 18, fontWeight: W.semibold, color: C.ink }}>Importar checklists via CSV</h2>
@@ -4851,6 +4857,7 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
 
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  useTravaRolagem(!!confirmDelete);
   const [requests, setRequests] = useState([]);
   const [reviewingRequest, setReviewingRequest] = useState(null);
   const [editingReq, setEditingReq] = useState({});
@@ -5753,8 +5760,9 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
         <Plus size={16} /> Novo usuário
       </button>
 
+      {/* `margin: 0`: filho do `.space-y-3` da lista, que descia o overlay 12px. */}
       {confirmDelete && (
-        <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.5)' }}>
+        <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ margin: 0, background: 'rgba(32,48,43,0.5)' }}>
           <div className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16 }}>
             <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>Remover {confirmDelete.name}?</p>
             <p style={{ fontSize: 13, color: C.muted, marginBottom: 12 }}>Essa pessoa não poderá mais acessar o app com este usuário.</p>
@@ -5777,10 +5785,11 @@ export function UsersView({ users, onSaveUsers, currentUser, onGenerateTestData,
 /* ----------------------------- push modal --------------------------------- */
 
 function PushPermissionModal({ onAllow, onDismiss }) {
+  useTravaRolagem();
   return (
     <div
       className="fixed inset-0 flex items-end justify-center z-50"
-      style={{ background: 'rgba(11,60,92,0.5)' }}
+      style={{ margin: 0, background: 'rgba(11,60,92,0.5)' }}
       onClick={onDismiss}
     >
       <div
@@ -5836,6 +5845,7 @@ function PushPermissionModal({ onAllow, onDismiss }) {
  * evidência de checklist é o contrário — lá a câmera é o ponto.)
  */
 function AvatarPickerModal({ user, accent, onClose, onSave }) {
+  useTravaRolagem();
   const [preview, setPreview] = useState(null);   // dataURL novo, ainda não salvo
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
@@ -5868,7 +5878,7 @@ function AvatarPickerModal({ user, accent, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 flex items-end justify-center z-50"
-      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
+      style={{ margin: 0, background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
         role="dialog" aria-modal="true" aria-label="Foto de perfil"
         style={{
@@ -6087,6 +6097,7 @@ function FolgasView({ unit, closures, onSaveClosures, canSeeAllUnits }) {
 
 /* ── UserDataChangeModal ── */
 export function UserDataChangeModal({ currentUser, onClose }) {
+  useTravaRolagem();
   const FIELDS = [
     { id: 'nome', label: 'Nome completo', placeholder: 'Novo nome completo', type: 'text' },
     { id: 'telefone', label: 'Telefone / WhatsApp', placeholder: '(00) 00000-0000', type: 'tel' },
@@ -6159,7 +6170,7 @@ export function UserDataChangeModal({ currentUser, onClose }) {
   const inputStyle = { width: '100%', fontSize: 14, fontWeight: W.semibold, padding: '12px 10px', borderRadius: 8, border: `1.5px solid ${C.border}`, outline: 'none', background: 'white', color: C.ink, fontFamily: 'inherit', marginTop: 6 };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ margin: 0, background: 'rgba(0,0,0,0.45)' }} onClick={onClose}>
       <div className="w-full zc-sheet-panel" style={{ maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 'calc(32px + env(safe-area-inset-bottom, 0px))' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -6874,6 +6885,7 @@ function guessVertical(units) {
 // (`planoDaBiblioteca`), coberto por tests/library-plan.spec.mjs.
 
 export function CompanyOnboarding({ company, units, currentUser, onCreateTemplates, onClose, onGoToTab, onStartTour }) {
+  useTravaRolagem();
   const [step, setStep] = useState(0); // 0 segmento · 1 revisão · 2 pronto
   const [vertical, setVertical] = useState(() => guessVertical(units));
   // Sub-segmentos escolhidos (Food Service: Restaurante, Café, Padaria,
@@ -6931,7 +6943,7 @@ export function CompanyOnboarding({ company, units, currentUser, onCreateTemplat
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(11,60,92,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+    <div style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 200, background: 'rgba(11,60,92,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 400, background: C.bg, borderRadius: 20, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.4)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ background: accent, padding: '22px 24px 18px', textAlign: 'center' }}>
           <p style={{ fontSize: 11, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)', marginBottom: 4 }}>
@@ -7164,6 +7176,7 @@ function GestorTour({ allowedTabs, accent, onGoToTab, onClose }) {
 
 /* ── WelcomeScreen ── */
 function WelcomeScreen({ role, onClose }) {
+  useTravaRolagem();
   const isLider = role === 'lideranca';
   const [step, setStep] = useState(0);
 
@@ -7203,7 +7216,7 @@ function WelcomeScreen({ role, onClose }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 200,
+      position: 'fixed', inset: 0, margin: 0, zIndex: 200,
       background: 'rgba(11,60,92,0.92)',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
@@ -7613,6 +7626,7 @@ export function computeLeadershipProfile({ completions, templates, closures, uni
  * explicação de um lado só.
  */
 function DisputeSheet({ item, accent, onClose, onSend }) {
+  useTravaRolagem();
   const [texto, setTexto] = useState('');
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
@@ -7629,7 +7643,7 @@ function DisputeSheet({ item, accent, onClose, onSend }) {
 
   return (
     <div className="fixed inset-0 flex items-end justify-center z-50"
-      style={{ background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
+      style={{ margin: 0, background: 'rgba(11,60,92,0.5)' }} onClick={busy ? undefined : onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full zc-sheet-panel"
         role="dialog" aria-modal="true" aria-label="Justificar a avaliação"
         style={{ maxWidth: 480, background: 'white', borderRadius: '20px 20px 0 0', padding: '24px 24px 40px', paddingBottom: 'calc(40px + env(safe-area-inset-bottom, 0px))' }}>
@@ -7667,6 +7681,7 @@ function DisputeSheet({ item, accent, onClose, onSend }) {
 }
 
 function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [], onDispute }) {
+  useTravaRolagem();
   const [contestando, setContestando] = useState(null);
   // Contestação por tarefa, para a lista saber o que já foi dito.
   const disputaDe = useMemo(
@@ -7685,7 +7700,7 @@ function BriefingScreen({ briefing: b, userName, accent, onClose, disputes = [],
   };
 
   return (
-    <div className="fixed inset-0 z-50" style={{ background: C.bg, overflowY: 'auto' }}
+    <div className="fixed inset-0 z-50" style={{ margin: 0, background: C.bg, overflowY: 'auto' }}
       role="dialog" aria-modal="true" aria-label="Resumo do seu dia">
       <div style={{ maxWidth: 520, margin: '0 auto', padding: '28px 20px calc(40px + env(safe-area-inset-bottom, 0px))' }}>
 
@@ -8394,6 +8409,7 @@ function buildMetricAnchors(p) {
 }
 
 function RecognizeModal({ target, profile, currentUser, unitId, companyId, accent, onClose, onSent }) {
+  useTravaRolagem();
   const anchors = buildMetricAnchors(profile);
   const [metricRef, setMetricRef] = useState(anchors[0]?.ref ?? '');
   const [message, setMessage] = useState('');
@@ -8414,7 +8430,7 @@ function RecognizeModal({ target, profile, currentUser, unitId, companyId, accen
   };
 
   return (
-    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+    <div className="zc-sheet" style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 210, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div className="zc-sheet-panel" style={{ width: '100%', maxWidth: 480, background: C.bg, borderRadius: '20px 20px 0 0', padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <p className="font-display" style={{ fontSize: 'calc(18px * var(--zc-t-scale))', fontWeight: W.semibold, color: C.ink, display: 'flex', alignItems: 'center', gap: 7 }}><Award size={18} aria-hidden /> Reconhecer {firstName}</p>
@@ -10698,6 +10714,7 @@ const CHECKOUT_ERRORS = {
 // `relerCota` devolve a cota ou null (o AppInner passa o refreshQuota, que
 // também atualiza a cota da tela).
 export function SubscribePanel({ company, currentUser, mode = 'block', onClose, onLogout, relerCota = fetchUserQuota }) {
+  useTravaRolagem();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [cycle, setCycle] = useState('annual'); // anual é o herói
@@ -10748,7 +10765,7 @@ export function SubscribePanel({ company, currentUser, mode = 'block', onClose, 
 
   const isBlock = mode === 'block';
   const overlay = {
-    position: 'fixed', inset: 0, zIndex: 10000, background: isBlock ? C.bg : 'rgba(8,20,30,0.55)',
+    position: 'fixed', inset: 0, margin: 0, zIndex: 10000, background: isBlock ? C.bg : 'rgba(8,20,30,0.55)',
     display: 'flex', alignItems: isBlock ? 'flex-start' : 'center', justifyContent: 'center',
     padding: isBlock ? '32px 16px' : 16, overflowY: 'auto',
   };
@@ -10889,8 +10906,9 @@ export function SubscribePanel({ company, currentUser, mode = 'block', onClose, 
 
 // Nudge dispensável durante o teste — lembra o fim do trial sem bloquear.
 function TrialNudge({ daysLeft, onDismiss, onOpen }) {
+  useTravaRolagem();
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(8,20,30,0.45)',
+    <div style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 9998, background: 'rgba(8,20,30,0.45)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'white', borderRadius: 16, border: `1px solid ${C.border}`, maxWidth: 380, width: '100%', padding: 24, textAlign: 'center' }}>
         <Hourglass size={34} color={C.warning} strokeWidth={1.5} aria-hidden style={{ margin: '0 auto 10px' }} />

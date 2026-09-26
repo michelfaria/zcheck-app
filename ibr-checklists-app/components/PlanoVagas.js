@@ -31,6 +31,7 @@ import { setExtraSeats } from '../lib/sync';
 // de quem abriu a tela — a mesma regra que o banco usa em active_unit_count().
 import { todayStr, tzOf } from '../lib/dates';
 import { unitActiveOn } from '../lib/checklists';
+import { useTravaRolagem } from '../lib/useTravaRolagem';
 
 // O preço da vaga aparece SEMPRE com centavos ("R$ 17,00"): é o número que a
 // pessoa confere na fatura, e "R$ 17" ao lado de "R$ 85,00" parece erro.
@@ -242,10 +243,15 @@ export function erroVagas(reason, min, atual = null) {
  *
  * zIndex 320: acima da barra de ação fixa dos editores (90) e da navegação,
  * abaixo do toast global (400) — o "Vagas atualizadas" tem de aparecer por cima.
+ *
+ * `margin: 0`: a folha nasce dentro do `.space-y-3` da aba Usuários e do
+ * `.space-y-4` das Unidades, cuja margem desceria o overlay. A página atrás
+ * fica travada enquanto ela está aberta (`useTravaRolagem`).
  */
 export function FolhaDialogo({ titulo, onClose, busy = false, focoRef, focoChave, children }) {
   const painelRef = useRef(null);
   const tituloId = useId();
+  useTravaRolagem();
 
   // Quem abriu recebe o foco de volta ao fechar.
   useEffect(() => {
@@ -288,7 +294,7 @@ export function FolhaDialogo({ titulo, onClose, busy = false, focoRef, focoChave
 
   return (
     <div className="zc-sheet" onClick={busy ? undefined : onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(11,60,92,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 320, background: 'rgba(11,60,92,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       {/* tabIndex -1: clicar num texto do painel põe o foco NO painel (e não
           no body), e o Esc continua chegando aqui. */}
       <div ref={painelRef} className="w-full zc-sheet-panel"

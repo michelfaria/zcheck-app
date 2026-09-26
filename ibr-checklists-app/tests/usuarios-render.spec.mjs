@@ -371,6 +371,9 @@ const dom = new JSDOM('<!doctype html><html><body><div id="r"></div></body></htm
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+// jsdom não implementa scrollTo: a trava de rolagem (lib/useTravaRolagem.js)
+// devolve a página ao fechar a folha, e o jsdom reclamaria no console.
+dom.window.scrollTo = () => {};
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Depois do DOM: o react-dom/client olha `window` ao carregar.
 const { createRoot } = await import('react-dom/client');
