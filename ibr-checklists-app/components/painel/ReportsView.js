@@ -19,7 +19,7 @@
 import { useState, useMemo } from 'react';
 import {
   AlertTriangle, ArrowLeft, Camera, CheckCheck, CheckCircle2, ChevronRight, Circle,
-  ClipboardCheck, Download, Printer, X,
+  ClipboardCheck, Download, MessageSquarePlus, MessageSquareText, Printer, X,
 } from 'lucide-react';
 import { C, R, T, W } from '../../lib/tokens';
 // O dia é sempre o do relógio da LOJA — ver lib/dates.js.
@@ -504,6 +504,13 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
   const [soPendencias, setSoPendencias] = useState(false);
   // Segundo passo da confirmação, quando há apontamento sem motivo. Ver `commit`.
   const [confirmandoMudo, setConfirmandoMudo] = useState(false);
+  /**
+   * Observação geral RECOLHIDA num botão (iPhone, 26/09/2026): aberta, a caixa
+   * disputava a altura com a lista de tarefas, e quase nunca é usada — o motivo
+   * mora na tarefa. 'nota' = já havia observação (abre sem foco); 'toque' =
+   * quem confere pediu a caixa, então ela chega com o cursor dentro.
+   */
+  const [obsAberta, setObsAberta] = useState(c.reviewNote ? 'nota' : null);
   const jaConferido = !!c.reviewedAt;
   const noPrazo = completionOnTime(c, templates, null, units);
   useTravaRolagem(); // a página atrás não rola enquanto se confere — ver o return
@@ -657,11 +664,13 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
   const reprovadas = itens.filter(i => vereditos[i.id]?.verdict === 'reprovado').length;
   const comRessalva = itens.filter(i => vereditos[i.id]?.verdict === 'ressalva').length;
 
-  const Metrica = ({ label, valor, cor }) => (
-    <div style={{ flex: 1, minWidth: 80 }}>
-      <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>{label}</p>
-      <p className="font-display" style={{ fontSize: T.bodyLg, fontWeight: W.semibold, color: cor || C.ink, marginTop: 2 }}>{valor}</p>
-    </div>
+  const Selo = ({ cor, children }) => (
+    <span style={{
+      display: 'inline-flex', alignItems: 'baseline', gap: 4,
+      fontSize: 12.5, fontWeight: W.semibold, color: cor,
+      background: `${cor}12`, border: `1px solid ${cor}40`,
+      borderRadius: R.pill, padding: '3px 10px', whiteSpace: 'nowrap',
+    }}>{children}</span>
   );
 
   const Tag = ({ cor, children }) => (
@@ -683,7 +692,8 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
    * que fica atrás é o Painel, que ninguém lê enquanto confere.
    *
    * Três faixas: o topo (sair e o que está sendo conferido), o miolo que rola
-   * (quem entregou, números, o que exige atenção, a lista e a observação) e o pé
+   * (quem entregou, números, o que exige atenção, a lista e, recolhida num
+   * botão, a observação geral) e o pé
    * fixo com a decisão — a regra de antes continua: identificação e botões à
    * vista num checklist de 40 itens. No desktop o miolo abre em duas colunas:
    * o resumo parado à esquerda e a lista larga à direita, com o veredito na
@@ -729,35 +739,39 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
         <div className="zc-conf-wrap zc-conf-grid" style={{ padding: '16px 16px 24px' }}>
 
           <aside className="zc-conf-side">
-            <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
-              <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight }}>
-                Entregue por
-              </p>
-              <p style={{ fontSize: T.bodyLg, fontWeight: W.semibold, color: C.ink, marginTop: 2 }}>{c.operatorName}</p>
-              <p style={{ fontSize: T.label, color: C.muted, marginTop: 2 }}>
-                em {new Date(c.completedAt).toLocaleDateString('pt-BR')} às {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            <div style={{ background: 'white', border: `1px solid ${C.border}`, borderRadius: R.md, padding: '12px 14px' }}>
+              <p style={{ fontSize: T.body, fontWeight: W.semibold, color: C.ink }}>{c.operatorName}</p>
+              <p style={{ fontSize: T.label, color: C.muted, marginTop: 1 }}>
+                Entregue em {new Date(c.completedAt).toLocaleDateString('pt-BR')} às {new Date(c.completedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                 {deadline ? ` · prazo ${deadline}` : ' · sem prazo definido'}
               </p>
 
-              <div style={{ display: 'flex', gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
-                <Metrica label="Tarefas" valor={`${feitos}/${itens.length}`}
-                  cor={naoExecutados.length ? C.warning : C.success} />
-                <Metrica label="Críticos pendentes" valor={criticosPendentes.length || '0'}
-                  cor={criticosPendentes.length ? C.critical : C.success} />
-                <Metrica label="Prazo"
-                  valor={noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
-                  cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted} />
+              {/* Os três números em selos numa linha, não em três colunas com
+                  rótulo em cima: no celular as colunas custavam ~110px antes da
+                  primeira tarefa (iPhone, 26/09/2026). O prazo fica sozinho no
+                  seu selo — `tests/prazo-render.spec.mjs` lê ">atrasado<". */}
+              <div className="flex flex-wrap" style={{ gap: 6, marginTop: 10 }}>
+                <Selo cor={naoExecutados.length ? C.warning : C.success}>
+                  <span className="font-display" style={{ fontWeight: W.bold }}>{feitos}/{itens.length}</span> tarefas
+                </Selo>
+                <Selo cor={criticosPendentes.length ? C.critical : C.success}>
+                  <span className="font-display" style={{ fontWeight: W.bold }}>{criticosPendentes.length}</span>
+                  {criticosPendentes.length === 1 ? ' crítico pendente' : ' críticos pendentes'}
+                </Selo>
+                <Selo cor={noPrazo === false ? C.critical : noPrazo ? C.success : C.muted}>
+                  {noPrazo === null ? 'sem prazo' : noPrazo ? 'no prazo' : 'atrasado'}
+                </Selo>
               </div>
             </div>
 
             {/* O resumo do que exige atenção, antes da lista: quem confere 40
                 itens precisa saber o que procurar antes de começar a rolar. */}
             {pendencias.length > 0 && (
-              <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}44`, borderRadius: R.md, padding: '12px 14px' }}>
-                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.ink, marginBottom: 4 }}>
+              <div style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}44`, borderRadius: R.md, padding: '10px 14px' }}>
+                <p style={{ fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.ink, marginBottom: 2 }}>
                   Precisa de atenção
                 </p>
-                <ul style={{ fontSize: 13, color: C.ink, lineHeight: 1.7, listStyle: 'none' }}>
+                <ul style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, listStyle: 'none' }}>
                   {criticosPendentes.length > 0 && (
                     <li style={{ color: C.critical, fontWeight: W.semibold }}>
                       {criticosPendentes.length} {criticosPendentes.length === 1 ? 'item crítico não executado' : 'itens críticos não executados'}
@@ -780,16 +794,18 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
           </aside>
 
           <section style={{ minWidth: 0 }}>
-            <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-              <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
-                Checklist inteiro ({itens.length})
-              </PillButton>
-              {pendencias.length > 0 && (
+            {/* O filtro só aparece quando filtra alguma coisa: "Checklist
+                inteiro" sozinho é um botão que não muda nada e ocupa uma linha. */}
+            {pendencias.length > 0 && (
+              <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
+                  Checklist inteiro ({itens.length})
+                </PillButton>
                 <PillButton active={soPendencias} accent={accent} onClick={() => setSoPendencias(true)}>
                   Só pendências ({pendencias.length})
                 </PillButton>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* A lista, na ORDEM ORIGINAL do checklist. Reordenar por gravidade
                 ajudaria a triagem e atrapalharia a conferência: quem revisa segue
@@ -805,7 +821,7 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                 const mudo = eApontamento && !(vereditos[i.id]?.note || '').trim();
                 return (
                   <div key={i.id || idx} className="zc-conf-item" style={{
-                    padding: '14px 16px',
+                    padding: '12px 14px',
                     borderTop: idx > 0 ? `1px solid ${C.border}` : 'none',
                     // A tarefa apontada ganha a cor do veredito na borda: rolando
                     // 40 linhas, é assim que se acha de volta o que foi apontado.
@@ -848,7 +864,9 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                     {/* Julgamento da tarefa. Três botões e nada de menu: numa
                         conferência de 40 linhas, cada toque a mais é um toque
                         vezes 40. No celular viram três faixas iguais em largura
-                        — alvo de dedo, não de cursor. */}
+                        — alvo de dedo, não de cursor — e o comentário entra na
+                        MESMA linha, como ícone: numa linha própria ele custava
+                        ~40px por tarefa (iPhone, 26/09/2026). */}
                     <div className="zc-conf-julgar">
                       <div className="zc-conf-verdicts" role="group" aria-label={`Veredito: ${i.texto}`}>
                         {VERDICTS.map(v => {
@@ -858,14 +876,14 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                               aria-pressed={ativo}
                               style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                                minHeight: 38, padding: '0 12px',
+                                minHeight: 40, padding: '0 8px',
                                 fontSize: 13, fontWeight: W.semibold, whiteSpace: 'nowrap',
                                 color: ativo ? 'white' : v.cor,
                                 background: ativo ? v.cor : `${v.cor}10`,
                                 border: `1px solid ${ativo ? v.cor : `${v.cor}55`}`,
                                 borderRadius: R.sm, cursor: 'pointer',
                               }}>
-                              <v.Icon size={14} aria-hidden /> {v.label}
+                              <v.Icon size={14} aria-hidden className="zc-conf-vicon" /> {v.label}
                             </button>
                           );
                         })}
@@ -873,16 +891,25 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                       {/* O rótulo muda com o que está faltando: num apontamento
                           ainda mudo ele PEDE o motivo, em vez de oferecer um
                           comentário opcional. É a mesma caixa; o que muda é de
-                          quem é a iniciativa. */}
-                      <button onClick={() => toggleNota(i.id)}
-                        style={{
-                          alignSelf: 'flex-start', minHeight: 32, padding: '0 12px',
-                          fontSize: 12.5, fontWeight: W.semibold, color: mudo ? C.warning : C.muted,
-                          background: 'none', border: `1px dashed ${mudo ? C.warning : C.borderStrong}`,
-                          borderRadius: R.pill, cursor: 'pointer',
-                        }}>
-                        {vereditos[i.id]?.note ? 'Editar motivo' : mudo ? 'Dizer o motivo' : '+ Comentário'}
-                      </button>
+                          quem é a iniciativa. Onde só cabe o ícone, o rótulo
+                          segue como nome acessível e dica. */}
+                      {(() => {
+                        const temNota = !!vereditos[i.id]?.note;
+                        const rotulo = temNota ? 'Editar motivo' : mudo ? 'Dizer o motivo' : 'Comentário';
+                        const Ic = temNota ? MessageSquareText : MessageSquarePlus;
+                        return (
+                          <button onClick={() => toggleNota(i.id)} className="zc-conf-coment"
+                            aria-label={rotulo} title={rotulo}
+                            style={{
+                              minHeight: 40, fontSize: 12.5, fontWeight: W.semibold,
+                              color: mudo ? C.warning : temNota ? C.ink : C.muted,
+                              background: 'white', borderRadius: R.sm, cursor: 'pointer',
+                              border: `1px ${temNota ? 'solid' : 'dashed'} ${mudo ? C.warning : C.borderStrong}`,
+                            }}>
+                            <Ic size={17} aria-hidden /> <span className="zc-conf-coment-txt">{rotulo}</span>
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {(notasAbertas.has(i.id) || vereditos[i.id]?.note) && (
@@ -906,12 +933,28 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
               })}
             </div>
 
-            <label htmlFor="zc-review-note" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, margin: '20px 0 6px' }}>
-              Observação geral (opcional)
-            </label>
-            <textarea id="zc-review-note" value={note} onChange={e => setNote(e.target.value)} rows={3} disabled={busy}
-              placeholder="O que precisa melhorar na próxima?"
-              style={{ width: '100%', background: 'white', border: `1px solid ${C.borderStrong}`, borderRadius: R.sm, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+            {obsAberta ? (
+              <>
+                <label htmlFor="zc-review-note" style={{ display: 'block', fontSize: T.label, fontWeight: W.semibold, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.mutedLight, margin: '16px 0 6px' }}>
+                  Observação geral (opcional)
+                </label>
+                {/* Foco só quando quem confere tocou em "Adicionar": pediu para
+                    escrever. Observação que já existia abre sem subir o teclado. */}
+                <textarea id="zc-review-note" value={note} onChange={e => setNote(e.target.value)} rows={3} disabled={busy}
+                  autoFocus={obsAberta === 'toque'}
+                  placeholder="O que precisa melhorar na próxima?"
+                  style={{ width: '100%', background: 'white', border: `1px solid ${C.borderStrong}`, borderRadius: R.sm, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: C.ink, resize: 'vertical' }} />
+              </>
+            ) : (
+              <button onClick={() => setObsAberta('toque')} aria-expanded={false}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, minHeight: 40, padding: '0 14px',
+                  fontSize: 13, fontWeight: W.semibold, color: C.muted, background: 'white',
+                  border: `1px dashed ${C.borderStrong}`, borderRadius: R.sm, cursor: 'pointer',
+                }}>
+                <MessageSquarePlus size={16} aria-hidden /> Adicionar observação geral
+              </button>
+            )}
           </section>
         </div>
       </div>
@@ -965,7 +1008,7 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                   liderança confirma sem saber quantas tarefas deixou sem julgar
                   — e o colaborador recebe um briefing com buracos. */}
               <p style={{ fontSize: 12.5, color: C.muted }}>
-                {itens.length - semVeredito} de {itens.length} tarefas julgadas
+                {itens.length - semVeredito} de {itens.length} tarefas conferidas
                 {reprovadas > 0 && <span style={{ color: C.critical, fontWeight: W.semibold }}> · {reprovadas} reprovada{reprovadas === 1 ? '' : 's'}</span>}
                 {comRessalva > 0 && <span style={{ color: C.warning, fontWeight: W.semibold }}> · {comRessalva} com ressalva</span>}
                 {semVeredito > 0 && <span> · {semVeredito} sem veredito</span>}
