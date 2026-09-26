@@ -31,6 +31,7 @@ import {
 } from '../../lib/stats';
 import { truncName } from '../../lib/format';
 import { track } from '../../lib/track';
+import { useTravaRolagem } from '../../lib/useTravaRolagem';
 import { FeedbackThumbs } from './shared';
 import { AgoraFollowUp, AgoraLeitura, AgoraPrioridades } from './agora';
 
@@ -412,6 +413,7 @@ function buildInsight({ completions, units, unitIds, scopeUnitId, unitName, hots
  */
 export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, onCreatePlan, onCompletePlan, onClose, onNavigate }) {
   const startRef = useRef(Date.now());
+  useTravaRolagem(); // pop-up de tela inteira: a página atrás não rola
   // A memória do J.I.T.: recomendação com plano aberto nasce marcada — fechar e
   // reabrir o pop-up não "desfaz" mais o compromisso.
   const [actioned, setActioned] = useState(() =>
@@ -504,7 +506,7 @@ export function JitPanel({ jit, currentUser, accent, openSource, actionPlans, on
   return (
     <div onClick={onClose}
       className="zc-sheet zc-sheet--drawer"
-      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+      style={{ position: 'fixed', inset: 0, margin: 0, zIndex: 200, background: 'rgba(6,60,92,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
       <div onClick={e => e.stopPropagation()}
         className="zc-sheet-panel"
         style={{ width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', background: C.bg, borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>

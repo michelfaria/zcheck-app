@@ -16,9 +16,21 @@ import { useEffect } from 'react';
  * em que ele estava (`top: -scrollY`) e devolver a rolagem ao fechar — quem
  * volta da conferência cai na mesma linha da fila de onde saiu.
  *
+ * SEM `overflow: hidden` no body (a primeira versão punha): o `globals.css` dá
+ * `overflow-x: clip` ao <html>, e aí o overflow do body não passa para a
+ * janela — o body vira contêiner de rolagem, e o header sticky do app (e o
+ * rail no desktop) salta para o topo do body, `scrollY` px acima da tela. Nas
+ * folhas de véu translúcido o cabeçalho sumia ao abrir (Chromium, 26/09/2026:
+ * header de 0 para -800px com a página em 800px). O body fixo já não deixa a
+ * janela rolar — o documento fica sem altura.
+ *
  * Contador de módulo, não estado por componente: dois overlays empilhados
  * (a conferência e a foto aberta por cima dela) não podem destravar a página
  * quando só o de cima fecha.
+ *
+ * `ativo` existe para o overlay que é um trecho condicional de um componente
+ * maior (`{aberto && <div …>}`): o hook não pode ficar dentro do `&&`, então
+ * o componente chama `useTravaRolagem(aberto)`.
  */
 let travas = 0;
 let salvo = null;
@@ -29,8 +41,8 @@ export function useTravaRolagem(ativo = true) {
     if (travas++ === 0) {
       const b = document.body.style;
       const y = window.scrollY;
-      salvo = { y, position: b.position, top: b.top, left: b.left, right: b.right, width: b.width, overflow: b.overflow };
-      Object.assign(b, { position: 'fixed', top: `-${y}px`, left: '0', right: '0', width: '100%', overflow: 'hidden' });
+      salvo = { y, position: b.position, top: b.top, left: b.left, right: b.right, width: b.width };
+      Object.assign(b, { position: 'fixed', top: `-${y}px`, left: '0', right: '0', width: '100%' });
     }
     return () => {
       travas -= 1;

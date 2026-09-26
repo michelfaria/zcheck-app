@@ -93,6 +93,9 @@ const dom = new JSDOM('<!doctype html><html><body><div id="r"></div></body></htm
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+// jsdom não implementa scrollTo: a trava de rolagem (lib/useTravaRolagem.js)
+// devolve a página ao fechar a folha, e o jsdom reclamaria no console.
+dom.window.scrollTo = () => {};
 const doc = dom.window.document;
 // Só depois do DOM: o react-dom decide no load se o navegador tem o evento
 // `input` — carregado sem `document`, digitar não chega ao onChange.

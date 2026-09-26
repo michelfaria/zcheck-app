@@ -113,7 +113,7 @@ console.log('\n═══ 1. Aberta, a conferência trava a página no ponto em q
 await render();
 check(body().position === 'fixed', 'body sai do fluxo (position: fixed)');
 check(body().top === '-830px', 'no ponto em que a página estava (top: -830px)');
-check(body().overflow === 'hidden', 'e sem rolagem própria');
+check(body().overflow === '', 'sem overflow no body — com `overflow-x: clip` no <html>, ele faria do body contêiner de rolagem e o header sticky sumiria');
 
 console.log('\n═══ 2. É tela cheia, não folha ═══');
 const d = dialogo();

@@ -248,7 +248,7 @@ export function PhotoModal({ recordId, item, onClose }) {
   }, []);
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(32,48,43,0.6)' }} onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ margin: 0, background: 'rgba(32,48,43,0.6)' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 360, background: 'white', borderRadius: 10, padding: 16 }}>
         <p className="font-display" style={{ fontWeight: W.semibold, color: C.ink, marginBottom: 8 }}>{item.text}</p>
         {status === 'loading' && <p style={{ fontSize: 13, color: C.muted }}>Carregando foto…</p>}
