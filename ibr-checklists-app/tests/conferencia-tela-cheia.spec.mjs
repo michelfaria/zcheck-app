@@ -23,7 +23,11 @@
  *   3. a foto aberta por cima e fechada NÃO destrava a página — a conferência
  *      continua aberta embaixo dela;
  *   4. fechada a conferência, o body volta ao estilo de antes e a página volta
- *      à mesma posição (quem confere cai na linha da fila de onde saiu).
+ *      à mesma posição (quem confere cai na linha da fila de onde saiu);
+ *   5. a observação geral começa RECOLHIDA num botão (iPhone, 26/09/2026: a
+ *      caixa aberta disputava a altura com a lista) e abre no toque — já aberta
+ *      quando a execução tem observação gravada — e o pé diz "tarefas
+ *      conferidas".
  */
 
 import { JSDOM } from 'jsdom';
@@ -93,9 +97,10 @@ const execucao = {
 
 let fechou = 0;
 let foto = false;
+let completion = execucao;
 const Tela = () => h(UnitsContext.Provider, { value: [unit] },
   h(ReviewModal, {
-    completion: execucao, templates, accent: '#8a2be2',
+    completion, templates, accent: '#8a2be2',
     onClose: () => { fechou++; }, onReview: async () => true,
     onOpenPhoto: () => {},
   }),
@@ -140,6 +145,27 @@ await act(async () => { root.unmount(); });
 check(body().position === '' && body().top === '' && body().overflow === '', 'body volta ao estilo de antes');
 check(body().background === 'rgb(1, 2, 3)', 'o estilo que já estava no body não se perde');
 check(rolagens.length === 1 && rolagens[0] === 830, 'a página volta a 830px, a linha da fila de onde se saiu');
+
+console.log('\n═══ 5. Observação geral recolhida; "tarefas conferidas" ═══');
+const root2 = createRoot(doc.getElementById('r'));
+await act(async () => { root2.render(h(Tela)); });
+const caixa = () => doc.getElementById('zc-review-note');
+check(!caixa(), 'a caixa da observação não ocupa a tela de início');
+check(!!botao('Adicionar observação geral'), 'no lugar dela, um botão para abrir');
+check(doc.body.textContent.includes('1 de 1 tarefas conferidas'), 'o pé diz "tarefas conferidas"');
+check(!doc.body.textContent.includes('julgadas'), '"julgadas" saiu da tela');
+await act(async () => { botao('Adicionar observação geral').click(); });
+check(!!caixa(), 'o toque abre a caixa');
+check(doc.activeElement === caixa(), 'com o cursor dentro — quem tocou quer escrever');
+check(!botao('Adicionar observação geral'), 'e o botão sai');
+await act(async () => { root2.unmount(); });
+
+completion = { ...execucao, reviewNote: 'Conferir o grupo antes das 16h', reviewedAt: '2026-09-21T17:00:00.000Z' };
+const root3 = createRoot(doc.getElementById('r'));
+await act(async () => { root3.render(h(Tela)); });
+check(caixa()?.value === 'Conferir o grupo antes das 16h', 'observação já gravada aparece aberta, com o texto');
+check(doc.activeElement !== caixa(), 'sem roubar o foco (não sobe o teclado ao abrir)');
+await act(async () => { root3.unmount(); });
 
 console.log(ok ? '\n  ✅ PASSOU' : '\n  ❌ FALHOU');
 process.exit(ok ? 0 : 1);
