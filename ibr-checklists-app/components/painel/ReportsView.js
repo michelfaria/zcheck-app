@@ -683,6 +683,20 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
 
   const corDoVeredito = id => VERDICTS.find(v => v.id === id)?.cor;
 
+  // Filtro da lista no tamanho dos botões desta tela (26/09/2026: "diminuir um
+  // pouco os botões"). O `PillButton` compartilhado segue como está nas outras.
+  const Filtro = ({ ativo, onClick, children }) => (
+    <button onClick={onClick} aria-pressed={ativo}
+      style={{
+        minHeight: 32, padding: '0 12px', borderRadius: R.sm,
+        fontSize: 12.5, fontWeight: W.semibold, cursor: 'pointer',
+        border: `1.5px solid ${ativo ? accent : C.border}`,
+        background: ativo ? accent : 'white', color: ativo ? C.bg : C.muted,
+      }}>
+      {children}
+    </button>
+  );
+
   /**
    * TELA CHEIA, não folha de baixo (pedido de 26/09/2026).
    *
@@ -717,10 +731,10 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
             style={{
               display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
               background: 'white', border: `1.5px solid ${C.border}`, borderRadius: R.sm,
-              padding: '8px 12px', fontWeight: W.semibold, fontSize: T.bodySm, color: C.ink,
+              padding: '6px 10px', fontWeight: W.semibold, fontSize: T.caption, color: C.ink,
               cursor: busy ? 'default' : 'pointer',
             }}>
-            <ArrowLeft size={18} color={accent} aria-hidden /> Voltar
+            <ArrowLeft size={16} color={accent} aria-hidden /> Voltar
           </button>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h2 id="zc-conf-titulo" className="font-display" style={{ fontWeight: W.semibold, fontSize: 'calc(17px * var(--zc-t-scale))', color: C.ink, lineHeight: 1.25 }}>
@@ -798,12 +812,12 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                 inteiro" sozinho é um botão que não muda nada e ocupa uma linha. */}
             {pendencias.length > 0 && (
               <div className="flex gap-2" style={{ alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-                <PillButton active={!soPendencias} accent={accent} onClick={() => setSoPendencias(false)}>
+                <Filtro ativo={!soPendencias} onClick={() => setSoPendencias(false)}>
                   Checklist inteiro ({itens.length})
-                </PillButton>
-                <PillButton active={soPendencias} accent={accent} onClick={() => setSoPendencias(true)}>
+                </Filtro>
+                <Filtro ativo={soPendencias} onClick={() => setSoPendencias(true)}>
                   Só pendências ({pendencias.length})
-                </PillButton>
+                </Filtro>
               </div>
             )}
 
@@ -875,15 +889,15 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                             <button key={v.id} onClick={() => setVeredito(i.id, v.id)}
                               aria-pressed={ativo}
                               style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                                minHeight: 40, padding: '0 8px',
-                                fontSize: 13, fontWeight: W.semibold, whiteSpace: 'nowrap',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                minHeight: 34, padding: '0 8px',
+                                fontSize: 12.5, fontWeight: W.semibold, whiteSpace: 'nowrap',
                                 color: ativo ? 'white' : v.cor,
                                 background: ativo ? v.cor : `${v.cor}10`,
                                 border: `1px solid ${ativo ? v.cor : `${v.cor}55`}`,
                                 borderRadius: R.sm, cursor: 'pointer',
                               }}>
-                              <v.Icon size={14} aria-hidden className="zc-conf-vicon" /> {v.label}
+                              <v.Icon size={13} aria-hidden className="zc-conf-vicon" /> {v.label}
                             </button>
                           );
                         })}
@@ -901,12 +915,12 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
                           <button onClick={() => toggleNota(i.id)} className="zc-conf-coment"
                             aria-label={rotulo} title={rotulo}
                             style={{
-                              minHeight: 40, fontSize: 12.5, fontWeight: W.semibold,
+                              minHeight: 34, fontSize: 12, fontWeight: W.semibold,
                               color: mudo ? C.warning : temNota ? C.ink : C.muted,
                               background: 'white', borderRadius: R.sm, cursor: 'pointer',
                               border: `1px ${temNota ? 'solid' : 'dashed'} ${mudo ? C.warning : C.borderStrong}`,
                             }}>
-                            <Ic size={17} aria-hidden /> <span className="zc-conf-coment-txt">{rotulo}</span>
+                            <Ic size={15} aria-hidden /> <span className="zc-conf-coment-txt">{rotulo}</span>
                           </button>
                         );
                       })()}
@@ -948,11 +962,11 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
             ) : (
               <button onClick={() => setObsAberta('toque')} aria-expanded={false}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, minHeight: 40, padding: '0 14px',
-                  fontSize: 13, fontWeight: W.semibold, color: C.muted, background: 'white',
+                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, minHeight: 34, padding: '0 12px',
+                  fontSize: 12.5, fontWeight: W.semibold, color: C.muted, background: 'white',
                   border: `1px dashed ${C.borderStrong}`, borderRadius: R.sm, cursor: 'pointer',
                 }}>
-                <MessageSquarePlus size={16} aria-hidden /> Adicionar observação geral
+                <MessageSquarePlus size={15} aria-hidden /> Adicionar observação geral
               </button>
             )}
           </section>
@@ -1020,12 +1034,12 @@ export function ReviewModal({ completion: c, templates, accent, onClose, onRevie
               </p>
               <div className="zc-conf-botoes">
                 <button onClick={() => commit(true)} disabled={busy}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 24px', minHeight: 48, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 15, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-                  <CheckCheck size={17} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 20px', minHeight: 44, borderRadius: 10, background: accent, color: 'white', fontWeight: W.semibold, fontSize: 14.5, border: 'none', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+                  <CheckCheck size={16} aria-hidden /> {busy ? 'Salvando…' : jaConferido ? 'Atualizar conferência' : 'Confirmar conferência'}
                 </button>
                 {jaConferido && (
                   <button onClick={() => commit(false)} disabled={busy}
-                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
+                    style={{ minHeight: 36, padding: '0 16px', borderRadius: 10, background: 'none', color: C.critical, fontWeight: W.semibold, fontSize: 13, border: 'none', cursor: busy ? 'default' : 'pointer' }}>
                     Desfazer conferência
                   </button>
                 )}

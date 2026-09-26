@@ -458,17 +458,17 @@ input, textarea, button, select {
 .zc-conf-side { display: flex; flex-direction: column; gap: 12px; }
 .zc-conf-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 /* Veredito e comentário numa linha só. No celular: três faixas iguais (alvo
-   de dedo) e o comentário como ícone de 40px; os ícones dos vereditos saem —
+   de dedo) e o comentário como ícone de 34px; os ícones dos vereditos saem —
    cor e palavra bastam, e o espaço é o do texto. */
 .zc-conf-julgar { display: flex; gap: 6px; align-items: stretch; }
 .zc-conf-verdicts { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .zc-conf-vicon { display: none; }
-.zc-conf-coment { flex: 0 0 40px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; }
+.zc-conf-coment { flex: 0 0 34px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; }
 .zc-conf-coment-txt { display: none; }
 .zc-conf-decisao { display: flex; flex-direction: column; gap: 10px; }
 .zc-conf-botoes { display: flex; flex-direction: column; gap: 2px; }
 
-/* iPhone SE e afins (320px): "Reprovar" a 13px não cabe na faixa. */
+/* iPhone SE e afins (320px): "Reprovar" a 12,5px não cabe na faixa. */
 @media (max-width: 359px) {
   .zc-conf-verdicts > button { font-size: 12px !important; padding: 0 4px !important; }
 }
